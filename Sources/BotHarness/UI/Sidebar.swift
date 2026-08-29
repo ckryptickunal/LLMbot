@@ -31,7 +31,7 @@ struct Sidebar: View {
             Spacer(minLength: 0)
             footer
         }
-        .background(Theme.panel)
+        .background(DS.Colour.panel)
         .sheet(item: $library) { tab in LibrarySheet(tab: tab) }
     }
 
@@ -64,7 +64,7 @@ struct Sidebar: View {
             } label: {
                 Image(systemName: "plus")
                     .font(.system(size: 13, weight: .medium))
-                    .foregroundStyle(Theme.secondary)
+                    .foregroundStyle(DS.Colour.inkSecondary)
                     .frame(width: 26, height: 26)
             }
             .buttonStyle(.plain)
@@ -80,11 +80,11 @@ struct Sidebar: View {
         HStack(spacing: 7) {
             Image(systemName: "magnifyingglass")
                 .font(.system(size: 11))
-                .foregroundStyle(Theme.tertiary)
+                .foregroundStyle(DS.Colour.inkTertiary)
             TextField("Search", text: $query)
                 .textFieldStyle(.plain)
                 .font(.system(size: 12.5))
-                .foregroundStyle(Theme.primary)
+                .foregroundStyle(DS.Colour.ink)
         }
         .padding(.horizontal, 9)
         .padding(.vertical, 7)
@@ -95,7 +95,7 @@ struct Sidebar: View {
 
     private var footer: some View {
         VStack(spacing: 0) {
-            Divider().overlay(Theme.separator)
+            Divider().overlay(DS.Colour.line)
             Button { library = .connections } label: {
                 footerRow(icon: "app.connected.to.app.below.fill", label: "Connections")
             }
@@ -134,11 +134,11 @@ struct Sidebar: View {
         HStack(spacing: 9) {
             Image(systemName: icon)
                 .font(.system(size: 12))
-                .foregroundStyle(Theme.secondary)
+                .foregroundStyle(DS.Colour.inkSecondary)
                 .frame(width: 18)
             Text(label)
                 .font(.system(size: 12.5))
-                .foregroundStyle(Theme.primary)
+                .foregroundStyle(DS.Colour.ink)
             Spacer()
         }
         .padding(.horizontal, 14)
@@ -158,17 +158,17 @@ private struct SidebarRow: View {
                 HStack(spacing: 6) {
                     Text(title)
                         .font(.system(size: 13, weight: .semibold))
-                        .foregroundStyle(Theme.primary)
+                        .foregroundStyle(DS.Colour.ink)
                         .lineLimit(1)
                     Spacer(minLength: 4)
                     Text(relativeTime)
                         .font(.system(size: 11))
-                        .foregroundStyle(Theme.tertiary)
+                        .foregroundStyle(DS.Colour.inkTertiary)
                         .fixedSize()
                 }
                 Text(preview)
                     .font(.system(size: 12))
-                    .foregroundStyle(Theme.secondary)
+                    .foregroundStyle(DS.Colour.inkSecondary)
                     .lineLimit(1)
             }
         }
@@ -193,16 +193,16 @@ private struct SidebarRow: View {
             ZStack(alignment: .leading) {
                 ForEach(Array(conversation.participants.prefix(3).enumerated()), id: \.offset) { i, id in
                     Circle()
-                        .fill(store.bot(id)?.tint ?? Theme.tertiary)
+                        .fill(store.bot(id)?.tint ?? DS.Colour.inkTertiary)
                         .frame(width: 20, height: 20)
-                        .overlay(Circle().stroke(Theme.panel, lineWidth: 1.5))
+                        .overlay(Circle().stroke(DS.Colour.panel, lineWidth: 1.5))
                         .offset(x: CGFloat(i) * 9)
                 }
             }
             .frame(width: 32, height: 32, alignment: .leading)
         } else {
             Circle()
-                .fill(store.bot(conversation.participants.first)?.tint ?? Theme.tertiary)
+                .fill(store.bot(conversation.participants.first)?.tint ?? DS.Colour.inkTertiary)
                 .frame(width: 30, height: 30)
         }
     }
@@ -216,6 +216,7 @@ private struct SidebarRow: View {
         case .approval(let a):  return "Needs your approval — \(a.summary)"
         case .notice(let n):    return n
         case .failure(let f):   return f
+        case .screenshot(let s): return s.caption
         }
     }
 

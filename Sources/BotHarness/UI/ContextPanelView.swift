@@ -12,7 +12,7 @@ struct ContextPanelView: View {
     var body: some View {
         VStack(spacing: 0) {
             header
-            Divider().overlay(Theme.separator)
+            Divider().overlay(DS.Colour.line)
             ScrollView {
                 switch ui.panel {
                 case .screen:   ScreenPane(bot: currentBot)
@@ -20,7 +20,7 @@ struct ContextPanelView: View {
                 }
             }
         }
-        .background(Theme.panel)
+        .background(DS.Colour.panel)
     }
 
     private var currentBot: Bot? {
@@ -31,18 +31,18 @@ struct ContextPanelView: View {
         HStack {
             if ui.panel == .settings {
                 Button {
-                    withAnimation(Motion.routine) { ui.panel = .screen }
+                    withAnimation(DS.Motion.instant) { ui.panel = .screen }
                 } label: {
                     Image(systemName: "chevron.left")
                         .font(.system(size: 12))
-                        .foregroundStyle(Theme.secondary)
+                        .foregroundStyle(DS.Colour.inkSecondary)
                 }
                 .buttonStyle(.plain)
             }
             Spacer()
             Text(ui.panel == .settings ? "Settings" : "Screen")
                 .font(.system(size: 12.5, weight: .semibold))
-                .foregroundStyle(Theme.primary)
+                .foregroundStyle(DS.Colour.ink)
             Spacer()
             // Balances the leading chevron so the title stays optically centred.
             if ui.panel == .settings { Color.clear.frame(width: 12) }
@@ -71,20 +71,20 @@ private struct ScreenPane: View {
                     VStack(spacing: 10) {
                         Image(systemName: "display")
                             .font(.system(size: 20))
-                            .foregroundStyle(Theme.tertiary)
+                            .foregroundStyle(DS.Colour.inkTertiary)
                         Text("No screen yet")
                             .font(.system(size: 12))
-                            .foregroundStyle(Theme.secondary)
+                            .foregroundStyle(DS.Colour.inkSecondary)
                         Text("Appears when this bot uses a computer.")
                             .font(.system(size: 11))
-                            .foregroundStyle(Theme.tertiary)
+                            .foregroundStyle(DS.Colour.inkTertiary)
                     }
                 }
 
             if let bot {
                 Text("\(bot.name)'s screen · \(bot.environment.displayName)")
                     .font(.system(size: 11.5))
-                    .foregroundStyle(Theme.tertiary)
+                    .foregroundStyle(DS.Colour.inkTertiary)
             }
         }
         .padding(14)
@@ -121,7 +121,7 @@ private struct SettingsPane: View {
                 VStack(alignment: .leading, spacing: 6) {
                     Text("Description")
                         .font(.system(size: 11.5))
-                        .foregroundStyle(Theme.secondary)
+                        .foregroundStyle(DS.Colour.inkSecondary)
                     TextEditor(text: Binding(
                         get: { working.persona },
                         set: { v in mutate { $0.persona = v } }))
@@ -135,17 +135,17 @@ private struct SettingsPane: View {
                 labelled("Brain") {
                     Text(working.brain.displayName)
                         .font(.system(size: 12.5))
-                        .foregroundStyle(Theme.primary)
+                        .foregroundStyle(DS.Colour.ink)
                 }
 
                 labelled("Computer") {
                     VStack(alignment: .leading, spacing: 2) {
                         Text(working.environment.displayName)
                             .font(.system(size: 12.5))
-                            .foregroundStyle(Theme.primary)
+                            .foregroundStyle(DS.Colour.ink)
                         Text(working.environment.explanation)
                             .font(.system(size: 11))
-                            .foregroundStyle(Theme.tertiary)
+                            .foregroundStyle(DS.Colour.inkTertiary)
                     }
                 }
 
@@ -166,7 +166,7 @@ private struct SettingsPane: View {
                         Text("Share as template")
                             .font(.system(size: 12))
                     }
-                    .foregroundStyle(Theme.secondary)
+                    .foregroundStyle(DS.Colour.inkSecondary)
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 8)
                     .background(Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 7))
@@ -175,7 +175,7 @@ private struct SettingsPane: View {
             } else {
                 Text("No bot selected")
                     .font(.system(size: 12.5))
-                    .foregroundStyle(Theme.tertiary)
+                    .foregroundStyle(DS.Colour.inkTertiary)
             }
         }
         .padding(14)
@@ -213,11 +213,11 @@ private struct SettingsPane: View {
         VStack(alignment: .leading, spacing: 6) {
             Text(title)
                 .font(.system(size: 11.5))
-                .foregroundStyle(Theme.secondary)
+                .foregroundStyle(DS.Colour.inkSecondary)
             TextField(placeholder, text: text)
                 .textFieldStyle(.plain)
                 .font(.system(size: 12.5))
-                .foregroundStyle(Theme.primary)
+                .foregroundStyle(DS.Colour.ink)
                 .padding(.horizontal, 9)
                 .padding(.vertical, 7)
                 .background(Color.white.opacity(0.05), in: RoundedRectangle(cornerRadius: 7))
@@ -228,7 +228,7 @@ private struct SettingsPane: View {
         VStack(alignment: .leading, spacing: 6) {
             Text(title)
                 .font(.system(size: 11.5))
-                .foregroundStyle(Theme.secondary)
+                .foregroundStyle(DS.Colour.inkSecondary)
             content()
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.horizontal, 9)
@@ -242,10 +242,10 @@ private struct SettingsPane: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text(title)
                     .font(.system(size: 12.5))
-                    .foregroundStyle(Theme.primary)
+                    .foregroundStyle(DS.Colour.ink)
                 Text(detail)
                     .font(.system(size: 11))
-                    .foregroundStyle(Theme.tertiary)
+                    .foregroundStyle(DS.Colour.inkTertiary)
                     .fixedSize(horizontal: false, vertical: true)
             }
             Spacer()

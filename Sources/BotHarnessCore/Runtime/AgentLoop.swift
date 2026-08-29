@@ -30,7 +30,7 @@ public actor AgentLoop {
         case toolFinished(id: String, output: String, ok: Bool)
         case needsApproval(ApprovalRequest)
         case observed(String)
-        case screenshot(Data)
+        case screenshot(path: String, caption: String)
         case verifying
         case finished(TaskContract.Closure, note: String)
         case failed(String)
@@ -106,6 +106,7 @@ public actor AgentLoop {
     }
 
     private func execute(goal: String, emit: @escaping @Sendable (Event) -> Void) async {
+        currentEmit = emit
         await trace.record(.init(kind: .runStarted, summary: goal))
         turns.append(.init(role: .user, text: goal))
 
@@ -150,7 +151,9 @@ public actor AgentLoop {
             )
             if contract.urgency.budget.observationDepth == .full, brain.canDriveComputer {
                 request.screenshot = try? await computer.screenshot()
-                if let shot = request.screenshot { emit(.screenshot(shot)) }
+                if let shot = request.screenshot {
+                    await postScreenshot(shot, caption: "Looked at the screen", emit: emit)
+                }
             }
 
             let response: BrainResponse
@@ -376,8 +379,10 @@ public actor AgentLoop {
 
         // — computer, both our names and Gemini's predefined ones —
         case "computer.screenshot", "take_screenshot":
-            _ = try await computer.screenshot()
-            return "captured"
+            let image = try await computer.screenshot()
+            await postScreenshot(image, caption: action.intent ?? "Looked at the screen",
+                                 emit: currentEmit)
+            return "Captured the screen. \(await computer.state())"
         case "computer.state":
             return await computer.state()
         case "computer.accessibility_tree":
@@ -508,6 +513,23 @@ public actor AgentLoop {
             }
         }
     }
+
+    /// Save a screenshot beside the trace and put it in the conversation.
+    ///
+    /// Written to the run's artifact directory rather than carried in memory, so the image
+    /// survives the run and the conversation document stays small.
+    private func postScreenshot(_ image: Data, caption: String,
+                                emit: (@Sendable (Event) -> Void)?) async {
+        let name = await trace.attach(image, name: "screen.png")
+        let path = await trace.directory
+            .appendingPathComponent("artifacts")
+            .appendingPathComponent(name).path
+        emit?(.screenshot(path: path, caption: caption))
+    }
+
+    /// The emit closure for the turn in progress, so dispatch can reach the UI without every
+    /// tool case threading it through.
+    private var currentEmit: (@Sendable (Event) -> Void)?
 
     // MARK: - Observation
 

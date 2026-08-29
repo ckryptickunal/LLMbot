@@ -17,13 +17,16 @@ struct ConversationView: View {
     var body: some View {
         VStack(spacing: 0) {
             header
-            Divider().overlay(Theme.separator)
+            Divider().overlay(DS.Colour.line)
             timeline
+            if let id = store.selection {
+                ActivityInspector(conversationID: id)
+            }
             Composer(conversationID: store.selection ?? UUID(),
                      draft: $draft,
                      focused: $composerFocused)
         }
-        .background(Theme.ground)
+        .background(DS.Colour.ground)
         // Focus has to wait for the window to become key. Setting @FocusState directly in
         // onAppear runs before that happens and is silently dropped, which leaves the app
         // looking usable while typing does nothing.
@@ -41,11 +44,11 @@ struct ConversationView: View {
         HStack(spacing: 9) {
             if let c = conversation {
                 Circle()
-                    .fill(store.bot(c.participants.first)?.tint ?? Theme.tertiary)
+                    .fill(store.bot(c.participants.first)?.tint ?? DS.Colour.inkTertiary)
                     .frame(width: 18, height: 18)
                 Text(c.title ?? store.bot(c.participants.first)?.name ?? "Untitled")
                     .font(.system(size: 13.5, weight: .semibold))
-                    .foregroundStyle(Theme.primary)
+                    .foregroundStyle(DS.Colour.ink)
             }
             Spacer()
 
@@ -54,7 +57,7 @@ struct ConversationView: View {
             } label: {
                 Image(systemName: "gearshape")
                     .font(.system(size: 12.5))
-                    .foregroundStyle(Theme.secondary)
+                    .foregroundStyle(DS.Colour.inkSecondary)
             }
             .buttonStyle(.plain)
             .help("Bot settings")
@@ -64,7 +67,7 @@ struct ConversationView: View {
             } label: {
                 Image(systemName: ui.showPanel ? "chevron.right.2" : "chevron.left.2")
                     .font(.system(size: 12.5))
-                    .foregroundStyle(Theme.secondary)
+                    .foregroundStyle(DS.Colour.inkSecondary)
             }
             .buttonStyle(.plain)
             .help(ui.showPanel ? "Hide panel" : "Show panel")
@@ -98,7 +101,7 @@ struct ConversationView: View {
             }
             .onChange(of: conversation?.messages.count ?? 0) {
                 guard let last = conversation?.messages.last else { return }
-                withAnimation(Motion.routine) { proxy.scrollTo(last.id, anchor: .bottom) }
+                withAnimation(DS.Motion.instant) { proxy.scrollTo(last.id, anchor: .bottom) }
             }
         }
     }
@@ -115,21 +118,21 @@ private struct EmptyConversation: View {
     var body: some View {
         VStack(spacing: 12) {
             Circle()
-                .fill(bot?.tint ?? Theme.tertiary)
+                .fill(bot?.tint ?? DS.Colour.inkTertiary)
                 .frame(width: 44, height: 44)
             Text(bot?.name ?? "Bot")
                 .font(.system(size: 15, weight: .semibold))
-                .foregroundStyle(Theme.primary)
+                .foregroundStyle(DS.Colour.ink)
             if let persona = bot?.persona, !persona.isEmpty {
                 Text(persona)
                     .font(.system(size: 12.5))
-                    .foregroundStyle(Theme.secondary)
+                    .foregroundStyle(DS.Colour.inkSecondary)
                     .multilineTextAlignment(.center)
                     .frame(maxWidth: 380)
             } else {
                 Text("Give this bot a description in Settings, then tell it what to do.")
                     .font(.system(size: 12.5))
-                    .foregroundStyle(Theme.tertiary)
+                    .foregroundStyle(DS.Colour.inkTertiary)
             }
         }
     }

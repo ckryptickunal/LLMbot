@@ -154,10 +154,10 @@ struct ProviderSettings: View {
         guard !trimmed.isEmpty else { return }
         Keychain.set(trimmed, account: provider)
         present[provider] = Keychain.has(provider)
-        withAnimation(Motion.routine) { justSaved = provider }
+        withAnimation(DS.Motion.instant) { justSaved = provider }
         Task {
             try? await Task.sleep(for: .seconds(3))
-            withAnimation(Motion.routine) { justSaved = nil }
+            withAnimation(DS.Motion.instant) { justSaved = nil }
         }
     }
 

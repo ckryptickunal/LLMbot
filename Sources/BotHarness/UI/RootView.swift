@@ -14,22 +14,22 @@ struct RootView: View {
     var body: some View {
         HStack(spacing: 0) {
             Sidebar()
-                .frame(width: Theme.sidebarWidth)
+                .frame(width: DS.Size.sidebar)
 
-            Divider().overlay(Theme.separator)
+            Divider().overlay(DS.Colour.line)
 
             ConversationView()
                 .frame(maxWidth: .infinity)
 
             if ui.showPanel {
-                Divider().overlay(Theme.separator)
+                Divider().overlay(DS.Colour.line)
                 ContextPanelView()
-                    .frame(width: Theme.contextWidth)
+                    .frame(width: DS.Size.inspector)
                     .transition(.move(edge: .trailing).combined(with: .opacity))
             }
         }
-        .background(Theme.ground)
+        .background(DS.Colour.ground)
         .environment(ui)
-        .animation(Motion.occasional, value: ui.showPanel)
+        .animation(DS.Motion.surface, value: ui.showPanel)
     }
 }

@@ -123,7 +123,29 @@ public struct Message: Identifiable, Codable, Hashable {
 
         /// Something went wrong, stated plainly.
         case failure(String)
+
+        /// What the bot saw. Posted whenever it looks at a screen, so the user watches the
+        /// work rather than reading a description of it.
+        ///
+        /// Stores a path, never the image bytes: the conversation document is rewritten on
+        /// every change, and a run with thirty screenshots in it would make that unusable.
+        case screenshot(Screenshot)
     }
+}
+
+/// An image of what the bot saw, and why it looked.
+public struct Screenshot: Identifiable, Codable, Hashable {
+
+    public init(id: UUID = UUID(), path: String, caption: String, takenAt: Date = Date()) {
+        self.id = id; self.path = path; self.caption = caption; self.takenAt = takenAt
+    }
+
+    public var id: UUID = UUID()
+    /// Absolute path to the PNG, inside the run's artifact directory.
+    public var path: String
+    /// What the bot was doing when it looked. Shown under the image.
+    public var caption: String
+    public var takenAt: Date = Date()
 }
 
 /// A tool call, from proposal through result.

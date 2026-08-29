@@ -26,7 +26,7 @@ struct Composer: View {
                 TextField(placeholder, text: $draft, axis: .vertical)
                     .textFieldStyle(.plain)
                     .font(.system(size: 13.5))
-                    .foregroundStyle(Theme.primary)
+                    .foregroundStyle(DS.Colour.ink)
                     .lineLimit(1...10)
                     .focused($focused)
                     // A vertical-axis field consumes Return itself, so the key has to be
@@ -51,7 +51,7 @@ struct Composer: View {
                 RoundedRectangle(cornerRadius: 20)
                     .stroke(focused ? Color.white.opacity(0.14) : Color.clear, lineWidth: 1)
             )
-            .animation(Motion.routine, value: focused)
+            .animation(DS.Motion.instant, value: focused)
 
             controls
         }
@@ -79,11 +79,11 @@ struct Composer: View {
         } label: {
             Image(systemName: "plus")
                 .font(.system(size: 13, weight: .medium))
-                .foregroundStyle(Theme.secondary)
+                .foregroundStyle(DS.Colour.inkSecondary)
                 .frame(width: 24, height: 24)
                 .background(Color.white.opacity(0.07), in: Circle())
         }
-        .buttonStyle(PressableButtonStyle())
+        .buttonStyle(PressableStyle())
         .help("Attach a file")
     }
 
@@ -91,14 +91,14 @@ struct Composer: View {
         Button(action: send) {
             Image(systemName: "arrow.up")
                 .font(.system(size: 12, weight: .bold))
-                .foregroundStyle(canSend ? Theme.ground : Theme.tertiary)
+                .foregroundStyle(canSend ? DS.Colour.ground : DS.Colour.inkTertiary)
                 .frame(width: 24, height: 24)
-                .background(canSend ? Theme.primary : Color.white.opacity(0.08), in: Circle())
+                .background(canSend ? DS.Colour.ink : Color.white.opacity(0.08), in: Circle())
         }
-        .buttonStyle(PressableButtonStyle())
+        .buttonStyle(PressableStyle())
         .disabled(!canSend)
         // Enter/exit rather than a hard swap, so the control does not pop.
-        .animation(Motion.routine, value: canSend)
+        .animation(DS.Motion.instant, value: canSend)
         .help("Send (Return)")
     }
 
@@ -107,12 +107,12 @@ struct Composer: View {
             runner.stop(conversationID)
         } label: {
             RoundedRectangle(cornerRadius: 3)
-                .fill(Theme.ground)
+                .fill(DS.Colour.ground)
                 .frame(width: 9, height: 9)
                 .frame(width: 24, height: 24)
-                .background(Theme.primary, in: Circle())
+                .background(DS.Colour.ink, in: Circle())
         }
-        .buttonStyle(PressableButtonStyle())
+        .buttonStyle(PressableStyle())
         .help("Stop")
     }
 
@@ -131,13 +131,13 @@ struct Composer: View {
                     ProgressView().controlSize(.mini).scaleEffect(0.7)
                     Text("Working")
                         .font(.system(size: 11))
-                        .foregroundStyle(Theme.secondary)
+                        .foregroundStyle(DS.Colour.inkSecondary)
                 }
                 .transition(.opacity)
             }
         }
         .padding(.horizontal, 4)
-        .animation(Motion.routine, value: isRunning)
+        .animation(DS.Motion.instant, value: isRunning)
     }
 
     // MARK: Actions
@@ -218,13 +218,13 @@ struct BrainChip: View {
         HStack(spacing: 5) {
             Image(systemName: warn ? "exclamationmark.triangle.fill" : icon)
                 .font(.system(size: 9))
-                .foregroundStyle(warn ? Theme.running : Theme.tertiary)
+                .foregroundStyle(warn ? DS.Colour.running : DS.Colour.inkTertiary)
             Text(text)
                 .font(.system(size: 11))
-                .foregroundStyle(Theme.secondary)
+                .foregroundStyle(DS.Colour.inkSecondary)
             Image(systemName: "chevron.down")
                 .font(.system(size: 7, weight: .semibold))
-                .foregroundStyle(Theme.tertiary)
+                .foregroundStyle(DS.Colour.inkTertiary)
         }
         .padding(.horizontal, 8)
         .padding(.vertical, 4)
@@ -248,13 +248,13 @@ struct AutonomyChip: View {
             HStack(spacing: 5) {
                 Image(systemName: icon)
                     .font(.system(size: 9))
-                    .foregroundStyle(Theme.tertiary)
+                    .foregroundStyle(DS.Colour.inkTertiary)
                 Text(label)
                     .font(.system(size: 11))
-                    .foregroundStyle(Theme.secondary)
+                    .foregroundStyle(DS.Colour.inkSecondary)
                 Image(systemName: "chevron.down")
                     .font(.system(size: 7, weight: .semibold))
-                    .foregroundStyle(Theme.tertiary)
+                    .foregroundStyle(DS.Colour.inkTertiary)
             }
             .padding(.horizontal, 8)
             .padding(.vertical, 4)

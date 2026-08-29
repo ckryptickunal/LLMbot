@@ -25,6 +25,50 @@ final class BotRunner {
     /// Approval prompts waiting on the user, keyed by the message showing them.
     private(set) var awaiting: [UUID: UUID] = [:]
 
+    /// What the agent is doing right now, per conversation.
+    ///
+    /// Kept separately from the message timeline on purpose. Observations, model calls and
+    /// verification passes happen several times per tool call; posting each as a message would
+    /// bury the conversation they are supposed to explain. They belong behind a disclosure the
+    /// user opens when they want to know, and ignores when they do not.
+    private(set) var live: [UUID: [LiveStep]] = [:]
+
+    struct LiveStep: Identifiable, Sendable {
+        let id = UUID()
+        var at = Date()
+        var kind: Kind
+        var text: String
+        var detail: String?
+
+        enum Kind: Sendable {
+            case thinking, observing, tool, result, verifying, approval, finished, failed
+
+            var icon: String {
+                switch self {
+                case .thinking:  return "brain"
+                case .observing: return "eye"
+                case .tool:      return "wrench.and.screwdriver"
+                case .result:    return "arrow.turn.down.right"
+                case .verifying: return "checkmark.seal"
+                case .approval:  return "hand.raised"
+                case .finished:  return "flag.checkered"
+                case .failed:    return "exclamationmark.triangle"
+                }
+            }
+        }
+    }
+
+    private func note(_ kind: LiveStep.Kind, _ text: String, detail: String? = nil, in id: UUID) {
+        var steps = live[id] ?? []
+        steps.append(LiveStep(kind: kind, text: text, detail: detail))
+        // A long run can produce hundreds of steps; keep the tail, which is what anyone
+        // watching actually wants to see.
+        if steps.count > 300 { steps.removeFirst(steps.count - 300) }
+        live[id] = steps
+    }
+
+    func clearLive(_ id: UUID) { live[id] = [] }
+
     init(store: Store) {
         self.store = store
         Task { await capabilities.registerConfiguredMCPServers() }
@@ -50,6 +94,7 @@ final class BotRunner {
                              capabilities: capabilities)
         loops[conversationID] = loop
 
+        live[conversationID] = []
         tasks[conversationID] = Task { [weak self] in
             for await event in await loop.run(goal: text) {
                 await self?.handle(event, bot: bot, conversationID: conversationID)
@@ -96,15 +141,30 @@ final class BotRunner {
 
     private func handle(_ event: AgentLoop.Event, bot: Bot, conversationID id: UUID) {
         switch event {
-        case .thinking, .verifying, .observed, .screenshot:
-            // Internal detail. Shown as activity state, not as timeline entries — a log of
-            // every observation would bury the conversation it is supposed to explain.
-            break
+        case .thinking:
+            note(.thinking, "Thinking", in: id)
+
+        case .verifying:
+            note(.verifying, "Checking whether it is actually done", in: id)
+
+        case .observed(let observation):
+            let first = observation.split(separator: "\n").first.map(String.init) ?? "Looked at the computer"
+            note(.observing, "Looked at the computer", detail: first, in: id)
+
+        case .screenshot(let path, let caption):
+            note(.observing, caption, detail: "screenshot", in: id)
+            store.append(Message(author: bot.id,
+                                 body: .screenshot(Screenshot(path: path, caption: caption))),
+                         to: id)
 
         case .said(let text):
+            note(.thinking, "Replied", detail: String(text.prefix(200)), in: id)
             store.append(Message(author: bot.id, body: .text(text)), to: id)
 
         case .toolStarted(let toolID, let tool, let summary, let intent):
+            // The intent is the model's own stated reason for this step — the closest thing
+            // to visible thinking that the API actually provides.
+            note(.tool, intent ?? summary, detail: tool, in: id)
             let activity = ToolActivity(id: UUID(), tool: tool,
                                         summary: intent ?? summary,
                                         detail: summary, status: .running,
@@ -112,6 +172,9 @@ final class BotRunner {
             store.append(Message(author: bot.id, body: .toolUse(activity)), to: id)
 
         case .toolFinished(let toolID, let output, let ok):
+            note(ok ? .result : .failed,
+                 ok ? "Result" : "That failed",
+                 detail: String(output.prefix(300)), in: id)
             guard var conversation = store.conversation(id),
                   let index = conversation.messages.lastIndex(where: {
                       if case .toolUse(let a) = $0.body { return a.traceID == toolID }
@@ -127,11 +190,16 @@ final class BotRunner {
             store.replace(message, in: id)
 
         case .needsApproval(let request):
+            note(.approval, "Waiting for you", detail: request.summary, in: id)
             let message = Message(author: bot.id, body: .approval(request))
             store.append(message, to: id)
             awaiting[message.id] = id
 
-        case .finished(let closure, let note):
+        case .finished(let closure, let closingNote):
+            note(closure == .succeeded ? .finished : .failed,
+                 closure == .succeeded ? "Done" : closure.rawValue,
+                 detail: closingNote.isEmpty ? nil : String(closingNote.prefix(200)), in: id)
+            let note = closingNote
             switch closure {
             case .succeeded:
                 // An empty note means the bot already said its piece this turn.
@@ -147,6 +215,7 @@ final class BotRunner {
             }
 
         case .failed(let message):
+            note(.failed, "Failed", detail: message, in: id)
             store.append(Message(author: bot.id, body: .failure(message)), to: id)
         }
     }

@@ -24,7 +24,7 @@ struct ActivityWindow: View {
             detail.frame(minWidth: 460)
         }
         .frame(minWidth: 820, minHeight: 520)
-        .background(Theme.ground)
+        .background(DS.Colour.ground)
         .onAppear(perform: reload)
     }
 
@@ -44,24 +44,24 @@ struct ActivityWindow: View {
         VStack(spacing: 0) {
             HStack {
                 Text("Runs").font(.system(size: 12.5, weight: .semibold))
-                    .foregroundStyle(Theme.primary)
+                    .foregroundStyle(DS.Colour.ink)
                 Spacer()
                 Button { reload() } label: {
                     Image(systemName: "arrow.clockwise").font(.system(size: 11))
                 }
-                .buttonStyle(PressableButtonStyle())
+                .buttonStyle(PressableStyle())
             }
             .padding(.horizontal, 14).padding(.vertical, 10)
 
-            Divider().overlay(Theme.separator)
+            Divider().overlay(DS.Colour.line)
 
             if runs.isEmpty {
                 VStack(spacing: 8) {
                     Image(systemName: "clock.arrow.circlepath")
-                        .font(.system(size: 18)).foregroundStyle(Theme.tertiary)
-                    Text("No runs yet").font(.system(size: 12)).foregroundStyle(Theme.secondary)
+                        .font(.system(size: 18)).foregroundStyle(DS.Colour.inkTertiary)
+                    Text("No runs yet").font(.system(size: 12)).foregroundStyle(DS.Colour.inkSecondary)
                     Text("Every task a bot runs is recorded here.")
-                        .font(.system(size: 11)).foregroundStyle(Theme.tertiary)
+                        .font(.system(size: 11)).foregroundStyle(DS.Colour.inkTertiary)
                         .multilineTextAlignment(.center)
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -81,7 +81,7 @@ struct ActivityWindow: View {
                 .padding(8)
             }
         }
-        .background(Theme.panel)
+        .background(DS.Colour.panel)
     }
 
     private func runRow(_ run: TraceReader.Run) -> some View {
@@ -90,21 +90,21 @@ struct ActivityWindow: View {
                 Circle().fill(colour(for: run)).frame(width: 6, height: 6)
                 Text(run.manifest?.goal ?? run.id)
                     .font(.system(size: 12, weight: .medium))
-                    .foregroundStyle(Theme.primary)
+                    .foregroundStyle(DS.Colour.ink)
                     .lineLimit(1)
             }
             HStack(spacing: 8) {
                 Text(run.startedAt, style: .relative)
-                    .font(.system(size: 10.5)).foregroundStyle(Theme.tertiary)
+                    .font(.system(size: 10.5)).foregroundStyle(DS.Colour.inkTertiary)
                 Text("\(run.stepCount) steps")
-                    .font(.system(size: 10.5)).foregroundStyle(Theme.tertiary)
+                    .font(.system(size: 10.5)).foregroundStyle(DS.Colour.inkTertiary)
                 if let cost = run.manifest?.totalCostUSD, cost > 0 {
                     Text(String(format: "$%.4f", cost))
-                        .font(.system(size: 10.5)).foregroundStyle(Theme.tertiary)
+                        .font(.system(size: 10.5)).foregroundStyle(DS.Colour.inkTertiary)
                 }
             }
             if let failure = run.failureSummary {
-                Text(failure).font(.system(size: 10.5)).foregroundStyle(Theme.failed).lineLimit(1)
+                Text(failure).font(.system(size: 10.5)).foregroundStyle(DS.Colour.failed).lineLimit(1)
             }
         }
         .padding(.horizontal, 9).padding(.vertical, 7)
@@ -113,11 +113,11 @@ struct ActivityWindow: View {
 
     private func colour(for run: TraceReader.Run) -> Color {
         switch run.manifest?.outcome {
-        case .succeeded: return Theme.done
-        case .failed, .timedOut: return Theme.failed
-        case .refused: return Theme.running
-        case .cancelled: return Theme.tertiary
-        case .none: return run.failureSummary == nil ? Theme.tertiary : Theme.failed
+        case .succeeded: return DS.Colour.done
+        case .failed, .timedOut: return DS.Colour.failed
+        case .refused: return DS.Colour.running
+        case .cancelled: return DS.Colour.inkTertiary
+        case .none: return run.failureSummary == nil ? DS.Colour.inkTertiary : DS.Colour.failed
         }
     }
 
@@ -127,7 +127,7 @@ struct ActivityWindow: View {
         if let run = selected {
             VStack(spacing: 0) {
                 header(run)
-                Divider().overlay(Theme.separator)
+                Divider().overlay(DS.Colour.line)
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 7) {
                         ForEach(timeline) { entry in StepRow(entry: entry) }
@@ -136,7 +136,7 @@ struct ActivityWindow: View {
                 }
             }
         } else {
-            Text("Select a run").font(.system(size: 12)).foregroundStyle(Theme.tertiary)
+            Text("Select a run").font(.system(size: 12)).foregroundStyle(DS.Colour.inkTertiary)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
     }
@@ -144,7 +144,7 @@ struct ActivityWindow: View {
     private func header(_ run: TraceReader.Run) -> some View {
         VStack(alignment: .leading, spacing: 6) {
             Text(run.manifest?.goal ?? run.id)
-                .font(.system(size: 13.5, weight: .semibold)).foregroundStyle(Theme.primary)
+                .font(.system(size: 13.5, weight: .semibold)).foregroundStyle(DS.Colour.ink)
             HStack(spacing: 12) {
                 if let m = run.manifest {
                     label("bot", m.botName)
@@ -157,11 +157,11 @@ struct ActivityWindow: View {
                 Button("Reveal in Finder") {
                     NSWorkspace.shared.activateFileViewerSelecting([run.directory])
                 }
-                .buttonStyle(PressableButtonStyle())
+                .buttonStyle(PressableStyle())
                 .font(.system(size: 11))
             }
             if let note = run.manifest?.closingNote, !note.isEmpty {
-                Text(note).font(.system(size: 11.5)).foregroundStyle(Theme.secondary)
+                Text(note).font(.system(size: 11.5)).foregroundStyle(DS.Colour.inkSecondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
         }
@@ -170,8 +170,8 @@ struct ActivityWindow: View {
 
     private func label(_ name: String, _ value: String) -> some View {
         HStack(spacing: 4) {
-            Text(name).font(.system(size: 10)).foregroundStyle(Theme.tertiary)
-            Text(value).font(.system(size: 10.5)).foregroundStyle(Theme.secondary)
+            Text(name).font(.system(size: 10)).foregroundStyle(DS.Colour.inkTertiary)
+            Text(value).font(.system(size: 10.5)).foregroundStyle(DS.Colour.inkSecondary)
         }
     }
 
@@ -183,15 +183,15 @@ struct ActivityWindow: View {
                 Image(systemName: "lock.fill").font(.system(size: 8))
                 Text("\(records) records intact").font(.system(size: 10))
             }
-            .foregroundStyle(Theme.done)
+            .foregroundStyle(DS.Colour.done)
         case .brokenAt(let line, let reason):
             HStack(spacing: 4) {
                 Image(systemName: "lock.open.trianglebadge.exclamationmark").font(.system(size: 8))
                 Text("altered at line \(line) — \(reason)").font(.system(size: 10))
             }
-            .foregroundStyle(Theme.failed)
+            .foregroundStyle(DS.Colour.failed)
         case .unreadable:
-            Text("record unreadable").font(.system(size: 10)).foregroundStyle(Theme.failed)
+            Text("record unreadable").font(.system(size: 10)).foregroundStyle(DS.Colour.failed)
         }
     }
 }
@@ -207,7 +207,7 @@ private struct StepRow: View {
             HStack(alignment: .top, spacing: 8) {
                 Text("\(entry.seq)")
                     .font(.system(size: 10, design: .monospaced))
-                    .foregroundStyle(Theme.tertiary)
+                    .foregroundStyle(DS.Colour.inkTertiary)
                     .frame(width: 22, alignment: .trailing)
 
                 Image(systemName: icon)
@@ -218,12 +218,12 @@ private struct StepRow: View {
                 VStack(alignment: .leading, spacing: 3) {
                     Text(entry.summary)
                         .font(.system(size: 12))
-                        .foregroundStyle(Theme.primary)
+                        .foregroundStyle(DS.Colour.ink)
                         .lineLimit(expanded ? nil : 2)
 
                     // The model's stated reason for this step — the "decision" in decision trace.
                     if let intent = entry.intent, intent != entry.summary {
-                        Text(intent).font(.system(size: 11)).foregroundStyle(Theme.secondary)
+                        Text(intent).font(.system(size: 11)).foregroundStyle(DS.Colour.inkSecondary)
                             .lineLimit(expanded ? nil : 1)
                     }
 
@@ -235,12 +235,12 @@ private struct StepRow: View {
                             Text("\(permission.outcome) — \(permission.reason)")
                                 .font(.system(size: 10.5))
                         }
-                        .foregroundStyle(permission.outcome == "refused" ? Theme.failed : Theme.tertiary)
+                        .foregroundStyle(permission.outcome == "refused" ? DS.Colour.failed : DS.Colour.inkTertiary)
                     }
 
                     if let error = entry.error, !error.isEmpty {
                         Text(error).font(.system(size: 11, design: .monospaced))
-                            .foregroundStyle(Theme.failed)
+                            .foregroundStyle(DS.Colour.failed)
                             .lineLimit(expanded ? nil : 2)
                     }
                 }
@@ -248,10 +248,10 @@ private struct StepRow: View {
 
                 if entry.tokens > 0 {
                     Text("\(entry.tokens) tok")
-                        .font(.system(size: 10)).foregroundStyle(Theme.tertiary)
+                        .font(.system(size: 10)).foregroundStyle(DS.Colour.inkTertiary)
                 }
                 Text(entry.at, format: .dateTime.hour().minute().second())
-                    .font(.system(size: 10)).foregroundStyle(Theme.tertiary)
+                    .font(.system(size: 10)).foregroundStyle(DS.Colour.inkTertiary)
             }
 
             if expanded {
@@ -266,15 +266,15 @@ private struct StepRow: View {
         .padding(10)
         .background(Color.white.opacity(0.03), in: RoundedRectangle(cornerRadius: 8))
         .contentShape(Rectangle())
-        .onTapGesture { withAnimation(Motion.routine) { expanded.toggle() } }
+        .onTapGesture { withAnimation(DS.Motion.instant) { expanded.toggle() } }
     }
 
     private func block(_ title: String, _ text: String) -> some View {
         VStack(alignment: .leading, spacing: 3) {
-            Text(title).font(.system(size: 9.5)).foregroundStyle(Theme.tertiary)
+            Text(title).font(.system(size: 9.5)).foregroundStyle(DS.Colour.inkTertiary)
             Text(text)
                 .font(.system(size: 11, design: .monospaced))
-                .foregroundStyle(Theme.secondary)
+                .foregroundStyle(DS.Colour.inkSecondary)
                 .textSelection(.enabled)
                 .padding(8)
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -301,10 +301,10 @@ private struct StepRow: View {
     }
 
     private var tint: Color {
-        if entry.error != nil { return Theme.failed }
-        if entry.permission?.outcome == "refused" { return Theme.failed }
-        if entry.kind == .stuckDetected { return Theme.running }
-        if entry.outcome == .succeeded { return Theme.done }
-        return Theme.tertiary
+        if entry.error != nil { return DS.Colour.failed }
+        if entry.permission?.outcome == "refused" { return DS.Colour.failed }
+        if entry.kind == .stuckDetected { return DS.Colour.running }
+        if entry.outcome == .succeeded { return DS.Colour.done }
+        return DS.Colour.inkTertiary
     }
 }

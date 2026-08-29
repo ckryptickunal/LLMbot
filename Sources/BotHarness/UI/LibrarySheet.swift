@@ -34,7 +34,7 @@ struct LibrarySheet: View {
     var body: some View {
         VStack(spacing: 0) {
             header
-            Divider().overlay(Theme.separator)
+            Divider().overlay(DS.Colour.line)
             ScrollView {
                 switch tab {
                 case .connections: ConnectionsList()
@@ -44,30 +44,30 @@ struct LibrarySheet: View {
             }
         }
         .frame(width: 560, height: 480)
-        .background(Theme.panel)
+        .background(DS.Colour.panel)
     }
 
     private var header: some View {
         HStack(spacing: 4) {
             ForEach(Tab.allCases) { t in
                 Button {
-                    withAnimation(Motion.routine) { tab = t }
+                    withAnimation(DS.Motion.instant) { tab = t }
                 } label: {
                     HStack(spacing: 6) {
                         Image(systemName: t.icon).font(.system(size: 11))
                         Text(t.title).font(.system(size: 12, weight: .medium))
                     }
-                    .foregroundStyle(tab == t ? Theme.primary : Theme.secondary)
+                    .foregroundStyle(tab == t ? DS.Colour.ink : DS.Colour.inkSecondary)
                     .padding(.horizontal, 11)
                     .padding(.vertical, 6)
                     .background(tab == t ? Color.white.opacity(0.08) : .clear,
                                 in: RoundedRectangle(cornerRadius: 7))
                 }
-                .buttonStyle(PressableButtonStyle())
+                .buttonStyle(PressableStyle())
             }
             Spacer()
             Button("Done") { dismiss() }
-                .buttonStyle(PressableButtonStyle())
+                .buttonStyle(PressableStyle())
                 .font(.system(size: 12))
         }
         .padding(.horizontal, 14)
@@ -122,13 +122,13 @@ private struct ConnectionsList: View {
         VStack(alignment: .leading, spacing: 14) {
             HStack {
                 Text("What your bots can reach. Model keys are in Settings (⌘,).")
-                    .font(.system(size: 11.5)).foregroundStyle(Theme.secondary)
+                    .font(.system(size: 11.5)).foregroundStyle(DS.Colour.inkSecondary)
                 Spacer()
                 if model.isRefreshing {
                     ProgressView().controlSize(.mini).scaleEffect(0.7)
                 } else {
                     Button("Refresh") { Task { await model.refresh() } }
-                        .buttonStyle(PressableButtonStyle())
+                        .buttonStyle(PressableStyle())
                         .font(.system(size: 11))
                 }
             }
@@ -145,7 +145,7 @@ private struct ConnectionsList: View {
             section("Connectors")
             if model.rows.isEmpty && !model.isRefreshing {
                 Text("No connectors configured yet.")
-                    .font(.system(size: 11.5)).foregroundStyle(Theme.tertiary)
+                    .font(.system(size: 11.5)).foregroundStyle(DS.Colour.inkTertiary)
             }
             ForEach(model.rows) { entry in
                 row(name: entry.name,
@@ -164,7 +164,7 @@ private struct ConnectionsList: View {
     private func section(_ title: String) -> some View {
         Text(title.uppercased())
             .font(.system(size: 10, weight: .semibold))
-            .foregroundStyle(Theme.tertiary)
+            .foregroundStyle(DS.Colour.inkTertiary)
             .padding(.top, 4)
     }
 
@@ -177,13 +177,13 @@ private struct ConnectionsList: View {
             VStack(alignment: .leading, spacing: 2) {
                 HStack(spacing: 6) {
                     Text(name).font(.system(size: 12.5, weight: .medium))
-                        .foregroundStyle(Theme.primary)
+                        .foregroundStyle(DS.Colour.ink)
                     if toolCount > 0 {
                         Text("\(toolCount) tools")
-                            .font(.system(size: 10)).foregroundStyle(Theme.tertiary)
+                            .font(.system(size: 10)).foregroundStyle(DS.Colour.inkTertiary)
                     }
                 }
-                Text(detail).font(.system(size: 11)).foregroundStyle(Theme.tertiary)
+                Text(detail).font(.system(size: 11)).foregroundStyle(DS.Colour.inkTertiary)
                     .lineLimit(2)
             }
             Spacer(minLength: 8)
@@ -191,11 +191,11 @@ private struct ConnectionsList: View {
                 Button(action) {
                     NSWorkspace.shared.open(URL(fileURLWithPath: NSHomeDirectory() + "/.claude.json"))
                 }
-                .buttonStyle(PressableButtonStyle())
+                .buttonStyle(PressableStyle())
                 .font(.system(size: 11))
             } else {
                 Text(status.displayName)
-                    .font(.system(size: 10.5)).foregroundStyle(Theme.tertiary)
+                    .font(.system(size: 10.5)).foregroundStyle(DS.Colour.inkTertiary)
             }
         }
         .padding(11)
@@ -204,12 +204,12 @@ private struct ConnectionsList: View {
 
     private func colour(_ status: ProviderHealth.Status) -> Color {
         switch status {
-        case .healthy:      return Theme.done
-        case .degraded:     return Theme.running
-        case .needsAuth:    return Theme.waiting
-        case .initializing: return Theme.tertiary
-        case .offline:      return Theme.tertiary
-        case .error:        return Theme.failed
+        case .healthy:      return DS.Colour.done
+        case .degraded:     return DS.Colour.running
+        case .needsAuth:    return DS.Colour.waiting
+        case .initializing: return DS.Colour.inkTertiary
+        case .offline:      return DS.Colour.inkTertiary
+        case .error:        return DS.Colour.failed
         }
     }
 }
@@ -220,16 +220,16 @@ private struct SkillsList: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("Skills are short written procedures a bot loads only when they are relevant — how to work in a particular repository, how to deploy a particular app.")
-                .font(.system(size: 11.5)).foregroundStyle(Theme.secondary)
+                .font(.system(size: 11.5)).foregroundStyle(DS.Colour.inkSecondary)
                 .fixedSize(horizontal: false, vertical: true)
 
             VStack(spacing: 10) {
                 Image(systemName: "sparkles")
-                    .font(.system(size: 22)).foregroundStyle(Theme.tertiary)
+                    .font(.system(size: 22)).foregroundStyle(DS.Colour.inkTertiary)
                 Text("No skills yet").font(.system(size: 13, weight: .medium))
-                    .foregroundStyle(Theme.primary)
+                    .foregroundStyle(DS.Colour.ink)
                 Text("When a bot does something well more than once, you will be able to save it here and ask for it by name.")
-                    .font(.system(size: 11.5)).foregroundStyle(Theme.tertiary)
+                    .font(.system(size: 11.5)).foregroundStyle(DS.Colour.inkTertiary)
                     .multilineTextAlignment(.center)
                     .frame(maxWidth: 340)
             }
@@ -248,22 +248,22 @@ private struct ComputersList: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             Text("Where your bots do their work.")
-                .font(.system(size: 11.5)).foregroundStyle(Theme.secondary)
+                .font(.system(size: 11.5)).foregroundStyle(DS.Colour.inkSecondary)
 
             VStack(alignment: .leading, spacing: 10) {
                 HStack(spacing: 10) {
                     Image(systemName: "desktopcomputer").font(.system(size: 15))
-                        .foregroundStyle(Theme.primary)
+                        .foregroundStyle(DS.Colour.ink)
                     VStack(alignment: .leading, spacing: 1) {
                         Text("This Mac").font(.system(size: 13, weight: .semibold))
                         Text("Your real files, browser sessions and apps")
-                            .font(.system(size: 11)).foregroundStyle(Theme.tertiary)
+                            .font(.system(size: 11)).foregroundStyle(DS.Colour.inkTertiary)
                     }
                     Spacer()
-                    Circle().fill(Theme.done).frame(width: 7, height: 7)
+                    Circle().fill(DS.Colour.done).frame(width: 7, height: 7)
                 }
 
-                Divider().overlay(Theme.separator)
+                Divider().overlay(DS.Colour.line)
 
                 permissionRow("Screen Recording", "so a bot can see the screen",
                               granted: permissions.screenRecording, pane: "Privacy_ScreenCapture")
@@ -274,15 +274,15 @@ private struct ComputersList: View {
             .background(Color.white.opacity(0.035), in: RoundedRectangle(cornerRadius: 9))
 
             HStack(spacing: 10) {
-                Image(systemName: "cube").font(.system(size: 15)).foregroundStyle(Theme.tertiary)
+                Image(systemName: "cube").font(.system(size: 15)).foregroundStyle(DS.Colour.inkTertiary)
                 VStack(alignment: .leading, spacing: 1) {
                     Text("Container").font(.system(size: 13, weight: .medium))
-                        .foregroundStyle(Theme.secondary)
+                        .foregroundStyle(DS.Colour.inkSecondary)
                     Text("A throwaway machine that cannot touch your Mac")
-                        .font(.system(size: 11)).foregroundStyle(Theme.tertiary)
+                        .font(.system(size: 11)).foregroundStyle(DS.Colour.inkTertiary)
                 }
                 Spacer()
-                Text("Soon").font(.system(size: 10.5)).foregroundStyle(Theme.tertiary)
+                Text("Soon").font(.system(size: 10.5)).foregroundStyle(DS.Colour.inkTertiary)
                     .padding(.horizontal, 7).padding(.vertical, 2)
                     .background(Color.white.opacity(0.05), in: Capsule())
             }
@@ -299,10 +299,10 @@ private struct ComputersList: View {
         HStack(spacing: 9) {
             Image(systemName: granted ? "checkmark.circle.fill" : "exclamationmark.circle")
                 .font(.system(size: 12))
-                .foregroundStyle(granted ? Theme.done : Theme.running)
+                .foregroundStyle(granted ? DS.Colour.done : DS.Colour.running)
             VStack(alignment: .leading, spacing: 1) {
                 Text(title).font(.system(size: 12))
-                Text(why).font(.system(size: 10.5)).foregroundStyle(Theme.tertiary)
+                Text(why).font(.system(size: 10.5)).foregroundStyle(DS.Colour.inkTertiary)
             }
             Spacer()
             if !granted {
@@ -310,7 +310,7 @@ private struct ComputersList: View {
                     ComputerExecutor.requestAccess()
                     ComputerExecutor.openPrivacySettings(pane)
                 }
-                .buttonStyle(PressableButtonStyle())
+                .buttonStyle(PressableStyle())
                 .font(.system(size: 11))
             }
         }
