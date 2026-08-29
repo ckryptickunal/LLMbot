@@ -31,7 +31,7 @@ product, and everything else hangs off it.
 | Where the computer is | Cloud VM | Your Mac (or a container, per bot) |
 | Your files and sessions | No | Yes |
 | Models | Theirs | Yours — Gemini, the local `claude` CLI, anything |
-| Keys | Theirs | Yours, in the macOS Keychain |
+| Keys | Theirs | Yours, in a file only you can read |
 | Usage limits | Weekly cap they set | Yours |
 | App | Electron, 307 MB | Native SwiftUI, no Xcode required to build |
 | Source | Closed | Open |
@@ -90,8 +90,12 @@ dangerous. The mitigations are real but they are not magic:
   instructions**. A page that tells a bot to do something does not get to.
 - **Every decision is written to disk** — every model call, tool call, approval and refusal —
   so a run can be audited after the fact rather than taken on trust.
-- API keys live in the **macOS Keychain**. They are never written to config files, never put in
-  prompts, and are redacted from traces before they are stored.
+- API keys live in **one file only your account can read**
+  (`~/Library/Application Support/Bot-Harness/credentials.json`, mode `0600`). They are never put
+  in prompts, are redacted from traces before those are stored, and no bot can read the file —
+  it is on a permanent deny list the tool layer checks before every file read and every shell
+  command. This is weaker than the Keychain it replaced, and
+  [ADR 0012](docs/decisions/0012-credentials-live-in-an-owner-only-file.md) says exactly how.
 
 Do not point this at anything you cannot afford to have broken until you have read the trace
 from a few runs and believe it.
@@ -117,7 +121,7 @@ from a few runs and believe it.
   **[openclicky](https://github.com/jasonkneen/openclicky)** — native Swift menu-bar companions
   that prove the ScreenCaptureKit + accessibility + local-control-bridge pattern on macOS.
 - **Fable** — the author's own zero-dependency SwiftUI harness, source of the no-Xcode build
-  recipe and the Keychain-backed provider layer.
+  recipe and the provider layer.
 
 ## Licence
 

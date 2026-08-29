@@ -12,6 +12,57 @@ public actor ShellExecutor: CommandRunning {
 
     public init() {}
 
+    // MARK: - Secrets
+
+    /// Two guards, because one is not enough and neither alone is honest.
+    ///
+    /// `FileExecutor` refuses to read the credential file, but the shell is a second door into
+    /// the same filesystem: `cat ~/Library/Application\ Support/Bot-Harness/credentials.json`
+    /// never touches `FileExecutor` at all. While keys lived in the keychain this did not
+    /// matter, because the shell could not read them either. Now it would, so:
+    ///
+    /// 1. **A path guard** refuses a command whose parsed arguments name a floor path. It sees
+    ///    real arguments rather than a substring, so quoting and flag order do not fool it —
+    ///    but a path assembled at runtime, from a variable or a `cd`, still gets through. A
+    ///    guard that claimed otherwise would be theatre.
+    /// 2. **Output redaction** catches what the path guard cannot. It matches on the *value* of
+    ///    each key, so a read that evades the path check still returns `«redacted»` rather than
+    ///    a usable secret. This is the guard that actually holds, because it does not depend on
+    ///    predicting how the file gets opened.
+    ///
+    /// What neither stops is an obfuscated read — `base64`, `xxd`, reading byte ranges — whose
+    /// output does not contain the literal key. That residual risk is recorded in
+    /// `docs/decisions/0012-credentials-live-in-an-owner-only-file.md` rather than papered over.
+
+    public enum ShellError: LocalizedError {
+        case refused(String)
+        public var errorDescription: String? {
+            switch self {
+            case .refused(let pattern):
+                return "Refused: this command names \(pattern), which holds credentials and is "
+                     + "never readable by a bot. Nothing was started."
+            }
+        }
+    }
+
+    /// The offending path, if the command names one no bot may read.
+    ///
+    /// Delegates to the same parser the permission floor uses, rather than searching the raw
+    /// string. A substring search would refuse `cat ./credentials.json` in someone's own
+    /// project — that name is common, and a guard that fires on ordinary work is one people
+    /// learn to route around.
+    static func forbiddenPath(in command: String) -> String? {
+        ShellFloor.readsTheKeyStore(ShellCommandParser.parse(command), raw: command)
+    }
+
+    private func guarded(_ output: CommandOutput) -> CommandOutput {
+        let redactor = StreamingRedactor.forRun()
+        guard !redactor.isEmpty else { return output }
+        return CommandOutput(exitCode: output.exitCode,
+                             stdout: redactor.redact(output.stdout),
+                             stderr: redactor.redact(output.stderr))
+    }
+
     private final class Running: @unchecked Sendable {
         let process: Process
         let name: String
@@ -56,6 +107,13 @@ public actor ShellExecutor: CommandRunning {
     }
 
     public func run(_ command: String, cwd: String?, timeout: TimeInterval) async -> CommandOutput {
+        if let pattern = Self.forbiddenPath(in: command) {
+            return CommandOutput(
+                exitCode: 126, stdout: "",
+                stderr: "Refused: this command names \(pattern), which holds credentials and is "
+                      + "never readable by a bot. Nothing was run.")
+        }
+
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/bin/zsh")
         process.arguments = ["-lc", command]
@@ -80,22 +138,25 @@ public actor ShellExecutor: CommandRunning {
         }
         if process.isRunning {
             process.terminate()
-            return CommandOutput(exitCode: 124,
-                                 stdout: string(outData),
-                                 stderr: "timed out after \(Int(timeout))s")
+            return guarded(CommandOutput(exitCode: 124,
+                                         stdout: string(outData),
+                                         stderr: "timed out after \(Int(timeout))s"))
         }
 
-        return CommandOutput(
+        return guarded(CommandOutput(
             exitCode: process.terminationStatus,
             stdout: string(outData),
             stderr: string(errData)
-        )
+        ))
     }
 
     // MARK: - Long-running
 
     /// Start something and keep working. Returns a handle to read from later.
     public func start(_ command: String, cwd: String?, name: String?) throws -> String {
+        if let pattern = Self.forbiddenPath(in: command) {
+            throw ShellError.refused(pattern)
+        }
         let handle = name ?? "proc-\(processes.count + 1)"
 
         let process = Process()

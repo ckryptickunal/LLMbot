@@ -43,4 +43,5 @@ in `CHANGELOG.md` instead.
 | [0009](0009-port-the-mascot-rather-than-run-it.md) | Port the mascot's animation rather than embed its runtime | accepted | 2026-08-30 |
 | [0010](0010-parse-shell-before-judging-it.md) | Parse a shell command before judging it, and treat "unreadable" as its own answer | accepted | 2026-08-30 |
 | [0010](0010-radix-colour-over-a-macos-override-layer.md) | Radix Colors for surfaces, macOS semantics for everything the OS owns | accepted | 2026-08-30 |
-| [0011](0011-existence-checks-must-not-touch-the-acl.md) | Credential existence checks never touch the keychain ACL | accepted | 2026-08-30 |
+| [0011](0011-existence-checks-must-not-touch-the-acl.md) | Credential existence checks never touch the keychain ACL | superseded by 0012 | 2026-08-30 |
+| [0012](0012-credentials-live-in-an-owner-only-file.md) | Credentials live in an owner-only file, not the Keychain | accepted | 2026-08-30 |

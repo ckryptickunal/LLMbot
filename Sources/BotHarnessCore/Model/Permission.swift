@@ -167,6 +167,15 @@ public enum SafetyFloor: String, Codable, CaseIterable {
     /// Typing a password, API key, card number, or government ID into anything.
     case enteringCredentials
 
+    /// Reading the file this app keeps API keys in.
+    ///
+    /// Its own keys, specifically. A bot that can read them can spend the user's money on any
+    /// machine, not just this one, and can do it long after the run ends — so this is refused
+    /// outright rather than offered as a prompt. There is no legitimate task on the other side
+    /// of that dialog, and a prompt the user can only sensibly answer one way is not a choice,
+    /// it is a trap with a button on it.
+    case readingSecrets
+
     /// Deleting outside the bot's workspace, emptying trash, or any hard delete.
     case destructiveDelete
 
@@ -199,7 +208,7 @@ public enum SafetyFloor: String, Codable, CaseIterable {
     /// consulted.
     public var floorBehaviour: PermissionRule.Behaviour {
         switch self {
-        case .enteringCredentials, .instructionFromUntrustedContent:
+        case .enteringCredentials, .readingSecrets, .instructionFromUntrustedContent:
             // Never delegated. The user does these themselves, in their own hands.
             return .neverAllow
         default:
@@ -211,6 +220,7 @@ public enum SafetyFloor: String, Codable, CaseIterable {
         switch self {
         case .financialTransaction:          return "spends or moves money"
         case .enteringCredentials:           return "would enter a password or key"
+        case .readingSecrets:                return "would read your stored API keys"
         case .destructiveDelete:             return "deletes something outside the workspace"
         case .rewritingSharedHistory:        return "rewrites history other people depend on"
         case .sendingToNewRecipient:         return "sends a message to someone new"

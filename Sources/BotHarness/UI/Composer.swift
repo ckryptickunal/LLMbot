@@ -20,6 +20,19 @@ struct Composer: View {
 
     var body: some View {
         VStack(spacing: DS.Space.md) {
+            // The mascot stands on the composer, which is where Kunal asked for it twice —
+            // the same place Claude Code puts it.
+            //
+            // It belongs here rather than in the empty-conversation block: there it was
+            // orphaned in the middle of the column with nothing beneath it, which read as a
+            // drawing hanging in space rather than a character standing on something. The
+            // floor of its stage is the bottom of this view, so at rest its feet are one
+            // `md` above the field, and it walks the width of the field it is standing on.
+            //
+            // It also carries the run's state, which is the reason it earns permanent space:
+            // the field you are typing into is the thing you are already looking at, so it is
+            // where "working", "needs you" and "that failed" cost nothing to notice.
+            MascotView(mascotState)
             field
             controls
         }
@@ -81,6 +94,22 @@ struct Composer: View {
     }
 
     private var bot: Bot? { store.bot(store.conversation(conversationID)?.participants.first) }
+
+    /// What the mascot is doing, taken from what the runner is doing.
+    ///
+    /// Ordered by what the user most needs to see: being blocked on you beats being busy, and
+    /// being busy beats how the last run ended.
+    private var mascotState: MascotState {
+        if runner.awaiting.values.contains(conversationID) { return .waiting }
+        if runner.isRunning(conversationID) { return .working }
+        switch runner.live[conversationID]?.last?.kind {
+        case .failed:   return .stumped
+        case .finished: return .pleased
+        default:        break
+        }
+        guard store.conversation(conversationID) != nil else { return .asleep }
+        return .walking
+    }
 
     private var canSend: Bool {
         !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
@@ -186,7 +215,7 @@ struct BrainChip: View {
     }
 
     private var fallingBack: Bool { BotRunner.isFallingBack(bot) }
-    private var hasKey: Bool { Keychain.has("gemini") }
+    private var hasKey: Bool { CredentialStore.has("gemini") }
     private var warns: Bool { fallingBack || !hasKey }
 
     /// Says what will actually answer, not what is selected. A control that reports a state

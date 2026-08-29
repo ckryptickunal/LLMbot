@@ -341,7 +341,7 @@ public struct SuccessCriterion: Identifiable, Codable, Hashable {
 public struct Authority: Codable, Hashable {
 
     /// Memberwise initialiser, public so the app and tests can build one.
-    public init(readable: [String] = [], writable: [String] = [], denied: [String] = ["~/.ssh/**", "~/.aws/**", "~/Library/Keychains/**"], granted: Set<String> = [], requiresApproval: Set<String> = [], selfRepair: Bool = true, maySpend: Bool = false) {
+    public init(readable: [String] = [], writable: [String] = [], denied: [String] = Authority.alwaysDenied, granted: Set<String> = [], requiresApproval: Set<String> = [], selfRepair: Bool = true, maySpend: Bool = false) {
         self.readable = readable
         self.writable = writable
         self.denied = denied
@@ -355,7 +355,22 @@ public struct Authority: Codable, Hashable {
     /// Paths the bot may write. Always a subset of readable in practice.
     public var writable: [String] = []
     /// Paths that are refused outright, overriding everything above.
-    public var denied: [String] = ["~/.ssh/**", "~/.aws/**", "~/Library/Keychains/**"]
+    public var denied: [String] = Authority.alwaysDenied
+
+    /// Paths no bot may ever read, whatever else it is granted.
+    ///
+    /// The credential file is on this list and that is not optional. Keys used to live in the
+    /// keychain, where a bot with filesystem access could not reach them no matter what paths
+    /// it held. They now live in a file inside Application Support, so the protection that was
+    /// structural has to become explicit — without this line, moving off the keychain would be
+    /// a straight downgrade rather than a trade.
+    public static let alwaysDenied: [String] = [
+        "~/.ssh/**",
+        "~/.aws/**",
+        "~/Library/Keychains/**",
+        "~/Library/Application Support/Bot-Harness/credentials.json",
+        "~/Library/Application Support/Bot-Harness/credentials.json.tmp",
+    ]
 
     /// Named capabilities, e.g. "github.commit", "shell.exec", "browser.navigate".
     public var granted: Set<String> = []

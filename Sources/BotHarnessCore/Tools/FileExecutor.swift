@@ -23,6 +23,13 @@ public actor FileExecutor {
         let url = URL(fileURLWithPath: expanded).standardizedFileURL
         let real = URL(fileURLWithPath: (url.path as NSString).resolvingSymlinksInPath)
 
+        // The floor is checked separately from the contract's own list, and always. A contract
+        // is decodable from `state.json`, so a document written before a path joined the floor
+        // would otherwise decode into an Authority that silently permits it — which is exactly
+        // how a saved file from last week becomes today's hole.
+        for pattern in Authority.alwaysDenied where matches(real.path, pattern) {
+            throw FileError.denied(real.path, "it holds credentials, and no bot may read it")
+        }
         for pattern in authority.denied where matches(real.path, pattern) {
             throw FileError.denied(real.path, "it is on the never-allowed list")
         }

@@ -31,8 +31,12 @@ public enum ShellFloor {
 
         // Ordered by severity: the first thing found is what the user is told, so the most
         // alarming reading of a command has to be the one that wins.
-        for check in [privilegeEscalation, diskDestruction, remoteCode,
-                      credentialFiles, systemConfiguration, sharedHistory] {
+        let checks: [(ShellParse) -> Outcome?] = [
+            privilegeEscalation, diskDestruction, remoteCode,
+            { credentialFiles($0, raw: command) },
+            systemConfiguration, sharedHistory,
+        ]
+        for check in checks {
             if let outcome = check(parse) { return outcome }
         }
         if let outcome = recursiveDelete(parse, insideWorkspace: insideWorkspace) { return outcome }
@@ -103,11 +107,61 @@ public enum ShellFloor {
     }
 
     /// Anything that would write where the keys live grants somebody access.
-    private static func credentialFiles(_ parse: ShellParse) -> Outcome? {
+    private static func credentialFiles(_ parse: ShellParse, raw: String) -> Outcome? {
         let guarded = [".ssh/", ".aws/", ".gnupg/", ".netrc", "authorized_keys",
                        ".config/gh/", ".kube/config", ".docker/config.json"]
         for path in writtenPaths(parse) where guarded.contains(where: { path.contains($0) }) {
             return .floor(.grantingAccess, because: "it writes to `\(path)`")
+        }
+        if let path = readsTheKeyStore(parse, raw: raw) {
+            return .floor(.readingSecrets, because: "it reads `\(path)`, where this app keeps your API keys")
+        }
+        return nil
+    }
+
+    /// Whether the command reads the file this app keeps API keys in.
+    ///
+    /// Reads, not just writes. Until keys moved out of the keychain, reading them from a shell
+    /// was not possible for any bot, so the floor above only ever needed to watch writes. Now
+    /// the file sits in Application Support like any other, and a plain `cat` would hand a key
+    /// to whatever is driving the session.
+    ///
+    /// Matched on the resolved path and never on the file name alone. `credentials.json` is a
+    /// common name — Google client secrets use it, and plenty of projects have one — so a
+    /// name-only check would refuse ordinary work in someone's own repository, which is both
+    /// wrong and the kind of false alarm that teaches people to ignore the guard.
+    public static func readsTheKeyStore(_ parse: ShellParse, raw: String? = nil) -> String? {
+        // Checked against the raw text as well as the parsed operands, because the store's path
+        // contains a space — "Application Support" — and an unquoted spelling splits into two
+        // operands that individually match nothing. A shell would fail to open that path too,
+        // but "it happens not to work" is not a guarantee, and the next path on this list may
+        // not have a space in it.
+        if let raw {
+            let unescaped = raw.replacingOccurrences(of: "\\ ", with: " ")
+                               .replacingOccurrences(of: "\"", with: "")
+                               .replacingOccurrences(of: "'", with: "")
+            for pattern in Authority.alwaysDenied.map({ expand($0) }) {
+                let stem = pattern.hasSuffix("/**") ? String(pattern.dropLast(3)) : pattern
+                if unescaped.contains(stem) { return stem }
+            }
+        }
+
+        let floor = Authority.alwaysDenied.map { expand($0) }
+        var candidates: [String] = []
+        for command in parse.commands {
+            candidates += command.operands.map { expand($0.value) }
+            candidates += command.redirects.map { expand($0.target.value) }
+        }
+        candidates += parse.redirects.map { expand($0.target.value) }
+
+        for candidate in candidates {
+            for pattern in floor {
+                if pattern.hasSuffix("/**") {
+                    if candidate.hasPrefix(String(pattern.dropLast(2))) { return candidate }
+                } else if candidate == pattern || candidate.hasPrefix(pattern + "/") {
+                    return candidate
+                }
+            }
         }
         return nil
     }

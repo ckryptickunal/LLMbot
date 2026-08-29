@@ -139,7 +139,7 @@ public enum EnvironmentKind: String, Codable, Hashable, CaseIterable {
 /// is a brain, and treating the local CLI as a provider is what lets someone with no API key
 /// at all use this app.
 public enum BrainSpec: Codable, Hashable {
-    /// Google's Gemini API over HTTPS, using a key from the Keychain.
+    /// Google's Gemini API over HTTPS, using a stored key.
     case gemini(model: String)
 
     /// The local `claude` binary in headless streaming mode. Billed to the user's Claude
@@ -176,8 +176,8 @@ public enum BrainSpec: Codable, Hashable {
         }
     }
 
-    /// The Keychain account this brain needs, or nil if it needs no key.
-    public var keychainAccount: String? {
+    /// The stored credential this brain needs, or nil if it needs no key.
+    public var credentialAccount: String? {
         switch self {
         case .gemini:    return "gemini"
         case .anthropic: return "anthropic"

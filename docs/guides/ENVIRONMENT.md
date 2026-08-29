@@ -146,14 +146,25 @@ is cleared. This is a real constraint on sequencing, not a nag.
   `--print`, `--output-format stream-json`, `--input-format stream-json`, `--permission-mode`,
   `--mcp-config`, `--agents`, `--settings`, `--append-system-prompt`, `--model`, `--resume`.
 
-**Bot-Harness stores its own keys in the macOS Keychain under service `app.botharness.keys`
-and nowhere else.** It does not read those `.env` files. Add one with `scripts/set-key.sh gemini`.
+**Bot-Harness stores its own keys in `~/Library/Application Support/Bot-Harness/credentials.json`
+(mode `0600`) and nowhere else.** It does not read those `.env` files, and it no longer uses the
+Keychain — see [ADR 0012](../decisions/0012-credentials-live-in-an-owner-only-file.md) for what
+that costs and what replaces it.
+
+```
+scripts/set-key.sh gemini      # add or replace a key (hidden prompt)
+scripts/set-key.sh --list      # which accounts are set, never the values
+scripts/set-key.sh --remove gemini
+```
+
+If you used an earlier build, a stale Keychain item may still exist. Nothing reads it now; remove
+it with `security delete-generic-password -s app.botharness.keys -a gemini`.
 
 ## Prior art on this machine worth reading before writing code
 
 | Path | Why it matters |
 |---|---|
-| `~/Desktop/FableEnable/` | A zero-dependency SwiftUI macOS app, 2,878 lines, that already solves the SPM-only build, Keychain-backed keys, streaming SSE against Anthropic and OpenAI in pure `URLSession`, a ⌘K palette, and a considered motion system. |
-| `~/Desktop/FableEnable/Sources/Fable/LLM.swift` | Keychain wrapper plus provider failover chain. Directly reusable. |
+| `~/Desktop/FableEnable/` | A zero-dependency SwiftUI macOS app, 2,878 lines, that already solves the SPM-only build, Keychain-backed keys (which Bot-Harness has since moved away from), streaming SSE against Anthropic and OpenAI in pure `URLSession`, a ⌘K palette, and a considered motion system. |
+| `~/Desktop/FableEnable/Sources/Fable/LLM.swift` | Provider failover chain. Its Keychain wrapper is no longer the model Bot-Harness follows. |
 | `~/Desktop/FableEnable/.agents/skills/` | Local design skills: `swiftui-ui-patterns`, `impeccable`, `emil-design-eng`, `make-interfaces-feel-better`. Read before UI work. |
 | `/Applications/Grok Bot.app` | The product being answered. See `docs/research/grok-bot-teardown.md`. |

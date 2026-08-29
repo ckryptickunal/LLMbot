@@ -44,10 +44,17 @@ else
   warn "claude CLI not found — the Claude Code subscription brain will be unavailable"
 fi
 
-if security find-generic-password -s "app.botharness.keys" -a "gemini" >/dev/null 2>&1; then
-  ok "Gemini API key present in Keychain (service app.botharness.keys)"
+STORE="$HOME/Library/Application Support/Bot-Harness/credentials.json"
+if [[ -f "$STORE" ]] && grep -q '"gemini"' "$STORE" 2>/dev/null; then
+  ok "Gemini API key present ($STORE)"
+  MODE=$(stat -f "%OLp" "$STORE")
+  if [[ "$MODE" == "600" ]]; then
+    ok "credentials file is owner-only (mode $MODE)"
+  else
+    warn "credentials file is mode $MODE, not 600 — fix with: chmod 600 \"$STORE\""
+  fi
 else
-  warn "no Gemini key in Keychain — add it in the app, or: scripts/set-key.sh gemini"
+  warn "no Gemini key — add it in the app (Cmd-,), or: scripts/set-key.sh gemini"
 fi
 
 print -P "\n%Boptional sidecars%b"

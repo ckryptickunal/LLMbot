@@ -45,12 +45,12 @@ public struct GeminiAdapter: BrainAdapter {
 
     public var canDriveComputer: Bool { true }
 
-    public func isConfigured() async -> Bool { Keychain.has("gemini") }
+    public func isConfigured() async -> Bool { CredentialStore.has("gemini") }
 
     // MARK: - One turn
 
     public func step(_ request: BrainRequest) async throws -> BrainResponse {
-        guard let key = Keychain.get("gemini") else {
+        guard let key = CredentialStore.get("gemini") else {
             throw BrainError.notConfigured("Your Gemini API key")
         }
 

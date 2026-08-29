@@ -22,6 +22,42 @@ Versioning follows [Semantic Versioning 2.0.0](https://semver.org/spec/v2.0.0.ht
 ## [Unreleased]
 
 ### Security
+- **API keys moved out of the macOS Keychain into an owner-only file.** They now live in
+  `~/Library/Application Support/Bot-Harness/credentials.json` with mode `0600`, in a directory
+  with mode `0700`. This is a **deliberate reduction in security**: the Keychain encrypted keys
+  at rest and tied access to a code signature, and a file does neither, so anything running as
+  you can read it. It was accepted because the Keychain asked for the login password repeatedly
+  and could not be made to stop — an ad-hoc-signed binary's "Always Allow" grant dies with every
+  rebuild, so `swift run Evals` prompted forever. See
+  (docs/decisions/0012-credentials-live-in-an-owner-only-file.md) for the full trade-off,
+  including the one hole this leaves open.
+- **No bot can read the key file, through any door.** The path is on a permanent deny list that
+  the file tool checks *independently of the bot's own contract*, so a `state.json` saved before
+  this change cannot decode into permission to read it. The shell is guarded separately, because
+  `cat` never went through the file tool at all — a new `readingSecrets` floor category refuses
+  it outright rather than asking, since there is no sensible way to answer that prompt. Shell
+  output is also redacted by key value, which catches reads the path guard cannot see.
+  The guard matches full paths only, never file names, so your own project's
+  `credentials.json` still opens normally.
+- **Settings warns if the key file's permissions drift** and offers to repair them. A restore
+  from backup or a sync tool can widen them, and nothing else would notice.
+
+### Changed
+- Settings no longer claims keys are "never written to a file", because they now are. It says
+  they are stored in one file only you can read.
+- `scripts/set-key.sh` writes the file instead of calling `security`, and gained `--list` and
+  `--remove`. `scripts/doctor.sh` reports the file's mode and warns when it is not `600`.
+
+### Removed
+- `Keychain.swift`, and every use of the `security` command line tool for storing keys.
+
+### Migration
+- **Keys already in the Keychain are not carried over**, because reading them would raise the
+  password dialog this change exists to remove. Add yours again in Settings (⌘,) or with
+  `scripts/set-key.sh gemini`. To clear the old item:
+  `security delete-generic-password -s app.botharness.keys -a gemini`.
+
+### Security
 - **The safety floor now reads a shell command instead of scanning it for words.** Four commands
   that used to get past it no longer do: `rm -fr /` (flags in the other order), `rm -rf "$HOME"`
   (home named without a `~`), appending a key to `~/.ssh/authorized_keys` (the floor could not
@@ -61,7 +97,20 @@ Versioning follows [Semantic Versioning 2.0.0](https://semver.org/spec/v2.0.0.ht
   command line tool belongs to that tool, which is why the app was being challenged for it.
 
 ### Added — the mascot
-- **Claude's mascot walks on the strip above the message box.** It leans, looks around, walks
+- **The mascot now shows what the bot is doing.** Six states, all built from the same eleven
+  rectangles: it *walks* when nothing is happening, *trots on the spot* while a run is in
+  progress, *hops twice and then waits* when a run is blocked on your approval, *jumps once*
+  when one finishes, *slumps and sighs* when one fails, and *sleeps with its eyes shut* when
+  there is nothing selected. That is the reason it earns permanent space above the message box:
+  the field you are typing into is already where you are looking.
+- **Claude's mascot walks on the strip above the message box**, standing on the composer
+  rather than hanging in the middle of an empty conversation. Half the size it started at, on
+  a strip about a third as tall.
+- **Its size is one number.** `DS.Size.mascot` is the only mascot dimension: the strip's height
+  and how far it walks are both derived from it, so changing it re-proportions the rest. How far
+  it walks had to become a derived number for that to be true — pinned to the width of the
+  composer, a smaller mascot would have taken the same ten strides across the same distance and
+  skated instead of walked. It leans, looks around, walks
   the width of the composer, then crouches and jumps the rest of the way, on a loop. Ported
   from the public SVG-and-GSAP original rather than embedded — no browser and no animation
   library were added (see docs/decisions/0009-port-the-mascot-rather-than-run-it.md).

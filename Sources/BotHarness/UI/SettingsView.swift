@@ -55,22 +55,34 @@ struct SettingsView: View {
 /// 1. **A stored key is never displayed**, not even masked. There is no read path from this
 ///    screen to a secret; it can write one and ask whether one exists. A settings pane that
 ///    shows you your own key shows it to anyone who opens your laptop, and to any screenshot.
-/// 2. **Keys go straight to the Keychain** — never to `state.json`, a `.env`, a prompt or a trace.
+/// 2. **Keys go to one owner-only file** — never to `state.json`, a `.env`, a prompt or a trace,
+///    and never to a path any bot is allowed to read. The copy below says plainly that they are
+///    on disk, because they are; a settings screen that oversells its own security is worse than
+///    one that admits what it is.
 /// 3. **The brain that needs no key is listed first**, because the fastest path to a working
 ///    app is the one requiring nothing at all.
 struct ProviderSettings: View {
     @State private var present: [String: Bool] = [:]
     @State private var claudeCLIPath: String?
     @State private var justSaved: String?
+    @State private var permissionsDrifted = false
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: DS.Space.xl) {
-                Text("Bot-Harness runs on your own accounts. Keys are stored in the macOS Keychain and are never written to a file, put in a prompt, or recorded in a trace.")
+                Text("Bot-Harness runs on your own accounts. Keys are stored in one file only you can read, and are never put in a prompt, recorded in a trace, or reachable by a bot.")
                     .font(DS.Text.caption)
                     .foregroundStyle(DS.Ink.secondary)
                     .lineSpacing(DS.Text.bodyLineSpacing)
                     .fixedSize(horizontal: false, vertical: true)
+
+                if permissionsDrifted {
+                    ErrorState("Your key file is readable by other accounts on this Mac. "
+                             + "It should be readable only by you — a backup restore or a sync tool can change that.") {
+                        CredentialStore.repairPermissions()
+                        permissionsDrifted = !CredentialStore.permissionsAreCorrect()
+                    }
+                }
 
                 claudeCodeRow
                 Hairline()
@@ -91,7 +103,7 @@ struct ProviderSettings: View {
                          onSave: { save("openai", $0) }, onRemove: { remove("openai") })
 
                 if let justSaved {
-                    Label("Saved \(justSaved) to your Keychain.", systemImage: "checkmark.circle.fill")
+                    Label("Saved \(justSaved).", systemImage: "checkmark.circle.fill")
                         .font(DS.Text.caption)
                         .foregroundStyle(DS.Status.done.mark)
                         .transition(.opacity)
@@ -129,15 +141,17 @@ struct ProviderSettings: View {
     }
 
     private func refresh() {
-        for provider in ["gemini", "anthropic", "openai"] { present[provider] = Keychain.has(provider) }
+        CredentialStore.reload()
+        for provider in ["gemini", "anthropic", "openai"] { present[provider] = CredentialStore.has(provider) }
         claudeCLIPath = Self.findClaudeCLI()
+        permissionsDrifted = !CredentialStore.permissionsAreCorrect()
     }
 
     private func save(_ provider: String, _ value: String) {
         let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
-        Keychain.set(trimmed, account: provider)
-        present[provider] = Keychain.has(provider)
+        CredentialStore.set(trimmed, account: provider)
+        present[provider] = CredentialStore.has(provider)
         withAnimation(DS.Motion.instant) { justSaved = provider }
         Task {
             try? await Task.sleep(for: .seconds(DS.Motion.confirmationDwell))
@@ -146,7 +160,7 @@ struct ProviderSettings: View {
     }
 
     private func remove(_ provider: String) {
-        Keychain.delete(provider)
+        CredentialStore.delete(provider)
         present[provider] = false
     }
 
@@ -333,7 +347,7 @@ struct AboutSettings: View {
 
             path("State", Paths.root.path)
             path("Traces", Paths.traces.path)
-            path("Keychain service", Keychain.service)
+            path("Keys", CredentialStore.location)
 
             Spacer()
 

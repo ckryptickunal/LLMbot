@@ -250,9 +250,9 @@ Link button: **"Open bot settings"** — selects the current bot's inspector and
 Footer: *"Bot-Harness follows your system appearance, language and accessibility settings."* **No theme picker, no language picker.** Apple's guidance is explicit that redundant versions of systemwide settings confuse people; Grok Bot ships both set to "Follow System" and it is a mistake worth not copying. The app is unconditionally dark and that is not a preference.
 
 **2. Brains** — `brain`
-Intro: *"A brain is the model that thinks for a bot. Keys are stored in your Keychain and written only — Bot-Harness cannot read one back to you."*
+Intro: *"A brain is the model that thinks for a bot. Keys are stored in a file only you can read, and written only — Bot-Harness cannot read one back to you."*
 One **expandable** row per provider (not an always-open form). Collapsed: name, one-line purpose, and either a "Key saved" pill (green3 fill, green11 label) or an `[Add key]` `.soft` button. Expanded reveals the `SecureField`, a `[Save]` `.primary`, a `[Remove]` `.plain` destructive, and micro text "Bot-Harness cannot read this back to you."
-Removal confirmation: *"Remove your Gemini key?"* / *"Bots using Gemini will stop until you add another key. The key is deleted from your Keychain."* / `[Cancel]` `[Remove Key]` — non-destructive-styled per the HIG Empty Trash rule.
+Removal confirmation: *"Remove your Gemini key?"* / *"Bots using Gemini will stop until you add another key. The key is deleted from your key file."* / `[Cancel]` `[Remove Key]` — non-destructive-styled per the HIG Empty Trash rule.
 Footer: *"Model and autonomy are chosen per message, in the composer. They change too often to be settings."*
 
 **3. Connections** — `powerplug`

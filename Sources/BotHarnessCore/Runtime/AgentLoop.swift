@@ -57,7 +57,7 @@ public actor AgentLoop {
     private var stuck = StuckDetector()
     private var loopGuard = LoopGuard()
 
-    /// Seeded once per run from the Keychain, so streamed output cannot carry a key into the
+    /// Seeded once per run from the credential store, so streamed output cannot carry a key into the
     /// trace — which, being hash-chained, cannot be edited afterwards.
     private var redactor = StreamingRedactor.forRun()
 

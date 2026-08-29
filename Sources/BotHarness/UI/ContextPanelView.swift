@@ -192,7 +192,7 @@ private struct BotSettingsPane: View {
     }
 
     /// Write the bot's shareable parts to a file: name, label, persona, brain, autonomy. Never
-    /// its workspace path, its history, or anything from the Keychain.
+    /// its workspace path, its history, or any stored credential.
     private func exportTemplate(_ bot: Bot) {
         let template: [String: Any] = [
             "name": bot.name,

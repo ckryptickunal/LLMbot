@@ -12,7 +12,7 @@ import Foundation
 ///
 /// **Shapes no pattern knows.** Regexes catch `sk-…` and `AIza…`. They do not catch a base URL,
 /// a refresh token, or a bearer string with no distinctive prefix. So this redactor is seeded
-/// with the *actual values* held for this run — read once from the Keychain at the start — and
+/// with the *actual values* held for this run — read once from the credential store — and
 /// matches those literally.
 ///
 /// It matters here more than in most places: the trace is append-only and hash-chained, so a
@@ -85,7 +85,7 @@ public struct StreamingRedactor {
     public static func forRun(extra: [String] = []) -> StreamingRedactor {
         var values: [String] = extra
         for account in ["gemini", "anthropic", "openai"] {
-            if let value = Keychain.get(account) { values.append(value) }
+            if let value = CredentialStore.get(account) { values.append(value) }
         }
         return StreamingRedactor(secrets: values)
     }

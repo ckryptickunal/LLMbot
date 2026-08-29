@@ -291,7 +291,9 @@ issue it a capability, and the tool layer refuses without one — even if the mo
 itself otherwise.
 
 **The model never sees credentials.** It calls `github.push(repo:)`; the connector resolves the
-token from the Keychain and injects it into the request. The model sees `success`.
+token from the credential store and injects it into the request. The model sees `success`.
+The store itself is on the permanent deny list, so the model cannot go and read the token
+either — see [ADR 0012](decisions/0012-credentials-live-in-an-owner-only-file.md).
 
 ## Layer 22 — Snapshots and artifacts
 

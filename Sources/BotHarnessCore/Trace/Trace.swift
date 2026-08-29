@@ -334,7 +334,7 @@ extension TraceWriter {
 /// about redacting it, it has already been somewhere.
 ///
 /// It is a filter, not a guarantee. It catches known key shapes; it cannot catch a password
-/// that looks like an English word. The real defence is that credentials live in the Keychain
+/// that looks like an English word. The real defence is that credentials live in a file bots
 /// and are never passed through the agent at all.
 public enum Redactor {
     private static let patterns: [NSRegularExpression] = {

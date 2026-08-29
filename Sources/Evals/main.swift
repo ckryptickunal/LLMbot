@@ -164,7 +164,7 @@ guard !selected.isEmpty else {
     exit(2)
 }
 
-if selected.contains(where: { $0.kind == .live }), !Keychain.has("gemini") {
+if selected.contains(where: { $0.kind == .live }), !CredentialStore.has("gemini") {
     print("""
 
     Live tasks need a Gemini key, and none is stored.
