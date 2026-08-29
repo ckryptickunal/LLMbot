@@ -97,6 +97,8 @@ from a few runs and believe it.
 | | |
 |---|---|
 | [`docs/PRODUCT.md`](docs/PRODUCT.md) | What we are building and what we are deliberately not |
+| [`docs/HARNESS.md`](docs/HARNESS.md) | The 22 harness layers, what each is for, and the order they get built |
+| [`docs/TASK-CONTRACT.md`](docs/TASK-CONTRACT.md) | Objective, urgency, autonomy, authority, constraints, success criteria |
 | [`docs/research/grok-bot-teardown.md`](docs/research/grok-bot-teardown.md) | Evidence-based teardown of the product this answers |
 | [`docs/guides/ENVIRONMENT.md`](docs/guides/ENVIRONMENT.md) | Verified build environment facts and the no-Xcode recipe |
 | [`docs/decisions/`](docs/decisions/) | Every architectural decision, with its falsifier |

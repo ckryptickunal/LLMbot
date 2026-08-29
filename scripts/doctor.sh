@@ -55,6 +55,13 @@ for t in node npm pnpm python3 docker gh; do
   else warn "$t not found"; fi
 done
 
+print -P "\n%Btests%b"
+if [[ -d /Applications/Xcode.app ]]; then
+  ok "Xcode present — scripts/test.sh can run XCTest"
+else
+  warn "no Xcode — XCTest is unavailable, so scripts/test.sh will not run"
+fi
+
 print -P "\n%Bproject%b"
 [[ -f Package.swift || -f app/Package.swift ]] && ok "Swift package present" || warn "no Package.swift yet"
 [[ -d var/traces ]] && ok "trace directory var/traces" || bad "var/traces missing"

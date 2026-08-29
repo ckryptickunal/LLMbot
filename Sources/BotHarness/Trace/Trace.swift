@@ -1,4 +1,5 @@
 import Foundation
+import CryptoKit
 
 /// The decision trace.
 ///
@@ -18,6 +19,11 @@ import Foundation
 ///   disk that will be copied, attached to issues, and read by other agents.
 /// - **Screenshots live beside the trace, referenced by name.** They are the largest and most
 ///   sensitive artifacts, so they are separable: deleting them must not corrupt the trace.
+/// - **Every line carries the hash of the line before it.** Borrowed from bloks, whose audit
+///   log is hash-chained and signed. It costs one SHA-256 per event and turns the file from a
+///   log into evidence: an edited or deleted line breaks the chain and `verifyChain` says
+///   where. Without it, "we log everything" only means "we logged everything nobody wanted to
+///   change afterwards".
 /// - **Failures to trace never fail the work.** Every write is best-effort.
 ///
 /// Layout on disk:
@@ -41,12 +47,20 @@ actor TraceWriter {
     private let steps: URL
     private var sequence: Int = 0
     private var handle: FileHandle?
-    private let encoder: JSONEncoder = {
+
+    /// Hash of the previous record, or the genesis marker for the first one.
+    private var previousHash: String = TraceWriter.genesis
+    /// `.sortedKeys` is not cosmetic here. The chain hashes the encoded bytes, so the
+    /// encoding has to be deterministic — without stable key ordering a record's hash cannot
+    /// be recomputed, and every trace fails verification for no reason.
+    private let encoder: JSONEncoder = TraceWriter.canonicalEncoder
+
+    static var canonicalEncoder: JSONEncoder {
         let e = JSONEncoder()
-        e.outputFormatting = [.withoutEscapingSlashes]
+        e.outputFormatting = [.withoutEscapingSlashes, .sortedKeys]
         e.dateEncodingStrategy = .iso8601
         return e
-    }()
+    }
 
     /// - Parameter root: normally `var/traces` inside Application Support.
     init(root: URL, botName: String) {
@@ -116,10 +130,79 @@ actor TraceWriter {
         handle = nil
     }
 
+    /// Encode, chain, write. The hash covers the record *including* `prev`, so altering any
+    /// earlier line invalidates every line after it rather than only itself.
     private func append(_ event: Event) {
-        guard let handle, var data = try? encoder.encode(event) else { return }
+        guard let handle else { return }
+        var chained = event
+
+        // Redact here rather than at each call site. Every path into the trace goes through
+        // this function, so this is the one place that can guarantee it — and a guarantee
+        // that depends on every caller remembering is not one.
+        chained.summary = Redactor.redact(chained.summary)
+        chained.intent = chained.intent.map(Redactor.redact)
+        chained.arguments = chained.arguments.map(Redactor.redact)
+        chained.output = chained.output.map(Redactor.redact)
+        chained.error = chained.error.map(Redactor.redact)
+        chained.permissionReason = chained.permissionReason.map(Redactor.redact)
+
+        chained.prev = previousHash
+        guard let body = try? encoder.encode(chained) else { return }
+
+        let digest = SHA256.hash(data: body)
+        let hash = digest.map { String(format: "%02x", $0) }.joined()
+        chained.hash = hash
+        previousHash = hash
+
+        guard var data = try? encoder.encode(chained) else { return }
         data.append(0x0A)  // newline
         try? handle.write(contentsOf: data)
+    }
+
+    static let genesis = "genesis"
+
+    /// Re-derive every hash and report the first line that does not match.
+    ///
+    /// Deliberately a static function over a path rather than a method on a live writer: the
+    /// point of verification is to run it on a file somebody handed you, long after the
+    /// process that wrote it is gone.
+    static func verifyChain(at stepsFile: URL) -> ChainStatus {
+        guard let text = try? String(contentsOf: stepsFile, encoding: .utf8) else {
+            return .unreadable
+        }
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        let encoder = canonicalEncoder
+
+        var expectedPrev = genesis
+        var line = 0
+        for raw in text.split(separator: "\n", omittingEmptySubsequences: true) {
+            line += 1
+            guard let data = raw.data(using: .utf8),
+                  var event = try? decoder.decode(Event.self, from: data),
+                  let claimed = event.hash
+            else { return .brokenAt(line: line, reason: "line is not a readable trace record") }
+
+            if event.prev != expectedPrev {
+                return .brokenAt(line: line, reason: "does not follow the previous record")
+            }
+            event.hash = nil
+            guard let body = try? encoder.encode(event) else {
+                return .brokenAt(line: line, reason: "could not be re-encoded for checking")
+            }
+            let recomputed = SHA256.hash(data: body).map { String(format: "%02x", $0) }.joined()
+            if recomputed != claimed {
+                return .brokenAt(line: line, reason: "contents do not match the recorded hash")
+            }
+            expectedPrev = claimed
+        }
+        return .intact(records: line)
+    }
+
+    enum ChainStatus: Equatable {
+        case intact(records: Int)
+        case brokenAt(line: Int, reason: String)
+        case unreadable
     }
 
     private static let stampFormatter: DateFormatter = {
@@ -174,6 +257,12 @@ extension TraceWriter {
         /// Set on a completion event, pointing at the seq of the step it completes.
         var completes: Int?
         var outcome: Outcome?
+
+        // — tamper evidence —
+        /// Hash of the preceding record, or "genesis" for the first.
+        var prev: String?
+        /// SHA-256 of this record with `hash` itself omitted. Set at write time.
+        var hash: String?
 
         var kindRaw: String { kind.rawValue }
 

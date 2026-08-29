@@ -38,3 +38,5 @@ in `CHANGELOG.md` instead.
 | [0004](0004-two-layer-permission-model.md) | Permissions are a natural-language rule layer over an unlowerable floor | accepted | 2026-08-29 |
 | [0005](0005-append-only-jsonl-traces.md) | Decision traces are append-only JSONL on disk, not a database | accepted | 2026-08-29 |
 | [0006](0006-two-brains-gemini-and-claude-cli.md) | Two brains — Gemini for computer use, the local claude CLI for coding | accepted | 2026-08-29 |
+| [0007](0007-cheapest-execution-surface-first.md) | Always take the cheapest execution surface that will work | accepted | 2026-08-29 |
+| [0008](0008-the-verifier-decides-when-a-run-is-over.md) | The verifier decides when a run is over, not the model | accepted | 2026-08-29 |

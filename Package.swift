@@ -19,5 +19,11 @@ let package = Package(
             path: "Sources/Probe",
             swiftSettings: [.swiftLanguageMode(.v5)]
         ),
+        .testTarget(
+            name: "BotHarnessTests",
+            dependencies: ["BotHarness"],
+            path: "Tests/BotHarnessTests",
+            swiftSettings: [.swiftLanguageMode(.v5)]
+        ),
     ]
 )
