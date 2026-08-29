@@ -13,7 +13,7 @@ Build it as a native SwiftUI app, signed with the existing Apple Development ide
 
 First, run `sudo xcode-select -s /Applications/Xcode.app/Contents/Developer`. This one command is the highest-leverage action available: it swaps the stale 15.2 SDK for 26.5 and unlocks actool. Everything else follows from it.
 
-Sign every build with the Apple Development identity (224FA75C1E159B4B50EE901312F3B38632663F97), never with `--sign -`. This is not a polish concern, it is the difference between a working and an unworkable dev loop. Bot-Harness lives entirely on Screen Recording and Accessibility; ad-hoc signing silently revokes both on every rebuild because the designated requirement is a cdhash that changes each compile. I measured both signatures on the same bundle to confirm. Add the `codesign -d -r- | grep 'anchor apple generic'` guard to build.sh so a future agent cannot regress this without the build failing loudly.
+Sign every build with the Apple Development identity (<identity-hash>), never with `--sign -`. This is not a polish concern, it is the difference between a working and an unworkable dev loop. Bot-Harness lives entirely on Screen Recording and Accessibility; ad-hoc signing silently revokes both on every rebuild because the designated requirement is a cdhash that changes each compile. I measured both signatures on the same bundle to confirm. Add the `codesign -d -r- | grep 'anchor apple generic'` guard to build.sh so a future agent cannot regress this without the build failing loudly.
 
 Choose XcodeGen over the hand-rolled SwiftPM script as the primary path. Both work, but XcodeGen gets the current SDK, real asset catalogs, hardened runtime and signing declaratively from a project.yml you can commit and diff, which matters for the "log every decision for future agents to audit" requirement. Keep the SwiftPM build.sh as a fallback since it is only 20 lines and it does run.
 
@@ -57,7 +57,7 @@ These contradict the original brief, or no live source confirmed them.
 - A SwiftUI macOS .app can be built, bundled, signed, verified and LAUNCHED using only Command Line Tools + SwiftPM. I compiled a three-pane SwiftUI app with /usr/bin/swift build -c release, hand-assembled the bundle, signed it, and it ran (PID 33770). No Xcode needed for this path.  
   — **confirmed** · <local: swift build -c release + manual bundle assembly + codesign + open; pgrep confirmed running process>
 - Ad-hoc signing produces the designated requirement 'cdhash H"94e3aadf..."', which changes on every rebuild. Signing with the machine's Apple Development identity produces the stable DR 'identifier "com.kunal.botharness" and anchor apple generic and certificate leaf[subject.CN] = "Apple Development: ..."'. Measured directly with codesign -d -r- on the same bundle signed both ways.  
-  — **confirmed** · <local: codesign -d -r- on identical bundle signed ad-hoc vs with identity 224FA75C1E159B4B50EE901312F3B38632663F97>
+  — **confirmed** · <local: codesign -d -r- on identical bundle signed ad-hoc vs with identity <identity-hash>>
 - Apple DTS (Quinn 'The Eskimo!') confirms the consequence: 'macOS tracks code identity using the code's designated requirement. Ad hoc signed code does not include a stable DR, and thus macOS is unable to tell that version N+1 of your app is the same code as version N.' Apple's recommended fix is to sign with an Apple-issued identity — Apple Development during development.  
   — **confirmed** · <https://developer.apple.com/forums/thread/795739>
 - NSScreenCaptureUsageDescription DOES NOT EXIST as a macOS Info.plist key. It appears in ZERO system binaries under /System/Library and /usr/lib, whereas NSCameraUsageDescription, NSMicrophoneUsageDescription and NSAppleEventsUsageDescription each appear in 2. NSAccessibilityUsageDescription is likewise absent. Screen Recording and Accessibility are gated purely by TCC via API calls, not by purpose strings.  
@@ -105,8 +105,8 @@ ENVIRONMENT AS MEASURED (2026-08-29)
   Xcode                    -> 26.6 (17F113) at /Applications/Xcode.app, 4.0 GB, SDK 26.5
   xcodegen                 -> 2.45.4 at /opt/homebrew/bin/xcodegen
   node 24.6.0, pnpm 11.2.2, rust NOT installed
-  signing identity         -> 224FA75C1E159B4B50EE901312F3B38632663F97
-                              "Apple Development: kunalbairwa232@gmail.com (PNJ8A4A6JP)"
+  signing identity         -> <identity-hash>
+                              "Apple Development: <your-apple-id> (TEAMID)"
                               Team 233YWRXL6V
 
 STEP 0 — POINT THE TOOLCHAIN AT XCODE (do this first; unlocks SDK 26.5 + actool)
@@ -133,7 +133,7 @@ build.sh (this exact script ran clean end to end):
     #!/bin/bash
     set -euo pipefail
     APP_NAME="BotHarness"; BUNDLE_ID="com.kunal.botharness"
-    SIGN_ID="${SIGN_ID:-224FA75C1E159B4B50EE901312F3B38632663F97}"
+    SIGN_ID="${SIGN_ID:-<identity-hash>}"
     ROOT="$(cd "$(dirname "$0")" && pwd)"; APP="$ROOT/$APP_NAME.app"
     swift build -c release --arch arm64
     rm -rf "$APP"; mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"

@@ -19,7 +19,7 @@ Run `scripts/doctor.sh` to re-verify after any OS or toolchain update.
 | **Selected** developer dir | `/Library/Developer/CommandLineTools` — Swift 6.0.3, SDK 15.2, target `macosx16.0` |
 | **Available** developer dir | `/Applications/Xcode.app` — **Xcode 26.6 (17F113)**, Swift 6.3.3, target `macosx26.0` |
 | SDKs under Xcode | `MacOSX.sdk`, `MacOSX26.sdk`, `MacOSX26.5.sdk` |
-| Signing identity | `Apple Development: kunalbairwa232@gmail.com (PNJ8A4A6JP)` — `224FA75C1E159B4B50EE901312F3B38632663F97` |
+| Signing identity | `Apple Development: <your-apple-id> (TEAMID)` — `<40-hex-identity-hash>` |
 | XcodeGen | 2.45.4 (`/opt/homebrew/bin/xcodegen`) |
 | Node | v24.6.0, npm 11.5.1, pnpm 11.2.2 |
 | Python | 3.10.11 default; **3.11 at `/opt/homebrew/bin/python3.11`**; `uv` 0.9.11 at `~/.local/bin/uv` |
@@ -74,7 +74,7 @@ miserable one.
   ```
   designated => identifier "app.botharness.mac"
                 and anchor apple generic
-                and certificate leaf[subject.CN] = "Apple Development: kunalbairwa232@gmail.com (PNJ8A4A6JP)"
+                and certificate leaf[subject.CN] = "Apple Development: <your-apple-id> (TEAMID)"
                 and certificate 1[field.1.2.840.113635.100.6.2.1] /* exists */
   ```
 

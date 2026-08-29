@@ -38,7 +38,7 @@ this machine concluded no certificate existed. That reading was wrong.
   their own. `spctl` still rejects the bundle, since an Apple Development certificate is not a
   Developer ID.
 - **Verified against:** `security find-identity -v -p codesigning` →
-  `224FA75C1E159B4B50EE901312F3B38632663F97 "Apple Development: kunalbairwa232@gmail.com (PNJ8A4A6JP)"`
+  `<40-hex-identity-hash> "Apple Development: <your-apple-id> (TEAMID)"`
 
 ## Decision
 
@@ -50,7 +50,7 @@ cdhash changed between them; the designated requirement was byte-identical:
 ```
 designated => identifier "app.botharness.mac"
               and anchor apple generic
-              and certificate leaf[subject.CN] = "Apple Development: kunalbairwa232@gmail.com (PNJ8A4A6JP)"
+              and certificate leaf[subject.CN] = "Apple Development: <your-apple-id> (TEAMID)"
               and certificate 1[field.1.2.840.113635.100.6.2.1] /* exists */
 ```
 
