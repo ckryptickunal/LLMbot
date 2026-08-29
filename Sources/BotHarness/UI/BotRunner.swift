@@ -14,13 +14,21 @@ final class BotRunner {
     private let store: Store
     private let registry = ToolRegistry()
 
+    /// One capability registry for the whole app, so MCP servers are connected once and
+    /// their connections are reused across runs rather than respawned per message.
+    private let capabilities = CapabilityRegistry()
+    private var capabilitiesReady = false
+
     private var loops: [UUID: AgentLoop] = [:]
     private var tasks: [UUID: Task<Void, Never>] = [:]
 
     /// Approval prompts waiting on the user, keyed by the message showing them.
     private(set) var awaiting: [UUID: UUID] = [:]
 
-    init(store: Store) { self.store = store }
+    init(store: Store) {
+        self.store = store
+        Task { await capabilities.registerConfiguredMCPServers() }
+    }
 
     func isRunning(_ conversationID: UUID) -> Bool { tasks[conversationID] != nil }
 
@@ -38,7 +46,8 @@ final class BotRunner {
         let trace = TraceWriter(root: Paths.traces, botName: bot.name)
         let loop = AgentLoop(contract: contract, bot: bot, brain: brain,
                              registry: registry, trace: trace,
-                             rules: store.rules(for: bot.id))
+                             rules: store.rules(for: bot.id),
+                             capabilities: capabilities)
         loops[conversationID] = loop
 
         tasks[conversationID] = Task { [weak self] in

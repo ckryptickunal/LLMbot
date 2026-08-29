@@ -21,6 +21,25 @@ Versioning follows [Semantic Versioning 2.0.0](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+### Added — capabilities, and a way to see what happened
+- **A working MCP client**, written against the wire format with no dependencies. stdio and
+  HTTP transports, both verified against real servers. This is the piece that turns a list of
+  hoped-for integrations into real ones: **Perplexity (4 tools), Lightroom (14) and Framer
+  (22) now connect live** — 40 tools that were unreachable before.
+- **Capability registry and resolver.** The agent asks for a capability, not a vendor. Two
+  meta-tools let it extend its own reach mid-task: `capability.search` describes what it needs
+  in plain words and gets back names and one-liners; `capability.load` brings a provider's
+  operations into reach. So "put these in HubSpot" now discovers that HubSpot is not connected
+  and says so, instead of inventing a worse plan.
+- **Provider health with six states** — healthy, degraded, needs sign-in, starting, offline,
+  error. A connector that fails stays visible with the reason and a repair action. Figma
+  Desktop reports "not reachable, is the app running?"; Magic reports its reset API key.
+- **Activity window** (account menu → Activity). Every run, every step, in order: the model's
+  stated intent, the literal arguments, what came back, what the permission system decided and
+  which layer decided it, tokens and cost. It verifies the hash chain on open, because a
+  tamper-evident log nobody checks is just a log.
+- **Connections screen driven by real health**, not a hardcoded list.
+
 ### Fixed — the app now actually responds
 - **Nothing could be sent.** A `TextField` with `axis: .vertical` swallows Return, so
   `.onSubmit` never fired; there was no send button to fall back on; and the field never took
@@ -36,6 +55,13 @@ Versioning follows [Semantic Versioning 2.0.0](https://semver.org/spec/v2.0.0.ht
   an empty result was returned as an empty string — which tells the model nothing and sends it
   round the same call again. Empty results now say so in words.
 - Replies were posted twice, because the closing note repeated what the bot had already said.
+- **Several tools were advertised and unimplemented** — `web.search`, `web.open`,
+  `memory.search`, `memory.save` were all in the catalogue and threw "there is no tool called
+  X" when chosen. That is the tool-layer version of a button that does nothing, and it is how
+  a run asking to search the web ended up listing the root filesystem instead. All four are
+  implemented, and eval H13 now calls every advertised tool so the class cannot come back.
+- **A relative path meant the whole filesystem.** A GUI app's working directory is `/`, so
+  `files.glob path=.` listed the root. Relative paths now resolve to the bot's workspace.
 
 ### Added
 - **A brain switcher**, in the composer where the decision actually gets made. Also an

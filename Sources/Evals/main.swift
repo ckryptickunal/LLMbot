@@ -138,6 +138,11 @@ func run(_ task: EvalTask) async -> Result {
 // MARK: - Entry
 
 let args = CommandLine.arguments.dropFirst()
+
+if args.contains("--connections") {
+    await Connections.run()
+    exit(0)
+}
 let wantsLive = args.contains("--live") || args.contains("--all")
 let wantsHarness = !args.contains("--live") || args.contains("--all")
 let only = args.firstIndex(of: "--task").flatMap { i -> String? in

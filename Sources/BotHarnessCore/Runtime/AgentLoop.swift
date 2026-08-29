@@ -48,6 +48,9 @@ public actor AgentLoop {
     private let trace: TraceWriter
     private let rules: [PermissionRule]
 
+    /// Everything the agent could reach, most of which is deliberately not exposed.
+    private let capabilities: CapabilityRegistry
+
     private let router = CapabilityRouter()
     private let selector = SurfaceSelector()
     private let verifier = Verifier()
@@ -60,11 +63,20 @@ public actor AgentLoop {
     /// resending the whole history.
     private var interactionID: String?
 
+    /// What the bot decided was worth remembering this run. Handed back when the run ends so
+    /// the store can persist it against the bot.
+    private var learned: [MemoryNote] = []
+
+    /// Anything the bot learned during this run.
+    public func memoryLearned() -> [MemoryNote] { learned }
+
     /// Set by the UI when the user answers an approval prompt.
     private var pendingApproval: CheckedContinuation<ApprovalRequest.Answer, Never>?
 
     public init(contract: TaskContract, bot: Bot, brain: any BrainAdapter, registry: ToolRegistry,
-         trace: TraceWriter, rules: [PermissionRule]) {
+         trace: TraceWriter, rules: [PermissionRule],
+         capabilities: CapabilityRegistry = CapabilityRegistry()) {
+        self.capabilities = capabilities
         self.contract = contract
         self.bot = bot
         self.brain = brain
@@ -105,8 +117,11 @@ public actor AgentLoop {
         }
 
         let domains = router.classify(goal) ?? CapabilityRouter.alwaysOn
-        var exposed = await registry.inDomains(domains)
+        // The meta-tools are always present, so a request the router did not anticipate can
+        // still find its way to the right provider instead of simply failing.
+        var exposed = await registry.inDomains(domains) + ToolRegistry.metaTools
         exposed = selector.rank(exposed)
+        var dynamicallyLoaded: [ToolDescriptor] = []
 
         while true {
             // Budget. A verifier that never passes plus a model that never stops is an
@@ -321,7 +336,14 @@ public actor AgentLoop {
             // Tildes have to be expanded here: the path goes into a single-quoted shell
             // argument, where ~ is literal. Left unexpanded, every lookup under ~/Desktop
             // silently matched nothing.
-            let rawRoot = str("path") ?? bot.workspace?.path ?? NSHomeDirectory()
+            let workspace = bot.workspace?.path ?? NSHomeDirectory()
+            var rawRoot = str("path") ?? workspace
+            // A GUI app's working directory is "/", so a relative path silently means the
+            // whole filesystem. Relative always means the bot's workspace.
+            if rawRoot == "." || rawRoot.isEmpty { rawRoot = workspace }
+            else if !rawRoot.hasPrefix("/") && !rawRoot.hasPrefix("~") {
+                rawRoot = workspace + "/" + rawRoot
+            }
             let root = (rawRoot as NSString).expandingTildeInPath
             let pattern = str("pattern") ?? "*"
 
@@ -405,7 +427,73 @@ public actor AgentLoop {
             try await Task.sleep(for: .seconds(min(seconds, 10)))
             return "waited \(seconds)s"
 
+        // — research —
+        //
+        // These were previously advertised and unimplemented, so the model chose them and got
+        // "there is no tool called web.search". A tool that exists in the catalogue and throws
+        // is the same defect as a button that does nothing.
+        case "web.search", "web.open":
+            let query = str("query") ?? str("url") ?? ""
+            guard !query.isEmpty else { throw Bad.missing("query or url") }
+            if let owner = await capabilities.providerOwning(operation: "perplexity_search") {
+                return try await owner.provider.invoke(
+                    operation: action.name == "web.open" ? "perplexity_ask" : "perplexity_search",
+                    arguments: ["query": query])
+            }
+            switch await capabilities.load("research.perplexity") {
+            case .loaded:
+                if let owner = await capabilities.providerOwning(operation: "perplexity_search") {
+                    return try await owner.provider.invoke(operation: "perplexity_search",
+                                                           arguments: ["query": query])
+                }
+                return "Web search is not available right now."
+            case .unavailable(let why):
+                return "No web search is connected: \(why). Say so rather than guessing an answer."
+            }
+
+        // — memory —
+        case "memory.search":
+            let query = (str("query") ?? "").lowercased()
+            let hits = bot.memory.filter {
+                query.isEmpty || $0.text.lowercased().contains(query) || $0.reason.lowercased().contains(query)
+            }
+            return hits.isEmpty
+                ? "Nothing remembered about that yet."
+                : hits.map { "- \($0.text)" + ($0.reason.isEmpty ? "" : " (\($0.reason))") }
+                       .joined(separator: "\n")
+
+        case "memory.save":
+            guard let text = str("text") else { throw Bad.missing("text") }
+            let note = MemoryNote(text: text, reason: str("reason") ?? "")
+            learned.append(note)
+            return "Noted."
+
+        // — capability discovery —
+        case "capability.search":
+            guard let query = str("query") else { throw Bad.missing("query") }
+            let found = await capabilities.search(query)
+            guard !found.isEmpty else {
+                return "Nothing matches \"\(query)\". Say so plainly rather than inventing a way to do it."
+            }
+            return found.map { entry in
+                let mark = entry.status == .healthy ? "" : " [\(entry.status.displayName)]"
+                return "\(entry.capability.id)\(mark) — \(entry.capability.summary)"
+            }.joined(separator: "\n")
+
+        case "capability.load":
+            guard let id = str("id") else { throw Bad.missing("id") }
+            switch await capabilities.load(id) {
+            case .loaded(let capability):
+                return "Loaded \(capability.id). You can now call: \(capability.operations.joined(separator: ", "))"
+            case .unavailable(let why):
+                return "Cannot use \(id): \(why). Tell the user what needs connecting rather than working around it."
+            }
+
         default:
+            // Anything a loaded capability owns — every MCP tool arrives here.
+            if let owner = await capabilities.providerOwning(operation: action.name) {
+                return try await owner.provider.invoke(operation: action.name, arguments: action.arguments)
+            }
             throw Bad.unknownTool(action.name)
         }
     }

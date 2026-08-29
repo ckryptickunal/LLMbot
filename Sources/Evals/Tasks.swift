@@ -305,7 +305,79 @@ enum EvalSuite {
                 return pushed ? "a never-allow rule did not stop the action" : nil
             },
             rules: [PermissionRule(whenBotWantsTo: "push code to a remote", behaviour: .neverAllow)]),
+
+        EvalTask(
+            id: "H13-every-advertised-tool-is-implemented",
+            category: .recovery,
+            kind: .harness,
+            goal: "call every tool in the catalogue once",
+            criteria: { _ in [] },
+            script: { dir -> [BrainResponse] in
+                // Ask for each built-in tool with plausible arguments. Any that is advertised
+                // but has no dispatch case answers "there is no tool called X" — which is the
+                // tool-layer version of a button that does nothing, and is exactly how the
+                // agent ended up choosing web.search and getting nothing back.
+                // Skip the tools that require approval and the screen tools that need a
+                // real desktop. An unattended eval treats a prompt as a denial, which halts
+                // the run — so probing those here would stop the sweep after one call and
+                // quietly cover almost nothing.
+                let skip: Set<String> = ["files.delete", "git.push",
+                                         "computer.click", "computer.type", "computer.key",
+                                         "computer.screenshot", "computer.launch_app",
+                                         "computer.accessibility_tree", "computer.state",
+                                         "browser.navigate", "browser.click",
+                                         "browser.type", "browser.extract"]
+                return ToolRegistry.builtIn
+                    .filter { !skip.contains($0.id) }
+                    .map { tool in
+                        .call(tool.id, EvalSuite.plausibleArguments(for: tool.id, in: dir),
+                              intent: "probe \(tool.id)")
+                    } + [.say("Probed.")]
+            },
+            assertAfter: { _, outcome in
+                let missing = outcome.events.compactMap { event -> String? in
+                    if case .toolFinished(_, let out, let ok) = event,
+                       !ok, out.contains("there is no tool called") {
+                        return out
+                    }
+                    return nil
+                }
+                return missing.isEmpty ? nil
+                    : "advertised but not implemented: " + missing.joined(separator: "; ")
+            },
+            passRequiresCriteria: false),
     ]
+
+    /// Arguments good enough for a tool to run rather than reject the call. The point of the
+    /// probe is to find tools with no implementation, not to test their validation.
+    static func plausibleArguments(for id: String, in dir: URL) -> [String: Any] {
+        switch id {
+        case "files.read":           return ["path": dir.appendingPathComponent("probe.txt").path]
+        case "files.write":          return ["path": dir.appendingPathComponent("probe.txt").path, "content": "x"]
+        case "files.patch":          return ["path": dir.appendingPathComponent("probe.txt").path, "find": "x", "replace": "y"]
+        case "files.delete":         return ["path": dir.appendingPathComponent("probe.txt").path]
+        case "files.search", "files.glob": return ["pattern": "*", "path": dir.path]
+        case "shell.exec":           return ["command": "true"]
+        case "shell.start_process":  return ["command": "sleep 1", "name": "probe"]
+        case "shell.read_process",
+             "shell.kill_process":   return ["handle": "probe"]
+        case "web.search", "web.open": return ["query": "test", "url": "https://example.com"]
+        case "memory.search":        return ["query": "anything"]
+        case "memory.save":          return ["text": "a fact"]
+        case "capability.search":    return ["query": "photos"]
+        case "capability.load":      return ["id": "computer.files"]
+        case "computer.click", "computer.type", "computer.key",
+             "computer.screenshot", "computer.state",
+             "computer.accessibility_tree", "computer.launch_app":
+            // Screen control needs permissions and a visible desktop; not probed here.
+            return [:]
+        case "git.status", "git.diff": return ["cwd": dir.path]
+        case "git.commit":           return ["message": "probe", "cwd": dir.path]
+        case "git.push":             return ["cwd": dir.path]
+        case "test.run":             return ["cwd": dir.path]
+        default:                     return [:]
+        }
+    }
 
     // MARK: Live — need a real model and a real machine
 

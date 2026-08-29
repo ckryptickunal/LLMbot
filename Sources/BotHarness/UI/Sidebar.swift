@@ -10,6 +10,7 @@ struct Sidebar: View {
     @Environment(Store.self) private var store
     @State private var query = ""
     @State private var library: LibrarySheet.Tab?
+    @Environment(\.openWindow) private var openWindow
 
     var body: some View {
         VStack(spacing: 0) {
@@ -110,6 +111,7 @@ struct Sidebar: View {
                     NSApp.sendAction(Selector(("showSettingsWindow:")), to: nil, from: nil)
                 }
                 Button("Skills…") { library = .skills }
+                Button("Activity…") { openWindow(id: "activity") }
                 Divider()
                 Button("Open trace folder") {
                     NSWorkspace.shared.open(Paths.traces)

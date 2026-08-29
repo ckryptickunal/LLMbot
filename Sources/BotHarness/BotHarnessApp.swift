@@ -22,6 +22,11 @@ struct BotHarnessApp: App {
         }
         .windowStyle(.hiddenTitleBar)
         .defaultSize(width: 1280, height: 820)
+        Window("Activity", id: "activity") {
+            ActivityWindow()
+        }
+        .defaultSize(width: 980, height: 620)
+
         Settings {
             SettingsView().environment(store)
         }

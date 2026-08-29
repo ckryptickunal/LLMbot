@@ -7,8 +7,32 @@ import Foundation
 /// tasks than clicking a screen does.
 extension ToolRegistry {
 
-    public static let builtIn: [ToolDescriptor] = filesTools + shellTools + developmentTools
-        + researchTools + browserTools + computerTools + memoryTools
+    public static let builtIn: [ToolDescriptor] = metaTools + filesTools + shellTools
+        + developmentTools + researchTools + browserTools + computerTools + memoryTools
+
+    // MARK: Meta
+
+    /// The two tools that let the agent extend its own reach mid-task.
+    ///
+    /// Always exposed, regardless of which domains the router picked, because the whole point
+    /// is to cover the case where the router guessed wrong or the needed provider was never
+    /// considered. Without these, a request touching something not in the initial twelve tools
+    /// simply fails, and the model has no way to find out that the capability exists.
+    public static let metaTools: [ToolDescriptor] = [
+        ToolDescriptor(
+            id: "capability.search", domain: .external, surface: .api,
+            summary: "Find capabilities you do not currently have, by describing what you need to do.",
+            schema: #"{"type":"object","properties":{"query":{"type":"string","description":"what you need to do, in plain words"}},"required":["query"]}"#,
+            capability: "capability.read", floorCategory: nil,
+            keywords: ["what can", "is there a", "find a tool", "capability", "integration", "plugin"]),
+
+        ToolDescriptor(
+            id: "capability.load", domain: .external, surface: .api,
+            summary: "Bring a capability's operations into reach so you can call them.",
+            schema: #"{"type":"object","properties":{"id":{"type":"string","description":"a capability id from capability.search"}},"required":["id"]}"#,
+            capability: "capability.read", floorCategory: nil,
+            keywords: ["load", "enable", "connect", "use"]),
+    ]
 
     // MARK: Files
 

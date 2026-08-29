@@ -1,4 +1,5 @@
 import SwiftUI
+import Observation
 import BotHarnessCore
 
 /// Connections, Skills and Computers.
@@ -76,28 +77,88 @@ struct LibrarySheet: View {
 
 // MARK: - Connections
 
+/// What your bots can reach, and the true state of each.
+///
+/// Driven by the capability registry connecting to real servers, not by a hardcoded list. A
+/// connector that needs a key, or whose app is not running, stays visible and says so with an
+/// action next to it — removing it would make the system look like it never supported the
+/// thing, which is both untrue and unfixable from here.
+@MainActor
+@Observable
+final class ConnectionsModel {
+    struct Row: Identifiable {
+        var id: String
+        var name: String
+        var health: ProviderHealth
+        var summary: String
+    }
+
+    private let registry = CapabilityRegistry()
+    private(set) var rows: [Row] = []
+    private(set) var isRefreshing = false
+    private(set) var builtIn: [Capability] = []
+
+    func refresh() async {
+        isRefreshing = true
+        defer { isRefreshing = false }
+
+        await registry.registerConfiguredMCPServers()
+        builtIn = await registry.all().filter { $0.provider == "builtin" }
+
+        let report = await registry.discoverAll()
+        let all = await registry.all()
+        rows = report.map { entry in
+            let summary = all.first { $0.provider == entry.provider }?.summary
+                ?? entry.health.detail
+            return Row(id: entry.provider, name: entry.name, health: entry.health, summary: summary)
+        }
+    }
+}
+
 private struct ConnectionsList: View {
-    @State private var claudeCLI = ProviderSettings.findClaudeCLI()
+    @State private var model = ConnectionsModel()
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            note("What your bots can reach. Model keys live in Settings (⌘,); everything else is listed here.")
+            HStack {
+                Text("What your bots can reach. Model keys are in Settings (⌘,).")
+                    .font(.system(size: 11.5)).foregroundStyle(Theme.secondary)
+                Spacer()
+                if model.isRefreshing {
+                    ProgressView().controlSize(.mini).scaleEffect(0.7)
+                } else {
+                    Button("Refresh") { Task { await model.refresh() } }
+                        .buttonStyle(PressableButtonStyle())
+                        .font(.system(size: 11))
+                }
+            }
 
-            section("Working now")
-            row("Your Mac", "Files, terminal, screen, keyboard and apps",
-                status: .connected, icon: "desktopcomputer")
-            row("Gemini", Keychain.has("gemini") ? "Key saved" : "No key yet",
-                status: Keychain.has("gemini") ? .connected : .needsSetup, icon: "brain")
-            row("Claude Code", claudeCLI == nil ? "CLI not found" : "Signed in, no key needed",
-                status: claudeCLI == nil ? .needsSetup : .connected, icon: "terminal")
+            section("Always available")
+            ForEach(model.builtIn) { capability in
+                row(name: capability.id.replacingOccurrences(of: "computer.", with: "")
+                        .replacingOccurrences(of: "development.", with: "")
+                        .replacingOccurrences(of: "research.", with: "").capitalized,
+                    detail: capability.summary,
+                    status: .healthy, action: nil)
+            }
 
-            section("Not built yet")
-            row("Browser", "Drive Chrome with your logged-in sessions", status: .planned, icon: "globe")
-            row("GitHub", "Issues, pull requests, releases", status: .planned, icon: "chevron.left.forwardslash.chevron.right")
-            row("Gmail and Calendar", "Read, draft, schedule", status: .planned, icon: "envelope")
-            row("Plugins over MCP", "Anything that speaks Model Context Protocol", status: .planned, icon: "puzzlepiece.extension")
+            section("Connectors")
+            if model.rows.isEmpty && !model.isRefreshing {
+                Text("No connectors configured yet.")
+                    .font(.system(size: 11.5)).foregroundStyle(Theme.tertiary)
+            }
+            ForEach(model.rows) { entry in
+                row(name: entry.name,
+                    detail: entry.health.status.isUsable
+                        ? entry.summary
+                        : entry.health.detail,
+                    status: entry.health.status,
+                    action: entry.health.status.action,
+                    toolCount: entry.health.toolCount)
+            }
         }
         .padding(18)
+        .task { await model.refresh() }
     }
 
     private func section(_ title: String) -> some View {
@@ -107,44 +168,49 @@ private struct ConnectionsList: View {
             .padding(.top, 4)
     }
 
-    private func note(_ text: String) -> some View {
-        Text(text).font(.system(size: 11.5)).foregroundStyle(Theme.secondary)
-            .fixedSize(horizontal: false, vertical: true)
-    }
-
-    enum Status { case connected, needsSetup, planned }
-
-    private func row(_ title: String, _ detail: String, status: Status, icon: String) -> some View {
+    private func row(name: String, detail: String, status: ProviderHealth.Status,
+                     action: String?, toolCount: Int = 0) -> some View {
         HStack(spacing: 11) {
-            Image(systemName: icon)
-                .font(.system(size: 13))
-                .foregroundStyle(status == .planned ? Theme.tertiary : Theme.secondary)
-                .frame(width: 20)
+            Circle()
+                .fill(colour(status))
+                .frame(width: 7, height: 7)
             VStack(alignment: .leading, spacing: 2) {
-                Text(title).font(.system(size: 12.5, weight: .medium))
-                    .foregroundStyle(status == .planned ? Theme.secondary : Theme.primary)
+                HStack(spacing: 6) {
+                    Text(name).font(.system(size: 12.5, weight: .medium))
+                        .foregroundStyle(Theme.primary)
+                    if toolCount > 0 {
+                        Text("\(toolCount) tools")
+                            .font(.system(size: 10)).foregroundStyle(Theme.tertiary)
+                    }
+                }
                 Text(detail).font(.system(size: 11)).foregroundStyle(Theme.tertiary)
+                    .lineLimit(2)
             }
-            Spacer()
-            switch status {
-            case .connected:
-                Label("Connected", systemImage: "checkmark.circle.fill")
-                    .labelStyle(.iconOnly)
-                    .foregroundStyle(Theme.done)
-            case .needsSetup:
-                Button("Set up") {
-                    NSApp.sendAction(Selector(("showSettingsWindow:")), to: nil, from: nil)
+            Spacer(minLength: 8)
+            if let action {
+                Button(action) {
+                    NSWorkspace.shared.open(URL(fileURLWithPath: NSHomeDirectory() + "/.claude.json"))
                 }
                 .buttonStyle(PressableButtonStyle())
                 .font(.system(size: 11))
-            case .planned:
-                Text("Soon").font(.system(size: 10.5)).foregroundStyle(Theme.tertiary)
-                    .padding(.horizontal, 7).padding(.vertical, 2)
-                    .background(Color.white.opacity(0.05), in: Capsule())
+            } else {
+                Text(status.displayName)
+                    .font(.system(size: 10.5)).foregroundStyle(Theme.tertiary)
             }
         }
         .padding(11)
         .background(Color.white.opacity(0.035), in: RoundedRectangle(cornerRadius: 9))
+    }
+
+    private func colour(_ status: ProviderHealth.Status) -> Color {
+        switch status {
+        case .healthy:      return Theme.done
+        case .degraded:     return Theme.running
+        case .needsAuth:    return Theme.waiting
+        case .initializing: return Theme.tertiary
+        case .offline:      return Theme.tertiary
+        case .error:        return Theme.failed
+        }
     }
 }
 

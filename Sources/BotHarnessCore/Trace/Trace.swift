@@ -266,7 +266,7 @@ extension TraceWriter {
 
         var kindRaw: String { kind.rawValue }
 
-        enum Kind: String, Codable {
+        public enum Kind: String, Codable, Sendable {
             case runStarted
             case userMessage
             case modelCall          // request sent
@@ -289,7 +289,7 @@ extension TraceWriter {
         }
     }
 
-    public enum Outcome: String, Codable {
+    public enum Outcome: String, Codable, Sendable {
         case succeeded
         case failed
         case refused
@@ -300,28 +300,28 @@ extension TraceWriter {
     /// The manifest, written once per run. This is what a "which runs went wrong?" query
     /// reads, so it holds the summary numbers rather than requiring a scan of every step.
     public struct RunManifest: Codable {
-        var runID: String = ""
-        var botID: UUID
-        var botName: String
-        var conversationID: UUID
-        var goal: String
-        var brain: String
-        var environment: String
-        var startedAt: Date
-        var finishedAt: Date?
-        var steps: Int = 0
-        var outcome: Outcome?
-        var totalCostUSD: Double = 0
-        var totalPromptTokens: Int = 0
-        var totalCompletionTokens: Int = 0
+        public var runID: String = ""
+        public var botID: UUID
+        public var botName: String
+        public var conversationID: UUID
+        public var goal: String
+        public var brain: String
+        public var environment: String
+        public var startedAt: Date
+        public var finishedAt: Date?
+        public var steps: Int = 0
+        public var outcome: Outcome?
+        public var totalCostUSD: Double = 0
+        public var totalPromptTokens: Int = 0
+        public var totalCompletionTokens: Int = 0
 
         /// Set when the run ended because a human stopped it, so that "failed" is not
         /// confused with "interrupted".
-        var stoppedByUser: Bool = false
+        public var stoppedByUser: Bool = false
 
         /// Free text the agent writes at the end: what it concluded, what it could not do,
         /// what a future run should know. The single most useful field for the next agent.
-        var closingNote: String?
+        public var closingNote: String?
     }
 }
 
