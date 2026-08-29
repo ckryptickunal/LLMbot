@@ -1,3 +1,4 @@
+import BotHarnessCore
 import SwiftUI
 
 /// The three-column cockpit.

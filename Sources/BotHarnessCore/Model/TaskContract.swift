@@ -12,43 +12,60 @@ import Foundation
 /// and above all what the system will accept as *finished*. That machinery is this type.
 ///
 /// See `docs/TASK-CONTRACT.md` for the reasoning behind each field.
-struct TaskContract: Identifiable, Codable, Hashable {
-    var id: UUID = UUID()
-    var botID: UUID
-    var conversationID: UUID
+public struct TaskContract: Identifiable, Codable, Hashable {
+
+    /// Memberwise initialiser, public so the app and tests can build one.
+    public init(id: UUID = UUID(), botID: UUID, conversationID: UUID, objective: String, urgency: Urgency = .normal, autonomy: Autonomy = .confirmBeforeChange, authority: Authority = Authority(), constraints: [String] = [], successCriteria: [SuccessCriterion] = [], spend: Spend = Spend(), startedAt: Date = Date(), closedAt: Date? = nil, closure: Closure? = nil) {
+        self.id = id
+        self.botID = botID
+        self.conversationID = conversationID
+        self.objective = objective
+        self.urgency = urgency
+        self.autonomy = autonomy
+        self.authority = authority
+        self.constraints = constraints
+        self.successCriteria = successCriteria
+        self.spend = spend
+        self.startedAt = startedAt
+        self.closedAt = closedAt
+        self.closure = closure
+    }
+    public var id: UUID = UUID()
+    public var botID: UUID
+    public var conversationID: UUID
 
     /// The outcome this run **owns** — not the task it performs.
     ///
     /// "Look into this signup bug" and "own resolution of this signup bug" differ in terminal
     /// condition, not emphasis. The first is satisfied by an explanation. The second is not
     /// satisfied by anything short of working software.
-    var objective: String
+    public var objective: String
 
     /// How aggressively to pursue it. Sets real budgets, not tone.
-    var urgency: Urgency = .normal
+    public var urgency: Urgency = .normal
 
     /// How much may be decided without asking.
-    var autonomy: Autonomy = .confirmBeforeChange
+    public var autonomy: Autonomy = .confirmBeforeChange
 
     /// What may technically be executed. Enforced by the tool layer, never by the prompt.
-    var authority: Authority = Authority()
+    public var authority: Authority = Authority()
 
     /// What must never happen, layered above the unlowerable `SafetyFloor`.
-    var constraints: [String] = []
+    public var constraints: [String] = []
 
     /// The evidence that proves the run is finished. **The verifier decides, not the model.**
-    var successCriteria: [SuccessCriterion] = []
+    public var successCriteria: [SuccessCriterion] = []
 
     /// What the model has spent so far, against `urgency.budget`.
-    var spend: Spend = Spend()
+    public var spend: Spend = Spend()
 
-    var startedAt: Date = Date()
+    public var startedAt: Date = Date()
 
     /// Set when the run ends, with why.
-    var closedAt: Date?
-    var closure: Closure?
+    public var closedAt: Date?
+    public var closure: Closure?
 
-    enum Closure: String, Codable, Hashable {
+    public enum Closure: String, Codable, Hashable {
         case succeeded          // every success criterion verified
         case escalated          // handed back to the user, with a reason
         case budgetExhausted
@@ -62,7 +79,7 @@ struct TaskContract: Identifiable, Codable, Hashable {
 
 /// Urgency with operational consequences. A level that does not change what the harness
 /// actually does is decoration.
-enum Urgency: String, Codable, Hashable, CaseIterable {
+public enum Urgency: String, Codable, Hashable, CaseIterable {
     /// Thoroughness over speed. Explore alternatives. Do not interrupt unnecessarily.
     case low
 
@@ -76,7 +93,7 @@ enum Urgency: String, Codable, Hashable, CaseIterable {
     /// Interrupt the user only at a hard approval boundary.
     case critical
 
-    var displayName: String {
+    public var displayName: String {
         switch self {
         case .low: return "Low"; case .normal: return "Normal"
         case .high: return "High"; case .critical: return "Critical"
@@ -86,7 +103,7 @@ enum Urgency: String, Codable, Hashable, CaseIterable {
     /// The behavioural instruction handed to the model. Short on purpose: the budget below is
     /// what actually enforces this, and the sentence only has to make the model's choices
     /// consistent with it.
-    var doctrine: String {
+    public var doctrine: String {
         switch self {
         case .low:
             return "Optimise for thoroughness. Explore alternatives before committing. Do not interrupt the user unnecessarily."
@@ -99,51 +116,87 @@ enum Urgency: String, Codable, Hashable, CaseIterable {
         }
     }
 
-    var budget: Budget {
+    /// Budgets are expressed in work, not in wall-clock thinking time.
+    ///
+    /// An earlier version capped "planning seconds" per urgency level. That was artificial:
+    /// a wall-clock ceiling on reasoning does not map onto anything the model or the harness
+    /// actually controls, and it punishes a hard problem for being hard. Steps, model calls
+    /// and how many alternatives get explored before committing are real quantities.
+    public var budget: Budget {
         switch self {
-        case .low:      return Budget(planningSeconds: 120, retriesPerStrategy: 4, parallelSubagents: 1, maxSteps: 200, maxModelCalls: 120, observationDepth: .full)
-        case .normal:   return Budget(planningSeconds: 60,  retriesPerStrategy: 3, parallelSubagents: 2, maxSteps: 150, maxModelCalls: 80,  observationDepth: .standard)
-        case .high:     return Budget(planningSeconds: 20,  retriesPerStrategy: 2, parallelSubagents: 3, maxSteps: 120, maxModelCalls: 60,  observationDepth: .shallow)
-        case .critical: return Budget(planningSeconds: 10,  retriesPerStrategy: 2, parallelSubagents: 4, maxSteps: 100, maxModelCalls: 50,  observationDepth: .shallow)
+        case .low:      return Budget(exploreAlternatives: 3, retriesPerStrategy: 4, parallelSubagents: 1, maxSteps: 200, maxModelCalls: 120, observationDepth: .full)
+        case .normal:   return Budget(exploreAlternatives: 2, retriesPerStrategy: 3, parallelSubagents: 1, maxSteps: 150, maxModelCalls: 80,  observationDepth: .standard)
+        case .high:     return Budget(exploreAlternatives: 1, retriesPerStrategy: 2, parallelSubagents: 1, maxSteps: 120, maxModelCalls: 60,  observationDepth: .shallow)
+        case .critical: return Budget(exploreAlternatives: 0, retriesPerStrategy: 2, parallelSubagents: 1, maxSteps: 100, maxModelCalls: 50,  observationDepth: .shallow)
         }
     }
 
     /// At high urgency the harness stops confirming ordinary work and confirms only what the
     /// safety floor protects. Agency without economics becomes pathological; agency without
     /// urgency scaling becomes slow.
-    var confirmsOnlyProtectedActions: Bool { self == .high || self == .critical }
+    public var confirmsOnlyProtectedActions: Bool { self == .high || self == .critical }
 }
 
 /// Hard ceilings for a run. Exceeding one ends the run as `budgetExhausted` rather than
 /// letting it wander.
-struct Budget: Codable, Hashable {
-    var planningSeconds: Int
-    var retriesPerStrategy: Int
-    var parallelSubagents: Int
-    var maxSteps: Int
-    var maxModelCalls: Int
-    var observationDepth: ObservationDepth
+public struct Budget: Codable, Hashable {
+
+    /// Memberwise initialiser, public so the app and tests can build one.
+    public init(exploreAlternatives: Int, retriesPerStrategy: Int, parallelSubagents: Int, maxSteps: Int, maxModelCalls: Int, observationDepth: ObservationDepth, maxSpendUSD: Double? = nil) {
+        self.exploreAlternatives = exploreAlternatives
+        self.retriesPerStrategy = retriesPerStrategy
+        self.parallelSubagents = parallelSubagents
+        self.maxSteps = maxSteps
+        self.maxModelCalls = maxModelCalls
+        self.observationDepth = observationDepth
+        self.maxSpendUSD = maxSpendUSD
+    }
+    /// How many alternative approaches to weigh before committing to one. Zero means take
+    /// the first workable path — correct when something is on fire.
+    public var exploreAlternatives: Int
+
+    public var retriesPerStrategy: Int
+
+    /// Held at 1 everywhere for now, deliberately.
+    ///
+    /// Parallel subagents produce state races, duplicated work, and debugging that is far
+    /// harder than the problem they were spawned for. One agent has to be excellent before
+    /// several are worth having. This field exists so the ceiling is visible rather than
+    /// implicit, not because it is ready to be raised.
+    public var parallelSubagents: Int
+    public var maxSteps: Int
+    public var maxModelCalls: Int
+    public var observationDepth: ObservationDepth
 
     /// Money, in US dollars. Nil means "no explicit cap", which is only appropriate for a
     /// subscription-billed brain.
-    var maxSpendUSD: Double?
+    public var maxSpendUSD: Double?
 
     /// How far up the observation ladder to climb before acting. See `docs/HARNESS.md`.
-    enum ObservationDepth: String, Codable, Hashable {
+    public enum ObservationDepth: String, Codable, Hashable {
         case shallow    // structured state only; escalate only on failure
         case standard   // structured state, then accessibility tree
         case full       // up to and including screenshots and cropped vision
     }
 }
 
-struct Spend: Codable, Hashable {
-    var steps: Int = 0
-    var modelCalls: Int = 0
-    var promptTokens: Int = 0
-    var completionTokens: Int = 0
-    var usd: Double = 0
+public struct Spend: Codable, Hashable {
 
-    func exceeds(_ b: Budget) -> Bool {
+    /// Memberwise initialiser, public so the app and tests can build one.
+    public init(steps: Int = 0, modelCalls: Int = 0, promptTokens: Int = 0, completionTokens: Int = 0, usd: Double = 0) {
+        self.steps = steps
+        self.modelCalls = modelCalls
+        self.promptTokens = promptTokens
+        self.completionTokens = completionTokens
+        self.usd = usd
+    }
+    public var steps: Int = 0
+    public var modelCalls: Int = 0
+    public var promptTokens: Int = 0
+    public var completionTokens: Int = 0
+    public var usd: Double = 0
+
+    public func exceeds(_ b: Budget) -> Bool {
         if steps >= b.maxSteps || modelCalls >= b.maxModelCalls { return true }
         if let cap = b.maxSpendUSD, usd >= cap { return true }
         return false
@@ -154,7 +207,7 @@ struct Spend: Codable, Hashable {
 
 /// How much the bot may decide for itself. A ladder rather than a switch, because "can it act
 /// on its own" is not one question.
-enum Autonomy: Int, Codable, Hashable, CaseIterable, Comparable {
+public enum Autonomy: Int, Codable, Hashable, CaseIterable, Comparable {
     case advisory = 0             // explain only
     case assisted = 1             // suggest actions; the user executes them
     case confirmBeforeChange = 2  // read freely, confirm every write
@@ -162,9 +215,9 @@ enum Autonomy: Int, Codable, Hashable, CaseIterable, Comparable {
     case autonomousOperational = 4 // act across authorised systems, confirm consequential ones
     case delegatedOperator = 5    // broad authority within explicit policy
 
-    static func < (a: Autonomy, b: Autonomy) -> Bool { a.rawValue < b.rawValue }
+    public static func < (a: Autonomy, b: Autonomy) -> Bool { a.rawValue < b.rawValue }
 
-    var displayName: String {
+    public var displayName: String {
         switch self {
         case .advisory:              return "Advisory"
         case .assisted:              return "Assisted"
@@ -175,7 +228,7 @@ enum Autonomy: Int, Codable, Hashable, CaseIterable, Comparable {
         }
     }
 
-    var explanation: String {
+    public var explanation: String {
         switch self {
         case .advisory:              return "Explains what it would do. Changes nothing."
         case .assisted:              return "Proposes actions for you to run yourself."
@@ -186,8 +239,8 @@ enum Autonomy: Int, Codable, Hashable, CaseIterable, Comparable {
         }
     }
 
-    var mayWriteWithoutAsking: Bool { self >= .autonomousWorkspace }
-    var mayActOutsideWorkspace: Bool { self >= .autonomousOperational }
+    public var mayWriteWithoutAsking: Bool { self >= .autonomousWorkspace }
+    public var mayActOutsideWorkspace: Bool { self >= .autonomousOperational }
 }
 
 // MARK: - The agency rule
@@ -200,26 +253,35 @@ enum Autonomy: Int, Codable, Hashable, CaseIterable, Comparable {
 /// Discovering a missing CSS import should not produce "should I add it?" It should produce
 /// adding the import, running the build, opening the page, checking it renders, and carrying
 /// on. This type is what makes that the default rather than a hope.
-struct AgencyCheck {
-    /// Can the bot confidently infer what the user wants here?
-    var intentIsClear: Bool
-    /// Is this inside the objective, rather than adjacent to it?
-    var withinScope: Bool
-    /// Does the contract's authority actually permit it?
-    var authorised: Bool
-    /// Could this be undone in a minute if it turns out wrong?
-    var reversible: Bool
-    /// Does it reach outside this machine — send, publish, spend, deploy?
-    var hasExternalConsequence: Bool
+public struct AgencyCheck {
 
-    enum Verdict: Equatable {
+    /// Memberwise initialiser, public so the app and tests can build one.
+    public init(intentIsClear: Bool, withinScope: Bool, authorised: Bool, reversible: Bool, hasExternalConsequence: Bool) {
+        self.intentIsClear = intentIsClear
+        self.withinScope = withinScope
+        self.authorised = authorised
+        self.reversible = reversible
+        self.hasExternalConsequence = hasExternalConsequence
+    }
+    /// Can the bot confidently infer what the user wants here?
+    public var intentIsClear: Bool
+    /// Is this inside the objective, rather than adjacent to it?
+    public var withinScope: Bool
+    /// Does the contract's authority actually permit it?
+    public var authorised: Bool
+    /// Could this be undone in a minute if it turns out wrong?
+    public var reversible: Bool
+    /// Does it reach outside this machine — send, publish, spend, deploy?
+    public var hasExternalConsequence: Bool
+
+    public enum Verdict: Equatable {
         case act
         case ask(because: String)
     }
 
     /// Every condition must hold, and the failure names itself so the resulting prompt can say
     /// something specific rather than "this needs approval".
-    var verdict: Verdict {
+    public var verdict: Verdict {
         if !intentIsClear          { return .ask(because: "there are two reasonable readings of what you want here") }
         if !withinScope            { return .ask(because: "this is outside what you asked for") }
         if !authorised             { return .ask(because: "this bot does not have authority for that") }
@@ -236,18 +298,27 @@ struct AgencyCheck {
 /// The most important field in the contract, because it is what stops a run being over when
 /// the model says it is. Prefer `.deterministic`: a command whose exit code answers the
 /// question is worth more than a model's opinion about a screenshot.
-struct SuccessCriterion: Identifiable, Codable, Hashable {
-    var id: UUID = UUID()
+public struct SuccessCriterion: Identifiable, Codable, Hashable {
+
+    /// Memberwise initialiser, public so the app and tests can build one.
+    public init(id: UUID = UUID(), statement: String, kind: Kind, verifiedAt: Date? = nil, evidence: String? = nil) {
+        self.id = id
+        self.statement = statement
+        self.kind = kind
+        self.verifiedAt = verifiedAt
+        self.evidence = evidence
+    }
+    public var id: UUID = UUID()
 
     /// Written for the user. "Signup completes in the browser."
-    var statement: String
+    public var statement: String
 
-    var kind: Kind
+    public var kind: Kind
 
-    var verifiedAt: Date?
-    var evidence: String?
+    public var verifiedAt: Date?
+    public var evidence: String?
 
-    enum Kind: Codable, Hashable {
+    public enum Kind: Codable, Hashable {
         /// A command whose exit code decides it. Cheapest and most trustworthy.
         case command(String)
         /// An HTTP request whose status decides it.
@@ -260,25 +331,36 @@ struct SuccessCriterion: Identifiable, Codable, Hashable {
         case judged(question: String)
     }
 
-    var isVerified: Bool { verifiedAt != nil }
+    public var isVerified: Bool { verifiedAt != nil }
 }
 
 // MARK: - Authority
 
 /// What the bot may technically do. Enforced by the tool layer before any model reasoning is
 /// consulted, so a model that has convinced itself it may delete `~/.ssh` still cannot.
-struct Authority: Codable, Hashable {
+public struct Authority: Codable, Hashable {
+
+    /// Memberwise initialiser, public so the app and tests can build one.
+    public init(readable: [String] = [], writable: [String] = [], denied: [String] = ["~/.ssh/**", "~/.aws/**", "~/Library/Keychains/**"], granted: Set<String> = [], requiresApproval: Set<String> = [], selfRepair: Bool = true, maySpend: Bool = false) {
+        self.readable = readable
+        self.writable = writable
+        self.denied = denied
+        self.granted = granted
+        self.requiresApproval = requiresApproval
+        self.selfRepair = selfRepair
+        self.maySpend = maySpend
+    }
     /// Paths the bot may read.
-    var readable: [String] = []
+    public var readable: [String] = []
     /// Paths the bot may write. Always a subset of readable in practice.
-    var writable: [String] = []
+    public var writable: [String] = []
     /// Paths that are refused outright, overriding everything above.
-    var denied: [String] = ["~/.ssh/**", "~/.aws/**", "~/Library/Keychains/**"]
+    public var denied: [String] = ["~/.ssh/**", "~/.aws/**", "~/Library/Keychains/**"]
 
     /// Named capabilities, e.g. "github.commit", "shell.exec", "browser.navigate".
-    var granted: Set<String> = []
+    public var granted: Set<String> = []
     /// Capabilities that exist but need a human first, e.g. "github.merge_main".
-    var requiresApproval: Set<String> = []
+    public var requiresApproval: Set<String> = []
 
     /// Permission to fix its own environment.
     ///
@@ -287,13 +369,13 @@ struct Authority: Codable, Hashable {
     /// directory. An agent that must ask about each of these feels helpless, and the asking
     /// teaches the user to approve without reading. All of these are inside the workspace,
     /// all are reversible, none deserve a prompt.
-    var selfRepair: Bool = true
+    public var selfRepair: Bool = true
 
     /// Spending money, at all. Separate from `granted` because it is the one capability whose
     /// absence should be the default no matter how the rest is configured.
-    var maySpend: Bool = false
+    public var maySpend: Bool = false
 
-    static let selfRepairActions: Set<String> = [
+    public static let selfRepairActions: Set<String> = [
         "install a missing development dependency",
         "restart a crashed browser",
         "kill a stale local process holding a port it needs",
@@ -303,8 +385,8 @@ struct Authority: Codable, Hashable {
         "choose a different local port",
     ]
 
-    func permits(_ capability: String) -> Bool { granted.contains(capability) }
-    func needsApproval(for capability: String) -> Bool { requiresApproval.contains(capability) }
+    public func permits(_ capability: String) -> Bool { granted.contains(capability) }
+    public func needsApproval(for capability: String) -> Bool { requiresApproval.contains(capability) }
 }
 
 // MARK: - Escalation
@@ -313,18 +395,25 @@ struct Authority: Codable, Hashable {
 ///
 /// High agency does not mean never asking. It means asking only when asking is the highest
 /// leverage action available — and then asking in a shape the user can answer in one word.
-struct Escalation: Codable, Hashable {
-    var reason: Reason
+public struct Escalation: Codable, Hashable {
+
+    /// Memberwise initialiser, public so the app and tests can build one.
+    public init(reason: Reason, completed: [String], request: String) {
+        self.reason = reason
+        self.completed = completed
+        self.request = request
+    }
+    public var reason: Reason
 
     /// What is already done. An escalation that does not say this makes the user re-derive
     /// the state of the work before they can answer.
-    var completed: [String]
+    public var completed: [String]
 
     /// The single thing being asked for, stated as a decision rather than an open question.
     /// "I need your approval to deploy commit 4af913 to production" — not "what next?"
-    var request: String
+    public var request: String
 
-    enum Reason: String, Codable, Hashable {
+    public enum Reason: String, Codable, Hashable {
         case permissionNotHeld
         case irreversibleChoice
         case ambiguousIntent

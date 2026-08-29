@@ -12,9 +12,9 @@ import Foundation
 ///
 /// The rule this enforces: **"I performed the action" never means "the objective succeeded."**
 /// A model that clicked Save believes it saved. The harness asks whether anything saved.
-struct Verifier {
+public struct Verifier {
 
-    enum Result: Equatable {
+    public enum Result: Equatable {
         case passed(evidence: String)
         case failed(reason: String)
         /// No deterministic check exists and no judge was available. Treated as failure for
@@ -29,7 +29,7 @@ struct Verifier {
     /// Deterministic kinds are answered by running something. Only `.judged` needs a model,
     /// and it is deliberately last in `SuccessCriterion.Kind` so that writing one feels like
     /// the fallback it is.
-    func verify(_ criterion: SuccessCriterion, using runner: CommandRunning) async -> Result {
+    public func verify(_ criterion: SuccessCriterion, using runner: CommandRunning) async -> Result {
         switch criterion.kind {
         case .command(let cmd):
             let out = await runner.run(cmd)
@@ -64,7 +64,7 @@ struct Verifier {
     /// This is what creates agency. A model that says "I've identified the likely problem" on
     /// a contract whose objective is resolution gets sent back in, and it gets sent back in by
     /// the harness rather than by the user noticing.
-    func completion(of contract: TaskContract) -> Completion {
+    public func completion(of contract: TaskContract) -> Completion {
         let unmet = contract.successCriteria.filter { !$0.isVerified }
         if contract.successCriteria.isEmpty {
             return .cannotTell("this task has no success criteria, so there is nothing to check against")
@@ -72,7 +72,7 @@ struct Verifier {
         return unmet.isEmpty ? .complete : .notComplete(outstanding: unmet.map(\.statement))
     }
 
-    enum Completion: Equatable {
+    public enum Completion: Equatable {
         case complete
         case notComplete(outstanding: [String])
         case cannotTell(String)
@@ -80,7 +80,7 @@ struct Verifier {
 
     /// The message sent back to the model when it stops early. Deliberately flat and factual —
     /// it states what remains, not that the model was wrong.
-    func continuationNotice(outstanding: [String]) -> String {
+    public func continuationNotice(outstanding: [String]) -> String {
         let list = outstanding.map { "- \($0)" }.joined(separator: "\n")
         return """
         Not finished. These success criteria are not yet verified:
@@ -94,14 +94,21 @@ struct Verifier {
 
 /// Anything that can run a command. A protocol so the verifier is testable without a shell,
 /// and so it works identically against a container later.
-protocol CommandRunning: Sendable {
+public protocol CommandRunning: Sendable {
     func run(_ command: String) async -> CommandOutput
 }
 
-struct CommandOutput: Sendable {
-    var exitCode: Int32
-    var stdout: String
-    var stderr: String
+public struct CommandOutput: Sendable {
+
+    /// Memberwise initialiser, public so the app and tests can build one.
+    public init(exitCode: Int32, stdout: String, stderr: String) {
+        self.exitCode = exitCode
+        self.stdout = stdout
+        self.stderr = stderr
+    }
+    public var exitCode: Int32
+    public var stdout: String
+    public var stderr: String
 }
 
 // MARK: - Stuck detection
@@ -112,18 +119,18 @@ struct CommandOutput: Sendable {
 /// fourteen times, each retry costing a screenshot and a model call, and each one failing for
 /// the reason the first one did. The response to being stuck is never "try again" — it is
 /// always "change strategy".
-struct StuckDetector {
+public struct StuckDetector {
     /// How many identical observations before we call it.
-    var repeatThreshold = 3
+    public var repeatThreshold = 3
     /// How many steps with no state change at all before we call it.
-    var noChangeThreshold = 4
+    public var noChangeThreshold = 4
 
     private var recentActions: [String] = []
     private var recentObservations: [String] = []
     private var recentErrors: [String] = []
     private var stepsWithoutChange = 0
 
-    enum Signal: Equatable {
+    public enum Signal: Equatable {
         case repeatingAction(String)
         case repeatingObservation
         case repeatingError(String)
@@ -135,7 +142,7 @@ struct StuckDetector {
     ///
     /// `observation` should be a cheap digest — a hash of the screen, the URL, the exit code —
     /// not the full content.
-    mutating func record(action: String, observation: String, error: String?, stateChanged: Bool) -> Signal? {
+    public mutating func record(action: String, observation: String, error: String?, stateChanged: Bool) -> Signal? {
         recentActions.append(action)
         recentObservations.append(observation)
         if let error { recentErrors.append(error) }
@@ -170,7 +177,7 @@ struct StuckDetector {
         return nil
     }
 
-    mutating func reset() {
+    public mutating func reset() {
         recentActions.removeAll(); recentObservations.removeAll()
         recentErrors.removeAll(); stepsWithoutChange = 0
     }
@@ -184,13 +191,13 @@ struct StuckDetector {
 ///
 /// Each playbook ends at "ask the user" — but only after genuinely different strategies have
 /// been tried, which is what makes an eventual escalation credible rather than lazy.
-enum RecoveryPlaybook {
+public enum RecoveryPlaybook {
 
     /// A GUI click did not do what it should have.
     ///
     /// The first step is the one most agents skip and the one that most often ends the
     /// problem: check whether the click actually worked and the observation was just stale.
-    static let clickFailed: [String] = [
+    public static let clickFailed: [String] = [
         "Check whether the state changed anyway — the action may have worked and the screenshot may be stale.",
         "Re-read the accessibility tree; the control may have moved, been renamed, or be disabled.",
         "Retry by accessible name or element identifier rather than by coordinate.",
@@ -203,7 +210,7 @@ enum RecoveryPlaybook {
 
     /// A test failed. The instruction that matters is *minimally* — the common failure is an
     /// agent that rewrites a module to fix an assertion.
-    static let testFailed: [String] = [
+    public static let testFailed: [String] = [
         "Read the actual failure output before changing anything.",
         "Locate the implementation the failing assertion covers.",
         "Form one hypothesis about the cause and state it.",
@@ -214,7 +221,7 @@ enum RecoveryPlaybook {
 
     /// A command failed for what looks like an environment problem. These are the failures
     /// that make an agent feel helpless, so `Authority.selfRepair` covers most of them.
-    static let environmentFailed: [String] = [
+    public static let environmentFailed: [String] = [
         "Read the error. Distinguish a missing dependency from a wrong invocation.",
         "If a dependency is missing and self-repair is authorised, install it and retry.",
         "If a port is in use, identify the process; if it is stale and yours, stop it and retry.",
@@ -225,7 +232,7 @@ enum RecoveryPlaybook {
     ]
 
     /// A page did not load or behaved unexpectedly.
-    static let browserFailed: [String] = [
+    public static let browserFailed: [String] = [
         "Check the actual HTTP status and the page text before assuming the browser is at fault.",
         "Wait for the network to settle and re-read; the page may simply not have finished.",
         "Dismiss any cookie or consent overlay, choosing the most private option.",
@@ -234,7 +241,7 @@ enum RecoveryPlaybook {
         "Escalate with the URL, the status, and what was expected.",
     ]
 
-    static func forSignal(_ signal: StuckDetector.Signal) -> [String] {
+    public static func forSignal(_ signal: StuckDetector.Signal) -> [String] {
         switch signal {
         case .repeatingAction, .repeatingObservation, .oscillating:
             return clickFailed

@@ -1,3 +1,4 @@
+import BotHarnessCore
 import SwiftUI
 
 /// Application settings. Opened with ⌘, like every other Mac app.
@@ -260,23 +261,11 @@ struct PermissionSettings: View {
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
 
+                // Extracted into its own view. Inline, the row's builder chain took the
+                // type-checker past its budget and failed the build with a timeout rather
+                // than a real error.
                 ForEach(store.globalRules) { rule in
-                    HStack(alignment: .top, spacing: 10) {
-                        Image(systemName: icon(for: rule.behaviour))
-                            .foregroundStyle(colour(for: rule.behaviour))
-                            .font(.system(size: 12))
-                            .frame(width: 16)
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text("When a bot wants to \(rule.whenBotWantsTo)")
-                                .font(.system(size: 12))
-                            Text(rule.behaviour.displayName)
-                                .font(.system(size: 11))
-                                .foregroundStyle(.secondary)
-                        }
-                        Spacer()
-                    }
-                    .padding(9)
-                    .background(Color.primary.opacity(0.04), in: RoundedRectangle(cornerRadius: 7))
+                    RuleRow(rule: rule)
                 }
 
                 Divider()
@@ -306,16 +295,41 @@ struct PermissionSettings: View {
         }
     }
 
-    private func icon(for b: PermissionRule.Behaviour) -> String {
-        switch b {
+}
+
+/// One global rule.
+private struct RuleRow: View {
+    let rule: PermissionRule
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 10) {
+            Image(systemName: icon)
+                .foregroundStyle(colour)
+                .font(.system(size: 12))
+                .frame(width: 16)
+            VStack(alignment: .leading, spacing: 2) {
+                Text("When a bot wants to " + rule.whenBotWantsTo)
+                    .font(.system(size: 12))
+                Text(rule.behaviour.displayName)
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+            }
+            Spacer()
+        }
+        .padding(9)
+        .background(Color.primary.opacity(0.04), in: RoundedRectangle(cornerRadius: 7))
+    }
+
+    private var icon: String {
+        switch rule.behaviour {
         case .allowAutomatically: return "checkmark.circle.fill"
         case .askFirst:           return "hand.raised.fill"
         case .neverAllow:         return "nosign"
         }
     }
 
-    private func colour(for b: PermissionRule.Behaviour) -> Color {
-        switch b {
+    private var colour: Color {
+        switch rule.behaviour {
         case .allowAutomatically: return .green
         case .askFirst:           return .orange
         case .neverAllow:         return .red

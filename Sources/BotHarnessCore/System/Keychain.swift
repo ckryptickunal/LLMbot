@@ -9,13 +9,13 @@ import Security
 /// and never enters a config file the user might commit to a public repository.
 ///
 /// This repository is public. That is not a hypothetical concern.
-enum Keychain {
+public enum Keychain {
     /// One service for everything Bot-Harness stores, with the provider as the account.
     /// Matches the pattern already used by Fable (`app.fable.keys`), so the two apps'
     /// credentials stay separate in Keychain Access.
-    static let service = "app.botharness.keys"
+    public static let service = "app.botharness.keys"
 
-    static func get(_ account: String) -> String? {
+    public static func get(_ account: String) -> String? {
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
@@ -33,7 +33,7 @@ enum Keychain {
     }
 
     @discardableResult
-    static func set(_ value: String, account: String) -> Bool {
+    public static func set(_ value: String, account: String) -> Bool {
         let base: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
@@ -50,7 +50,7 @@ enum Keychain {
         return SecItemAdd(add as CFDictionary, nil) == errSecSuccess
     }
 
-    static func delete(_ account: String) {
+    public static func delete(_ account: String) {
         SecItemDelete([
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
@@ -60,7 +60,7 @@ enum Keychain {
 
     /// Whether a credential exists, without reading it. Used by settings screens and by
     /// `doctor.sh` so that checking configuration never pulls a secret into memory.
-    static func has(_ account: String) -> Bool {
+    public static func has(_ account: String) -> Bool {
         SecItemCopyMatching([
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,

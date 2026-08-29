@@ -1,3 +1,4 @@
+import BotHarnessCore
 import SwiftUI
 
 /// The right-hand panel: either the bot's screen or the bot's settings.

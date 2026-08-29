@@ -9,8 +9,17 @@ let package = Package(
     name: "BotHarness",
     platforms: [.macOS(.v14)],
     targets: [
+        // Everything that is not the interface: models, the agent loop, brains, executors,
+        // the trace. Free of SwiftUI on purpose — that is what lets the tests and the eval
+        // harness link it, which an executable containing SwiftUI views cannot be.
+        .target(
+            name: "BotHarnessCore",
+            path: "Sources/BotHarnessCore",
+            swiftSettings: [.swiftLanguageMode(.v5)]
+        ),
         .executableTarget(
             name: "BotHarness",
+            dependencies: ["BotHarnessCore"],
             path: "Sources/BotHarness",
             swiftSettings: [.swiftLanguageMode(.v5)]
         ),
@@ -21,7 +30,7 @@ let package = Package(
         ),
         .testTarget(
             name: "BotHarnessTests",
-            dependencies: ["BotHarness"],
+            dependencies: ["BotHarnessCore"],
             path: "Tests/BotHarnessTests",
             swiftSettings: [.swiftLanguageMode(.v5)]
         ),

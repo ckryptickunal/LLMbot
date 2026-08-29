@@ -7,12 +7,12 @@ import Foundation
 /// tasks than clicking a screen does.
 extension ToolRegistry {
 
-    static let builtIn: [ToolDescriptor] = filesTools + shellTools + developmentTools
+    public static let builtIn: [ToolDescriptor] = filesTools + shellTools + developmentTools
         + researchTools + browserTools + computerTools + memoryTools
 
     // MARK: Files
 
-    static let filesTools: [ToolDescriptor] = [
+    public static let filesTools: [ToolDescriptor] = [
         ToolDescriptor(
             id: "files.read", domain: .files, surface: .code,
             summary: "Read a file, or a line range of one.",
@@ -58,7 +58,7 @@ extension ToolRegistry {
 
     // MARK: Shell
 
-    static let shellTools: [ToolDescriptor] = [
+    public static let shellTools: [ToolDescriptor] = [
         ToolDescriptor(
             id: "shell.exec", domain: .shell, surface: .code,
             summary: "Run a command and wait for it to finish. For anything that returns promptly.",
@@ -93,7 +93,7 @@ extension ToolRegistry {
 
     // MARK: Development
 
-    static let developmentTools: [ToolDescriptor] = [
+    public static let developmentTools: [ToolDescriptor] = [
         ToolDescriptor(
             id: "git.status", domain: .development, surface: .code,
             summary: "Working tree status: what changed, what is staged, which branch.",
@@ -129,7 +129,7 @@ extension ToolRegistry {
 
     // MARK: Research
 
-    static let researchTools: [ToolDescriptor] = [
+    public static let researchTools: [ToolDescriptor] = [
         ToolDescriptor(
             id: "web.search", domain: .research, surface: .api,
             summary: "Search the web and get titles, URLs and snippets.",
@@ -147,7 +147,7 @@ extension ToolRegistry {
 
     // MARK: Browser
 
-    static let browserTools: [ToolDescriptor] = [
+    public static let browserTools: [ToolDescriptor] = [
         ToolDescriptor(
             id: "browser.navigate", domain: .browser, surface: .structuredBrowser,
             summary: "Point the browser at a URL.",
@@ -175,7 +175,7 @@ extension ToolRegistry {
 
     // MARK: Computer
 
-    static let computerTools: [ToolDescriptor] = [
+    public static let computerTools: [ToolDescriptor] = [
         // Listed before screenshot on purpose. The structured view is cheaper, more precise,
         // and answers most questions a screenshot would have been taken to answer.
         ToolDescriptor(
@@ -226,7 +226,7 @@ extension ToolRegistry {
 
     // MARK: Memory
 
-    static let memoryTools: [ToolDescriptor] = [
+    public static let memoryTools: [ToolDescriptor] = [
         ToolDescriptor(
             id: "memory.search", domain: .memory, surface: .api,
             summary: "Recall what this bot has learned that is relevant now.",

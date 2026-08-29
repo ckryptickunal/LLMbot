@@ -1,5 +1,5 @@
 import XCTest
-@testable import BotHarness
+@testable import BotHarnessCore
 
 /// The trace is the product's evidence. A log nobody can check is a log nobody should trust,
 /// so these tests assert that tampering is actually detected rather than merely discouraged.

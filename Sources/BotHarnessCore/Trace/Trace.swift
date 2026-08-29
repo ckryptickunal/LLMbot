@@ -37,12 +37,12 @@ import CryptoKit
 ///       0007-screen.png
 ///       0012-diff.patch
 /// ```
-actor TraceWriter {
+public actor TraceWriter {
 
     // MARK: Identity of this run
 
-    let runID: String
-    let directory: URL
+    public let runID: String
+    public let directory: URL
 
     private let steps: URL
     private var sequence: Int = 0
@@ -55,7 +55,7 @@ actor TraceWriter {
     /// be recomputed, and every trace fails verification for no reason.
     private let encoder: JSONEncoder = TraceWriter.canonicalEncoder
 
-    static var canonicalEncoder: JSONEncoder {
+    public static var canonicalEncoder: JSONEncoder {
         let e = JSONEncoder()
         e.outputFormatting = [.withoutEscapingSlashes, .sortedKeys]
         e.dateEncodingStrategy = .iso8601
@@ -63,7 +63,7 @@ actor TraceWriter {
     }
 
     /// - Parameter root: normally `var/traces` inside Application Support.
-    init(root: URL, botName: String) {
+    public init(root: URL, botName: String) {
         let stamp = TraceWriter.stampFormatter.string(from: Date())
         let slug = String(UUID().uuidString.prefix(6)).lowercased()
         self.runID = "\(stamp)-\(slug)"
@@ -83,7 +83,7 @@ actor TraceWriter {
     /// Record an event. Returns the sequence number, which callers keep so they can amend
     /// the same step later with its result.
     @discardableResult
-    func record(_ event: Event) -> Int {
+    public func record(_ event: Event) -> Int {
         sequence += 1
         var e = event
         e.seq = sequence
@@ -95,7 +95,7 @@ actor TraceWriter {
     /// Amend an earlier step with how it turned out. Written as a separate line rather than
     /// by rewriting the original, because an append-only file that is never rewritten cannot
     /// be corrupted by a crash halfway through a write.
-    func complete(_ seq: Int, outcome: Outcome, output: String? = nil, error: String? = nil) {
+    public func complete(_ seq: Int, outcome: Outcome, output: String? = nil, error: String? = nil) {
         sequence += 1
         var e = Event(kind: .completion, summary: outcome.rawValue)
         e.seq = sequence
@@ -109,7 +109,7 @@ actor TraceWriter {
 
     /// Store a binary artifact — usually a screenshot — and return the name to reference it
     /// by. Kept out of the JSONL so that traces stay greppable and artifacts stay deletable.
-    func attach(_ data: Data, name: String) -> String {
+    public func attach(_ data: Data, name: String) -> String {
         sequence += 1
         let filename = String(format: "%04d-%@", sequence, name)
         let url = directory.appendingPathComponent("artifacts").appendingPathComponent(filename)
@@ -118,7 +118,7 @@ actor TraceWriter {
     }
 
     /// Write the run manifest. Called when the run ends, however it ends.
-    func finish(_ manifest: RunManifest) {
+    public func finish(_ manifest: RunManifest) {
         var m = manifest
         m.runID = runID
         m.finishedAt = Date()
@@ -159,14 +159,14 @@ actor TraceWriter {
         try? handle.write(contentsOf: data)
     }
 
-    static let genesis = "genesis"
+    public static let genesis = "genesis"
 
     /// Re-derive every hash and report the first line that does not match.
     ///
     /// Deliberately a static function over a path rather than a method on a live writer: the
     /// point of verification is to run it on a file somebody handed you, long after the
     /// process that wrote it is gone.
-    static func verifyChain(at stepsFile: URL) -> ChainStatus {
+    public static func verifyChain(at stepsFile: URL) -> ChainStatus {
         guard let text = try? String(contentsOf: stepsFile, encoding: .utf8) else {
             return .unreadable
         }
@@ -199,7 +199,7 @@ actor TraceWriter {
         return .intact(records: line)
     }
 
-    enum ChainStatus: Equatable {
+    public enum ChainStatus: Equatable {
         case intact(records: Int)
         case brokenAt(line: Int, reason: String)
         case unreadable
@@ -219,7 +219,7 @@ extension TraceWriter {
 
     /// Every kind of thing worth knowing about a run. Deliberately flat: a reader with `jq`
     /// and no knowledge of this codebase should be able to follow a run end to end.
-    struct Event: Codable {
+    public struct Event: Codable {
         var seq: Int = 0
         var at: Date = Date()
         var kind: Kind
@@ -289,7 +289,7 @@ extension TraceWriter {
         }
     }
 
-    enum Outcome: String, Codable {
+    public enum Outcome: String, Codable {
         case succeeded
         case failed
         case refused
@@ -299,7 +299,7 @@ extension TraceWriter {
 
     /// The manifest, written once per run. This is what a "which runs went wrong?" query
     /// reads, so it holds the summary numbers rather than requiring a scan of every step.
-    struct RunManifest: Codable {
+    public struct RunManifest: Codable {
         var runID: String = ""
         var botID: UUID
         var botName: String
@@ -336,7 +336,7 @@ extension TraceWriter {
 /// It is a filter, not a guarantee. It catches known key shapes; it cannot catch a password
 /// that looks like an English word. The real defence is that credentials live in the Keychain
 /// and are never passed through the agent at all.
-enum Redactor {
+public enum Redactor {
     private static let patterns: [NSRegularExpression] = {
         [
             #"sk-ant-[A-Za-z0-9_\-]{20,}"#,
@@ -349,7 +349,7 @@ enum Redactor {
         ].compactMap { try? NSRegularExpression(pattern: $0) }
     }()
 
-    static func redact(_ text: String) -> String {
+    public static func redact(_ text: String) -> String {
         var out = text
         for pattern in patterns {
             out = pattern.stringByReplacingMatches(

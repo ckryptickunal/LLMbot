@@ -1,3 +1,4 @@
+import BotHarnessCore
 import SwiftUI
 
 /// The conversation column — the centre of the product.
@@ -7,6 +8,7 @@ import SwiftUI
 /// timeline, so that the record of the work and the record of the conversation are one thing.
 struct ConversationView: View {
     @Environment(Store.self) private var store
+    @Environment(BotRunner.self) private var runner
     @Binding var showContext: Bool
     @Binding var contextPanel: RootView.ContextPanel
 
@@ -144,8 +146,7 @@ struct ConversationView: View {
         let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty, let id = store.selection else { return }
         draft = ""
-        store.append(Message(author: nil, body: .text(text)), to: id)
-        // The runtime picks this up. Wired in Runtime/AgentLoop.swift.
+        runner.send(text, in: id)
     }
 }
 

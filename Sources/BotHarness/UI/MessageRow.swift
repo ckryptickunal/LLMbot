@@ -1,3 +1,4 @@
+import BotHarnessCore
 import SwiftUI
 
 /// One entry in the timeline. Dispatches on the message body so that prose, tool activity,
@@ -18,7 +19,7 @@ struct MessageRow: View {
             ComputerCard(activity: activity)
 
         case .approval(let request):
-            ApprovalCard(request: request)
+            ApprovalCard(request: request, messageID: message.id)
 
         case .notice(let text):
             Text(text)
@@ -189,7 +190,10 @@ private struct ComputerCard: View {
 /// work it approved, and a bot running unattended will hit approvals when nobody is looking —
 /// a modal blocking the whole window would make every other conversation unusable.
 private struct ApprovalCard: View {
+    @Environment(Store.self) private var store
+    @Environment(BotRunner.self) private var runner
     let request: ApprovalRequest
+    let messageID: UUID
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -226,9 +230,9 @@ private struct ApprovalCard: View {
                     .foregroundStyle(answer == .denied || answer == .deniedAlways ? Theme.failed : Theme.done)
             } else {
                 HStack(spacing: 8) {
-                    approvalButton("Allow once", tint: Theme.done)
-                    approvalButton("Always allow this", tint: Theme.done.opacity(0.7))
-                    approvalButton("Deny", tint: Theme.failed)
+                    approvalButton("Allow once", tint: Theme.done) { answer(.allowedOnce) }
+                    approvalButton("Always allow this", tint: Theme.done.opacity(0.7)) { answer(.allowedAlways) }
+                    approvalButton("Deny", tint: Theme.failed) { answer(.denied) }
                 }
             }
         }
@@ -241,8 +245,13 @@ private struct ApprovalCard: View {
         )
     }
 
-    private func approvalButton(_ title: String, tint: Color) -> some View {
-        Button { } label: {
+    private func answer(_ a: ApprovalRequest.Answer) {
+        guard let conversation = store.selection else { return }
+        runner.answer(a, for: messageID, in: conversation)
+    }
+
+    private func approvalButton(_ title: String, tint: Color, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
             Text(title)
                 .font(.system(size: 12, weight: .medium))
                 .foregroundStyle(tint)

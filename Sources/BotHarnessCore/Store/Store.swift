@@ -16,22 +16,22 @@ import Observation
 /// ~50 MB, at which point message bodies should move to per-conversation files.
 @MainActor
 @Observable
-final class Store {
+public final class Store {
 
     // MARK: State
 
-    private(set) var bots: [Bot] = []
-    private(set) var conversations: [Conversation] = []
+    public private(set) var bots: [Bot] = []
+    public private(set) var conversations: [Conversation] = []
 
     /// Global rules, applied to every bot in addition to that bot's own.
-    private(set) var globalRules: [PermissionRule] = []
+    public private(set) var globalRules: [PermissionRule] = []
 
     /// Which conversation the UI is showing.
-    var selection: UUID?
+    public var selection: UUID?
 
     // MARK: Lifecycle
 
-    init(loadingFrom url: URL = Paths.state) {
+    public init(loadingFrom url: URL = Paths.state) {
         self.stateURL = url
         load()
     }
@@ -41,26 +41,26 @@ final class Store {
 
     // MARK: Reading
 
-    func bot(_ id: UUID?) -> Bot? {
+    public func bot(_ id: UUID?) -> Bot? {
         guard let id else { return nil }
         return bots.first { $0.id == id }
     }
 
-    func conversation(_ id: UUID?) -> Conversation? {
+    public func conversation(_ id: UUID?) -> Conversation? {
         guard let id else { return nil }
         return conversations.first { $0.id == id }
     }
 
     /// Conversations in sidebar order: most recently active first, which is what a messaging
     /// app does and what makes the list feel alive rather than filed.
-    var sortedConversations: [Conversation] {
+    public var sortedConversations: [Conversation] {
         conversations.sorted { $0.lastActivity > $1.lastActivity }
     }
 
     /// Every rule that governs this bot, strongest-first. Global rules and the bot's own are
     /// pooled deliberately: a user who writes "never spend money" once should not have to
     /// write it again for every bot they create.
-    func rules(for botID: UUID) -> [PermissionRule] {
+    public func rules(for botID: UUID) -> [PermissionRule] {
         let own = bot(botID)?.rules ?? []
         return (globalRules + own).sorted { $0.behaviour.strength < $1.behaviour.strength }
     }
@@ -68,7 +68,7 @@ final class Store {
     // MARK: Writing — bots
 
     @discardableResult
-    func createBot(name: String, persona: String = "") -> Bot {
+    public func createBot(name: String, persona: String = "") -> Bot {
         var bot = Bot(name: name)
         bot.persona = persona
         bot.avatar.hue = Double(abs(bot.id.hashValue % 360)) / 360.0
@@ -83,13 +83,13 @@ final class Store {
         return bot
     }
 
-    func update(_ bot: Bot) {
+    public func update(_ bot: Bot) {
         guard let i = bots.firstIndex(where: { $0.id == bot.id }) else { return }
         bots[i] = bot
         scheduleSave()
     }
 
-    func deleteBot(_ id: UUID) {
+    public func deleteBot(_ id: UUID) {
         bots.removeAll { $0.id == id }
         // A channel survives losing one member; a chat does not.
         conversations.removeAll { $0.participants == [id] }
@@ -102,7 +102,7 @@ final class Store {
     // MARK: Writing — conversations
 
     @discardableResult
-    func createChannel(title: String, participants: [UUID], lead: UUID? = nil) -> Conversation {
+    public func createChannel(title: String, participants: [UUID], lead: UUID? = nil) -> Conversation {
         var c = Conversation(participants: participants)
         c.title = title
         c.leadBot = lead
@@ -113,7 +113,7 @@ final class Store {
     }
 
     @discardableResult
-    func append(_ message: Message, to conversationID: UUID) -> UUID {
+    public func append(_ message: Message, to conversationID: UUID) -> UUID {
         guard let i = conversations.firstIndex(where: { $0.id == conversationID }) else {
             return message.id
         }
@@ -126,7 +126,7 @@ final class Store {
     /// Replace a message in place. Used constantly while streaming: the assistant's reply is
     /// appended once and then rewritten as tokens arrive, rather than appending a message per
     /// token.
-    func replace(_ message: Message, in conversationID: UUID) {
+    public func replace(_ message: Message, in conversationID: UUID) {
         guard let c = conversations.firstIndex(where: { $0.id == conversationID }),
               let m = conversations[c].messages.firstIndex(where: { $0.id == message.id })
         else { return }
@@ -138,12 +138,12 @@ final class Store {
 
     // MARK: Writing — rules
 
-    func addGlobalRule(_ rule: PermissionRule) {
+    public func addGlobalRule(_ rule: PermissionRule) {
         globalRules.append(rule)
         scheduleSave()
     }
 
-    func addRule(_ rule: PermissionRule, to botID: UUID) {
+    public func addRule(_ rule: PermissionRule, to botID: UUID) {
         guard let i = bots.firstIndex(where: { $0.id == botID }) else { return }
         bots[i].rules.append(rule)
         scheduleSave()
@@ -189,7 +189,7 @@ final class Store {
         }
     }
 
-    func saveNow() {
+    public func saveNow() {
         let doc = Document(bots: bots, conversations: conversations, globalRules: globalRules)
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]

@@ -11,7 +11,7 @@ import Foundation
 
 /// The unit the router works in. Tools are loaded by domain, never individually, because
 /// intent classification is reliable at this granularity and unreliable below it.
-enum ToolDomain: String, Codable, CaseIterable, Hashable {
+public enum ToolDomain: String, Codable, CaseIterable, Hashable {
     case research      // searching and reading the web
     case browser       // driving a real browser
     case computer      // screen, keyboard, mouse, accessibility
@@ -21,7 +21,7 @@ enum ToolDomain: String, Codable, CaseIterable, Hashable {
     case memory        // what this bot has learned
     case external      // MCP servers and connectors, namespaced by plugin
 
-    var summary: String {
+    public var summary: String {
         switch self {
         case .research:    return "search the web and read pages"
         case .browser:     return "drive a browser: navigate, click, extract, download"
@@ -41,7 +41,7 @@ enum ToolDomain: String, Codable, CaseIterable, Hashable {
 /// selector in `SurfaceSelector`. An agent that pixel-drives everything is the common failure
 /// mode of computer-use demos; an agent that knows `rg authCallback` beats clicking a search
 /// box is the difference between a demo and a tool.
-enum ActionSurface: String, Codable, Hashable, Comparable {
+public enum ActionSurface: String, Codable, Hashable, Comparable {
     /// A real API — typed, structured, no parsing, no ambiguity. Always preferred.
     case api
     /// Shell or a script. Machine-readable, deterministic, cheap.
@@ -54,61 +54,73 @@ enum ActionSurface: String, Codable, Hashable, Comparable {
     case human
 
     /// Lower is cheaper and more reliable, so lower sorts first.
-    var cost: Int {
+    public var cost: Int {
         switch self {
         case .api: return 0; case .code: return 1; case .structuredBrowser: return 2
         case .gui: return 3; case .human: return 4
         }
     }
 
-    static func < (a: ActionSurface, b: ActionSurface) -> Bool { a.cost < b.cost }
+    public static func < (a: ActionSurface, b: ActionSurface) -> Bool { a.cost < b.cost }
 }
 
 // MARK: - Tools
 
 /// One invocable capability.
-struct ToolDescriptor: Identifiable, Codable, Hashable {
-    /// Namespaced: "files.read", "github.create_issue", "computer.click".
-    var id: String
+public struct ToolDescriptor: Identifiable, Codable, Hashable {
 
-    var domain: ToolDomain
-    var surface: ActionSurface
+    /// Memberwise initialiser, public so the app and tests can build one.
+    public init(id: String, domain: ToolDomain, surface: ActionSurface, summary: String, schema: String, capability: String, floorCategory: SafetyFloor? = nil, keywords: [String] = []) {
+        self.id = id
+        self.domain = domain
+        self.surface = surface
+        self.summary = summary
+        self.schema = schema
+        self.capability = capability
+        self.floorCategory = floorCategory
+        self.keywords = keywords
+    }
+    /// Namespaced: "files.read", "github.create_issue", "computer.click".
+    public var id: String
+
+    public var domain: ToolDomain
+    public var surface: ActionSurface
 
     /// One line, written for the model. This is what `tool.search` matches against and what
     /// the model reads when deciding, so it must say what the tool is *for*, not how it works.
-    var summary: String
+    public var summary: String
 
     /// JSON Schema for the arguments. Only sent once the tool is in the active set.
-    var schema: String
+    public var schema: String
 
     /// The capability name checked against `Authority` before this runs.
-    var capability: String
+    public var capability: String
 
     /// Which `SafetyFloor` category this can land in, if any. Used to pre-classify rather than
     /// waiting for a model to notice that a shell command is about to delete something.
-    var floorCategory: SafetyFloor?
+    public var floorCategory: SafetyFloor?
 
     /// Words that should pull this tool in during discovery, beyond its own name and summary.
-    var keywords: [String] = []
+    public var keywords: [String] = []
 }
 
 // MARK: - The registry
 
 /// Holds every tool; hands out very few.
-actor ToolRegistry {
+public actor ToolRegistry {
     private var tools: [String: ToolDescriptor] = [:]
 
-    init(_ initial: [ToolDescriptor] = ToolRegistry.builtIn) {
+    public init(_ initial: [ToolDescriptor] = ToolRegistry.builtIn) {
         for t in initial { tools[t.id] = t }
     }
 
-    func register(_ tool: ToolDescriptor) { tools[tool.id] = tool }
-    func register(contentsOf list: [ToolDescriptor]) { for t in list { tools[t.id] = t } }
-    func remove(_ id: String) { tools.removeValue(forKey: id) }
+    public func register(_ tool: ToolDescriptor) { tools[tool.id] = tool }
+    public func register(contentsOf list: [ToolDescriptor]) { for t in list { tools[t.id] = t } }
+    public func remove(_ id: String) { tools.removeValue(forKey: id) }
 
-    func all() -> [ToolDescriptor] { Array(tools.values).sorted { $0.id < $1.id } }
-    func tool(_ id: String) -> ToolDescriptor? { tools[id] }
-    func inDomains(_ domains: Set<ToolDomain>) -> [ToolDescriptor] {
+    public func all() -> [ToolDescriptor] { Array(tools.values).sorted { $0.id < $1.id } }
+    public func tool(_ id: String) -> ToolDescriptor? { tools[id] }
+    public func inDomains(_ domains: Set<ToolDomain>) -> [ToolDescriptor] {
         tools.values.filter { domains.contains($0.domain) }.sorted { $0.id < $1.id }
     }
 
@@ -117,7 +129,7 @@ actor ToolRegistry {
     /// Returns names and one-line summaries only — never schemas. The model then calls
     /// `describe` or `load` for the handful it actually wants, which is what keeps a registry
     /// of hundreds affordable.
-    func search(_ query: String, limit: Int = 10) -> [(id: String, summary: String)] {
+    public func search(_ query: String, limit: Int = 10) -> [(id: String, summary: String)] {
         let terms = query.lowercased().split(whereSeparator: { !$0.isLetter && !$0.isNumber }).map(String.init)
         guard !terms.isEmpty else { return [] }
 
@@ -152,7 +164,7 @@ actor ToolRegistry {
     }
 
     /// Full schema for one tool.
-    func describe(_ id: String) -> ToolDescriptor? { tools[id] }
+    public func describe(_ id: String) -> ToolDescriptor? { tools[id] }
 }
 
 // MARK: - The capability router
@@ -163,11 +175,11 @@ actor ToolRegistry {
 /// "run the tests", "read that file", "what's on the page" — and spending a model call to
 /// discover that is latency for nothing. The model is consulted only when keywords are silent
 /// or contradictory.
-struct CapabilityRouter {
+public struct CapabilityRouter {
 
     /// Domains that are always available, because a run that cannot read a file or record what
     /// it learned is crippled regardless of the task.
-    static let alwaysOn: Set<ToolDomain> = [.files, .memory]
+    public static let alwaysOn: Set<ToolDomain> = [.files, .memory]
 
     private static let signals: [ToolDomain: [String]] = [
         .research: ["search", "look up", "find out", "research", "who is", "what is", "compare",
@@ -186,7 +198,7 @@ struct CapabilityRouter {
 
     /// Cheap pass. Returns nil when it has no confident opinion, which is the signal to ask a
     /// model rather than guess.
-    func classify(_ text: String) -> Set<ToolDomain>? {
+    public func classify(_ text: String) -> Set<ToolDomain>? {
         let lower = text.lowercased()
         var hits: Set<ToolDomain> = []
         for (domain, words) in Self.signals where words.contains(where: { lower.contains($0) }) {
@@ -198,7 +210,7 @@ struct CapabilityRouter {
 
     /// The prompt used when the keyword pass is silent. Kept here rather than in the brain so
     /// that the router owns its own fallback and can be tested without a model.
-    func classificationPrompt(for text: String) -> String {
+    public func classificationPrompt(for text: String) -> String {
         let list = ToolDomain.allCases.map { "- \($0.rawValue): \($0.summary)" }.joined(separator: "\n")
         return """
         Which capability domains does this request need? Answer with a comma-separated list of \
@@ -211,7 +223,7 @@ struct CapabilityRouter {
         """
     }
 
-    func parse(_ modelAnswer: String) -> Set<ToolDomain> {
+    public func parse(_ modelAnswer: String) -> Set<ToolDomain> {
         let names = modelAnswer.lowercased()
             .split(whereSeparator: { !$0.isLetter })
             .map(String.init)
@@ -231,24 +243,24 @@ struct CapabilityRouter {
 ///
 /// Applying this one rule consistently is worth more to perceived capability than almost any
 /// other single thing in the harness.
-struct SurfaceSelector {
+public struct SurfaceSelector {
 
     /// Rank candidate tools by how cheap and reliable their surface is.
-    func rank(_ candidates: [ToolDescriptor]) -> [ToolDescriptor] {
+    public func rank(_ candidates: [ToolDescriptor]) -> [ToolDescriptor] {
         candidates.sorted { a, b in
             a.surface == b.surface ? a.id < b.id : a.surface < b.surface
         }
     }
 
     /// The best available way to do something, or nil when only the user can.
-    func choose(_ candidates: [ToolDescriptor], authority: Authority) -> ToolDescriptor? {
+    public func choose(_ candidates: [ToolDescriptor], authority: Authority) -> ToolDescriptor? {
         rank(candidates).first { authority.permits($0.capability) || authority.needsApproval(for: $0.capability) }
     }
 
     /// The instruction that goes into the system prompt. Stated as preference rather than
     /// prohibition, because there are real cases for every surface and a hard ban produces
     /// worse behaviour than a strong default.
-    static let doctrine = """
+    public static let doctrine = """
         Choose the cheapest surface that will actually work, in this order:
 
         1. A real API or tool, if one exists for this.
