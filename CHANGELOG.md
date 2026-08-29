@@ -22,6 +22,12 @@ Versioning follows [Semantic Versioning 2.0.0](https://semver.org/spec/v2.0.0.ht
 ## [Unreleased]
 
 ### Added
+- **Settings window (⌘,)** with somewhere to actually put an API key. Three fields — Gemini,
+  Anthropic, OpenAI — writing straight to the macOS Keychain, plus automatic detection of the
+  Claude Code CLI, which needs no key at all. A stored key is never displayed back, not even
+  masked: this screen can write a secret and ask whether one exists, and has no read path.
+  Also shows the global permission rules and the built-in floor that no rule can switch off.
+- `scripts/_toolchain.sh`, sourced by every script, pinning one Swift toolchain.
 - **The harness.** `docs/HARNESS.md` describes 22 capability layers and the order to build
   them; `docs/TASK-CONTRACT.md` describes the six-field contract that governs every run.
 - `TaskContract` — objective, urgency, autonomy, authority, constraints, success criteria.
@@ -65,6 +71,9 @@ Versioning follows [Semantic Versioning 2.0.0](https://semver.org/spec/v2.0.0.ht
   (see `docs/decisions/0003-sign-with-a-real-certificate.md`).
 
 ### Fixed
+- Mixing the two Swift toolchains in one `.build` directory produced an opaque linker failure
+  (`_swift_coroFrameAlloc` undefined, `SwiftUICore` not an allowed client) that reads like a
+  code problem. All scripts now pin the same toolchain, and the symptom is documented.
 - `docs/guides/ENVIRONMENT.md` claimed full Xcode was not installed. It is: Xcode 26.6 with the
   macOS 26.5 SDK and Swift 6.3.3. `xcode-select` merely points at Command Line Tools, so
   `xcodebuild` errors. The document now records the mistake rather than quietly correcting it.

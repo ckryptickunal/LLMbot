@@ -8,13 +8,12 @@
 
 set -euo pipefail
 cd "$(dirname "$0")/.."
+source scripts/_toolchain.sh
 
-XCODE="/Applications/Xcode.app/Contents/Developer"
-
-if [[ ! -d "$XCODE" ]]; then
-  print -u2 "Xcode not found at $XCODE — tests need XCTest, which Command Line Tools does not provide."
-  print -u2 "Either install Xcode, or run the app's checks manually."
+if [[ -z "${DEVELOPER_DIR:-}" ]]; then
+  print -u2 "Xcode not found — tests need XCTest, which Command Line Tools does not provide."
+  print -u2 "Install Xcode, or skip tests and rely on scripts/doctor.sh."
   exit 1
 fi
 
-DEVELOPER_DIR="$XCODE" swift test "$@"
+swift test "$@"

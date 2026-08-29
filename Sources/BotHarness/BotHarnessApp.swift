@@ -13,6 +13,9 @@ struct BotHarnessApp: App {
         }
         .windowStyle(.hiddenTitleBar)
         .defaultSize(width: 1280, height: 820)
+        Settings {
+            SettingsView().environment(store)
+        }
         .commands {
             CommandGroup(replacing: .newItem) {
                 Button("New Bot") { store.createBot(name: "New Bot") }

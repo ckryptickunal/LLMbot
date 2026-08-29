@@ -5,6 +5,7 @@
 
 set -uo pipefail
 cd "$(dirname "$0")/.."
+source scripts/_toolchain.sh
 
 fail=0
 ok()   { print -P "  %F{green}ok%f      $1"; }

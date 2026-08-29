@@ -41,9 +41,28 @@ DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer swift build -c release
 sudo xcode-select -s /Applications/Xcode.app/Contents/Developer
 ```
 
-**Bot-Harness currently builds against the CLT toolchain (Swift 6.0.3 / SDK 15.2) and works.**
-The Xcode toolchain becomes necessary the moment we want macOS 26 SDK APIs — which includes
-the current design language. That switch is a decision, not a default; see `docs/decisions/`.
+**Bot-Harness builds with the Xcode toolchain, pinned by `scripts/_toolchain.sh`.** Every
+script sources it, so `DEVELOPER_DIR` is set the same way everywhere.
+
+### Never mix the two toolchains
+
+Both toolchains can build this app. Neither survives being mixed, and they share one `.build`
+directory, so mixing them is easy to do by accident — running `scripts/test.sh` (which needs
+Xcode for XCTest) and then a bare `swift build` (which defaults to Command Line Tools) is
+enough.
+
+The failure looks like a code problem and is not:
+
+```
+ld: warning: Could not find or use auto-linked library 'swift_DarwinFoundation1'
+ld: warning: cannot link directly with 'SwiftUICore' because product being built
+    is not an allowed client of it
+Undefined symbols for architecture arm64:
+  "_swift_coroFrameAlloc", referenced from: ___swift_coroFrameAllocStub
+```
+
+Object files compiled by Swift 6.3.3 do not link with the 6.0.3 linker. **If you see this,
+`rm -rf .build` and rebuild through the scripts.** Nothing is wrong with the source.
 
 ## Building
 

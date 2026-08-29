@@ -11,6 +11,7 @@
 
 set -euo pipefail
 cd "$(dirname "$0")/.."
+source scripts/_toolchain.sh
 
 CONFIG="${1:-release}"
 NAME="BotHarness"
