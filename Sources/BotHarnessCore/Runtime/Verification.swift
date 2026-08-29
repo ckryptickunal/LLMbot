@@ -14,6 +14,8 @@ import Foundation
 /// A model that clicked Save believes it saved. The harness asks whether anything saved.
 public struct Verifier {
 
+    public init() {}
+
     public enum Result: Equatable {
         case passed(evidence: String)
         case failed(reason: String)
@@ -120,6 +122,8 @@ public struct CommandOutput: Sendable {
 /// the reason the first one did. The response to being stuck is never "try again" — it is
 /// always "change strategy".
 public struct StuckDetector {
+
+    public init() {}
     /// How many identical observations before we call it.
     public var repeatThreshold = 3
     /// How many steps with no state change at all before we call it.

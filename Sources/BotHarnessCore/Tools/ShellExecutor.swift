@@ -10,6 +10,8 @@ public actor ShellExecutor: CommandRunning {
 
     private var processes: [String: Running] = [:]
 
+    public init() {}
+
     private final class Running: @unchecked Sendable {
         let process: Process
         let name: String

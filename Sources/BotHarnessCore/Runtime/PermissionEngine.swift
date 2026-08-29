@@ -141,27 +141,81 @@ public struct PermissionEngine {
 
     // MARK: - Rule matching
 
-    /// Cheap overlap between a rule's plain-language phrasing and the proposed action.
+    /// Does this rule govern this action?
     ///
-    /// This is the deterministic fast path only. A rule like "reply to emails for me" should
-    /// eventually be matched semantically by a small model — the whole point of natural
-    /// language rules is that they cover intent rather than syntax. Until that exists, this
-    /// matches on content words, and **anything it does not match falls through to the
-    /// autonomy default**, which for a new bot means asking. Failing toward asking is the
-    /// correct direction for a component that is knowingly incomplete.
+    /// The eval suite caught the first version of this being dangerously naive. A rule reading
+    /// *"push code to a remote"* failed to match `git push origin main`, because only one of
+    /// its three content words ("push") appears in the command — "code" and "remote" do not.
+    /// A user's safety rule silently did nothing, which is the worst possible failure for this
+    /// component.
+    ///
+    /// Two changes fix it:
+    ///
+    /// **A lexicon of what dangerous verbs actually look like in practice.** Users write
+    /// "push code to a remote"; commands say `git push`. Users write "spend money"; commands
+    /// say `stripe` or `checkout`. Bridging that gap deterministically is worth more than any
+    /// amount of cleverness about word overlap.
+    ///
+    /// **An asymmetric threshold.** A near-miss on a *restricting* rule counts as a match; a
+    /// near-miss on a *permitting* rule does not. Being unsure should never widen what a bot
+    /// may do, and should always narrow it. That asymmetry is the whole safety argument for
+    /// keeping a fuzzy matcher in this position at all.
+    ///
+    /// This is still the deterministic fast path. Genuinely understanding "reply to emails for
+    /// me" needs a small model, and that remains the plan — but it must never be the *only*
+    /// thing standing between a rule and the action it was written to stop.
     private func overlaps(_ rule: String, _ action: ProposedAction) -> Bool {
+        let ruleText = rule.lowercased()
+        let actionText = (action.tool + " " + action.summary + " " + action.detail).lowercased()
+
+        // What people say, and what it looks like when it happens.
+        let lexicon: [(phrases: [String], signals: [String])] = [
+            (["push", "publish code", "upload code"],       ["git push", "git.push", "gh release"]),
+            (["commit"],                                     ["git commit", "git.commit"]),
+            (["merge"],                                      ["git merge", "merge_main", "gh pr merge"]),
+            (["delete", "remove", "erase", "trash"],         ["rm ", "rm -", "unlink", "files.delete", "rmdir"]),
+            (["send", "email", "mail", "message", "reply"],  ["mail", "sendmail", "smtp", "gmail", "message", "send"]),
+            (["post", "tweet", "publish"],                   ["post", "tweet", "publish"]),
+            (["spend", "buy", "purchase", "pay", "money"],   ["stripe", "checkout", "payment", "purchase", "billing"]),
+            (["deploy", "release", "ship"],                  ["deploy", "vercel", "fly deploy", "kubectl apply"]),
+            (["install"],                                    ["install", "brew ", "npm i", "pip install"]),
+            (["restart", "reboot"],                          ["restart", "reboot", "kill "]),
+            (["browse", "website", "web", "internet"],       ["browser.", "http", "curl", "web."]),
+            (["read", "look at", "open"],                    ["files.read", "cat ", "web.read"]),
+            (["change files", "edit", "modify", "write"],    ["files.write", "files.patch", "> ", "tee "]),
+            (["run", "command", "shell", "terminal"],        ["shell.exec", "shell."]),
+        ]
+
+        var strongSignal = false
+        for entry in lexicon where entry.phrases.contains(where: { ruleText.contains($0) }) {
+            if entry.signals.contains(where: { actionText.contains($0) }) { strongSignal = true; break }
+        }
+
+        // Plain word overlap, as a secondary signal.
         let stop: Set<String> = ["the", "a", "an", "my", "me", "for", "to", "of", "in", "on",
                                  "and", "or", "that", "this", "it", "is", "are", "with", "i",
-                                 "you", "your", "any", "some", "gave", "give", "inside"]
-        let words = Set(rule.lowercased()
+                                 "you", "your", "any", "some", "gave", "give", "inside", "from"]
+        let words = Set(ruleText
             .split(whereSeparator: { !$0.isLetter })
             .map(String.init)
             .filter { $0.count > 2 && !stop.contains($0) })
-        guard !words.isEmpty else { return false }
+        let overlap = words.isEmpty ? 0
+            : Double(words.filter { actionText.contains(stem($0)) }.count) / Double(words.count)
 
-        let text = (action.tool + " " + action.summary + " " + action.detail).lowercased()
-        let hits = words.filter { text.contains($0) }.count
-        // Over half the rule's content words present. A single incidental word is not a match.
-        return Double(hits) / Double(words.count) > 0.5
+        // Restricting rules match on any strong signal or a third of the words. Permitting
+        // rules need a strong signal or a clear majority. Uncertainty narrows, never widens.
+        let behaviour = rules.first { $0.whenBotWantsTo.lowercased() == ruleText }?.behaviour
+        let restricting = behaviour != .allowAutomatically
+        return restricting ? (strongSignal || overlap >= 0.34)
+                           : (strongSignal || overlap > 0.6)
+    }
+
+    /// Crude suffix stripping so "pushes" and "pushing" match "push". Not linguistics — just
+    /// enough that a plural in a rule does not defeat it.
+    private func stem(_ word: String) -> String {
+        for suffix in ["ing", "ed", "es", "s"] where word.count > 4 && word.hasSuffix(suffix) {
+            return String(word.dropLast(suffix.count))
+        }
+        return word
     }
 }

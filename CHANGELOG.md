@@ -22,6 +22,20 @@ Versioning follows [Semantic Versioning 2.0.0](https://semver.org/spec/v2.0.0.ht
 ## [Unreleased]
 
 ### Added
+- **The agent loop actually runs.** `observe → context → brain → permission → execute →
+  observe → verify → continue`, with observation escalating from structured state to the
+  accessibility tree to a screenshot only when the cheaper level was not enough.
+- **Gemini brain adapter**, behind a provider-neutral `BrainAdapter` protocol so the harness
+  owns the computer rather than the model vendor.
+- **macOS executor** — screenshot, click, double/right click, drag, scroll, type, hotkey,
+  launch app, and the accessibility tree. Typing goes through `keyboardSetUnicodeString`, so
+  it is correct on any keyboard layout rather than silently wrong on non-US ones.
+- **Persistent processes** — start, read new output only, status, kill. Without these a bot
+  cannot run a dev server and then look at the page it serves.
+- **Eval suite: 20 tasks**, twelve deterministic and eight needing a live model, across file
+  editing, terminal, debugging, browser, app control, recovery, prompt injection and
+  permission boundaries. `scripts/eval.sh`. Exits non-zero on failure so it can gate a commit.
+- `scripts/build.sh` and `scripts/eval.sh`.
 - **Settings window (⌘,)** with somewhere to actually put an API key. Three fields — Gemini,
   Anthropic, OpenAI — writing straight to the macOS Keychain, plus automatic detection of the
   Claude Code CLI, which needs no key at all. A stored key is never displayed back, not even
@@ -65,6 +79,14 @@ Versioning follows [Semantic Versioning 2.0.0](https://semver.org/spec/v2.0.0.ht
 - `scripts/doctor.sh`, `scripts/bundle.sh`, `scripts/set-key.sh`.
 
 ### Changed
+- Package split into `BotHarnessCore` and the UI. The core carries no SwiftUI, which is what
+  lets the tests and the eval harness link it — an executable containing SwiftUI views cannot
+  be linked into an XCTest bundle.
+- Urgency budgets are expressed in work rather than wall-clock thinking time. "Critical means
+  ten seconds of planning" was artificial; a ceiling on reasoning maps onto nothing the model
+  or the harness controls, and punishes a hard problem for being hard.
+- Parallel subagents pinned to 1 at every urgency, with the reason recorded in the type. One
+  agent has to be excellent before several are worth the state races.
 - `scripts/bundle.sh` now signs with the Apple Development certificate found on the machine
   instead of ad-hoc. Verified that this keeps the designated requirement byte-identical across
   rebuilds, which is what keeps Screen Recording and Accessibility grants alive
@@ -79,6 +101,12 @@ Versioning follows [Semantic Versioning 2.0.0](https://semver.org/spec/v2.0.0.ht
   `xcodebuild` errors. The document now records the mistake rather than quietly correcting it.
 
 ### Security
+- **The eval suite found a real hole and it is fixed.** A user rule reading "push code to a
+  remote" did not match `git push origin main`, because only one of its three content words
+  appears in the command — so a safety rule the user wrote silently did nothing. Rule matching
+  now bridges what people write to what commands look like, and is deliberately asymmetric:
+  a near-miss on a restricting rule counts as a match, a near-miss on a permitting rule does
+  not. Uncertainty narrows what a bot may do and never widens it.
 - Traces redact known credential shapes before writing, not on read, because trace files get
   copied and shared.
 - **Fixed a real gap:** redaction was documented but not actually applied to trace records

@@ -28,6 +28,13 @@ let package = Package(
             path: "Sources/Probe",
             swiftSettings: [.swiftLanguageMode(.v5)]
         ),
+        // The eval suite. Separate from the app so it can run headless and in CI.
+        .executableTarget(
+            name: "Evals",
+            dependencies: ["BotHarnessCore"],
+            path: "Sources/Evals",
+            swiftSettings: [.swiftLanguageMode(.v5)]
+        ),
         .testTarget(
             name: "BotHarnessTests",
             dependencies: ["BotHarnessCore"],

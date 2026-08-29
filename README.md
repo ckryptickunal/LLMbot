@@ -66,6 +66,10 @@ cd bot-harness
 ./scripts/doctor.sh      # verifies the machine has what it needs
 ./scripts/bundle.sh      # builds and assembles BotHarness.app
 open build/BotHarness.app
+
+./scripts/test.sh        # unit tests
+./scripts/eval.sh        # the eval suite — 12 deterministic tasks, no model needed
+./scripts/eval.sh --live # the 8 tasks that need a real model and a real Mac
 ```
 
 The app is ad-hoc signed, which is fine for running it on the machine that built it. Sending

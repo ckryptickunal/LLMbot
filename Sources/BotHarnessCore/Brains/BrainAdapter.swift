@@ -107,9 +107,15 @@ public struct BrainResponse: Sendable {
     public var raw: String?
 
     public struct Usage: Sendable {
-        var promptTokens: Int = 0
-        var completionTokens: Int = 0
-        var costUSD: Double = 0
+        public var promptTokens: Int = 0
+        public var completionTokens: Int = 0
+        public var costUSD: Double = 0
+
+        public init(promptTokens: Int = 0, completionTokens: Int = 0, costUSD: Double = 0) {
+            self.promptTokens = promptTokens
+            self.completionTokens = completionTokens
+            self.costUSD = costUSD
+        }
     }
 }
 
@@ -143,10 +149,16 @@ public struct BrainAction: Sendable, Identifiable {
     public var safety: SafetyDecision?
 
     public struct SafetyDecision: Sendable {
-        var decision: String   // "allowed" | "require_confirmation" | "blocked"
-        var explanation: String
-        var requiresConfirmation: Bool { decision == "require_confirmation" }
-        var isBlocked: Bool { decision == "blocked" }
+        public var decision: String   // "allowed" | "require_confirmation" | "blocked"
+        public var explanation: String
+
+        public var requiresConfirmation: Bool { decision == "require_confirmation" }
+        public var isBlocked: Bool { decision == "blocked" }
+
+        public init(decision: String, explanation: String) {
+            self.decision = decision
+            self.explanation = explanation
+        }
     }
 }
 
