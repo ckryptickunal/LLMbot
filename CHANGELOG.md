@@ -21,15 +21,32 @@ Versioning follows [Semantic Versioning 2.0.0](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+### Fixed
+- **The app no longer asks for your Mac login password over and over.** It was asking every
+  time an eval run started, and in the running app it was asking as you typed — the check for
+  "is there a key stored?" was accidentally reading the key itself, and reading a key is what
+  raises that dialog. Checking now looks only at whether the item exists, which needs no
+  authorisation at all. Where a key genuinely has to be read, it is read once per launch
+  instead of once per message
+  (see docs/decisions/0011-existence-checks-must-not-touch-the-acl.md).
+
+### Security
+- Keys are still in the login Keychain and the dialog was not suppressed or downgraded — the
+  two shortcuts that would have silenced it, storing keys in a file or marking the item
+  readable by any application without warning, were both rejected in ADR 0011.
+- `scripts/set-key.sh` now adds the signed app to the key's trusted-application list, and its
+  header points at Settings (⌘,) as the better path: a key stored by the app is owned by the
+  app, so the app never has to ask for permission to read it. A key stored by the `security`
+  command line tool belongs to that tool, which is why the app was being challenged for it.
+
 ### Added — the mascot
-- **Claude's mascot walks across the empty conversation column.** Before there is a bot to talk
-  to, the middle of the window is no longer blank: the four-legged character leans, looks
-  around, walks the width of the column, then crouches and jumps the rest of the way. Ported
+- **Claude's mascot walks on the strip above the message box.** It leans, looks around, walks
+  the width of the composer, then crouches and jumps the rest of the way, on a loop. Ported
   from the public SVG-and-GSAP original rather than embedded — no browser and no animation
-  library were added, and it stands still when the Mac is set to Reduce Motion
-  (see docs/decisions/0009-port-the-mascot-rather-than-run-it.md).
-- **The composer is hidden when no bot is selected.** It used to render against a throwaway
-  conversation id, so anything typed there went nowhere.
+  library were added (see docs/decisions/0009-port-the-mascot-rather-than-run-it.md).
+- It stands still when the Mac is set to Reduce Motion, and stops redrawing entirely when
+  Bot-Harness is not the front app, so leaving the window open behind something else costs
+  nothing.
 
 ### Changed — the design system is now actually implemented
 - Every view is rebuilt on the token layer. An audit before this change found **157 raw font

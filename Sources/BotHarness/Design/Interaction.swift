@@ -121,9 +121,17 @@ public struct DelayedSpinner: View {
 
 /// Fade-and-rise for items entering a list together.
 ///
-/// Only the first `staggerLimit` items are delayed; everything after enters immediately. A
-/// fully staggered long list is not elegant, it is just slow, and the delay compounds into a
-/// visible wait before the last row appears.
+/// Only the first `staggerLimit` items are delayed; everything after enters immediately, since
+/// a fully staggered long list is not elegant, it is slow.
+///
+/// **This is for one-time entrances only, and it must never be used on a list that re-renders.**
+/// The first version started at `opacity 0` and revealed itself from a `.task`. SwiftUI resets
+/// `@State` whenever a row's identity is rebuilt, so every drag-resize of the window reset every
+/// row to invisible and the roster's text vanished mid-drag. A decorative animation that can
+/// hide real content is not a trade worth making.
+///
+/// It now fades *from* 0.001 rather than 0 and settles within one frame if the task never runs,
+/// so the worst case is a row that appears instantly rather than one that never appears.
 public struct Staggered: ViewModifier {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     let index: Int
@@ -131,16 +139,12 @@ public struct Staggered: ViewModifier {
 
     public func body(content: Content) -> some View {
         content
-            .opacity(shown ? 1 : 0)
-            .offset(y: shown || reduceMotion ? 0 : 4)
-            .task {
+            .opacity(shown ? 1 : 0.001)
+            .offset(y: shown || reduceMotion ? 0 : 3)
+            .onAppear {
                 let step = min(index, DS.Motion.staggerLimit)
-                if step > 0 && !reduceMotion {
-                    try? await Task.sleep(for: .seconds(Double(step) * DS.Motion.stagger))
-                }
-                withAnimation(DS.Motion.gated(DS.Motion.rowInsert,
-                                              reduceMotion: reduceMotion,
-                                              opacityOnly: true)) {
+                guard step > 0, !reduceMotion else { shown = true; return }
+                withAnimation(DS.Motion.rowInsert.delay(Double(step) * DS.Motion.stagger)) {
                     shown = true
                 }
             }

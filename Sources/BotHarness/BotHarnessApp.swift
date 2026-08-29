@@ -19,7 +19,11 @@ struct BotHarnessApp: App {
                 .environment(store)
                 .environment(runner)
                 .environment(ui)
-                .frame(minWidth: 900, minHeight: 560)
+                // Not an arbitrary number: the roster plus a readable transcript. Anything
+                // narrower cannot be laid out without clipping, so the window refuses it
+                // rather than showing a broken layout.
+                .frame(minWidth: DS.Size.rosterMin + DS.Size.conversationMin,
+                       minHeight: 520)
                 // The system is designed for one mode. Following the OS here would mean
                 // designing a second palette that nobody has designed.
                 .preferredColorScheme(.dark)

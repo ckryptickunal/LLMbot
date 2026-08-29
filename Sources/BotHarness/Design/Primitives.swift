@@ -467,11 +467,17 @@ public struct ReadingColumn<Content: View>: View {
     }
 
     public var body: some View {
-        HStack(spacing: 0) {
-            Spacer(minLength: 0)
-            VStack(alignment: alignment, spacing: 0) { content }
-                .frame(maxWidth: maxWidth, alignment: Alignment(horizontal: alignment, vertical: .center))
-            Spacer(minLength: 0)
-        }
+        VStack(alignment: alignment, spacing: 0) { content }
+            // Two frames, not a Spacer. The inner one caps the measure; the outer one claims
+            // the available width and anchors the capped column to its leading edge.
+            //
+            // The Spacer version overflowed: in an HStack the column asks for its full
+            // maxWidth, and when the pane is narrower than that the stack hands it the width
+            // it asked for and the transcript runs off the right edge of the window.
+            .frame(maxWidth: maxWidth, alignment: Alignment(horizontal: alignment, vertical: .center))
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.leading, DS.Space.xxl)
+            .padding(.trailing, DS.Space.lg)
     }
 }
+

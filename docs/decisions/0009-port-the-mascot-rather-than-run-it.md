@@ -86,9 +86,15 @@ Two details of the port are deliberate departures in *implementation* while stay
 - **We now must:** keep `Design/Mascot.swift` honest about being a transcription. Its numbers
   have one source, cited in the file; anyone changing them for taste is changing a different
   character, and should say so here.
-- **We now must:** keep the mascot in surfaces that are seen rarely. It is driven by a
-  `TimelineView(.animation)`, which redraws at the display's refresh rate for as long as it is
-  on screen. That is fine in an empty state and wrong anywhere a person leaves the app parked.
+- **We now must:** keep the mascot cheap when nobody is watching it. This is the consequence
+  that changed after the decision was first written: the mascot was placed in an empty state
+  precisely because it is driven by a `TimelineView(.animation)` and redraws at the display's
+  refresh rate for as long as it is on screen. Kunal asked for it above the message box
+  instead, the way Claude Code has it, which makes it permanent rather than rare. The cost is
+  paid down by pausing the timeline whenever Bot-Harness is not the front app, which is
+  possible only because the pose is computed from the clock rather than accumulated — the
+  animation resumes on the correct frame with no seam. What remains is a small continuous
+  redraw while the app is in front, which is the price of the placement.
 - **We can no longer:** use the flag-waving, confetti or gym animations without illustrating
   their 56 sprite frames by hand. This decision closes that door for as long as it stands.
 - **We will know this was wrong if:** the mascot shows up in a profile as a measurable share of
@@ -97,5 +103,5 @@ Two details of the port are deliberate departures in *implementation* while stay
 
 ## Revisit when
 
-Someone wants a second mascot animation, or when the mascot is proposed for a surface that
-stays on screen while the app is idle.
+Someone wants a second mascot animation, or the walking one shows up in an energy or GPU
+profile as a measurable share of the app's idle cost while it is in front.

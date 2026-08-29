@@ -124,7 +124,10 @@ struct ConversationView: View {
                     // is always exactly that much taller than the viewport, so the transcript
                     // is permanently scrolled by 32 points and the last message hides behind
                     // the composer.
-                    .frame(minHeight: available, alignment: .bottom)
+                    // Only pin to the viewport once its height is actually known. During a
+                    // live resize the reader can report zero, and a zero min-height collapses
+                    // the transcript to nothing.
+                    .frame(minHeight: available > 1 ? available : nil, alignment: .bottom)
                 }
             }
             .defaultScrollAnchor(.bottom)
@@ -135,8 +138,12 @@ struct ConversationView: View {
             .coordinateSpace(name: "transcript")
             .background {
                 GeometryReader { geo in
-                    Color.clear.onAppear { available = geo.size.height }
-                        .onChange(of: geo.size.height) { _, height in available = height }
+                    Color.clear
+                        .onAppear { available = geo.size.height }
+                        .onChange(of: geo.size.height) { _, height in
+                            guard height > 1 else { return }
+                            available = height
+                        }
                 }
             }
             .onChange(of: conversation?.messages.count ?? 0) {

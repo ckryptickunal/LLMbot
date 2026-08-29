@@ -20,6 +20,7 @@ struct Composer: View {
 
     var body: some View {
         VStack(spacing: DS.Space.md) {
+            WalkingMascot()
             field
             controls
         }

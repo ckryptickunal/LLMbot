@@ -34,9 +34,11 @@ struct Sidebar: View {
             } else {
                 ScrollView {
                     LazyVStack(spacing: DS.Space.hair) {
-                        ForEach(Array(filtered.enumerated()), id: \.element.id) { index, conversation in
+                        // Deliberately not staggered. This list re-renders on every search
+                        // keystroke and every window resize, and an entrance animation on a
+                        // list that re-renders is an animation that hides content.
+                        ForEach(filtered) { conversation in
                             SidebarRow(conversation: conversation)
-                                .staggered(index)
                                 .onTapGesture { store.selection = conversation.id }
                         }
                     }

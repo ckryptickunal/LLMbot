@@ -301,11 +301,11 @@ public enum DS {
         public static let glyphSmall: CGFloat = 10
         public static let statusDot: CGFloat = 6
 
-        /// The mascot. Its source viewBox is 107 wide, so drawing it at 107 points is 1:1 and
-        /// every rectangle lands on a whole pixel — which is what keeps a pixel-art character
-        /// from going soft at the edges. Its height is not here: the walk needs headroom for
-        /// the jump, so ask `Mascot.stageHeight(width:)`.
-        public static let mascot: CGFloat = 107
+        /// The mascot, on its strip above the composer. Small enough that the strip reads as
+        /// part of the composer rather than as a panel of its own — the height that goes with
+        /// it is not a separate number, because the walk needs headroom for the jump: ask
+        /// `Mascot.stageHeight(width:)`.
+        public static let mascot: CGFloat = 44
 
         public static let denseRow: CGFloat = 24        // activity and trace rows
         public static let rosterRow: CGFloat = 28       // avatar plus two lines
@@ -324,6 +324,9 @@ public enum DS {
         public static let rosterMin: CGFloat = 180
         public static let rosterIdeal: CGFloat = 240
         public static let rosterMax: CGFloat = 320
+        /// Below this the transcript stops being readable, so it is what the other two
+        /// columns have to yield to.
+        public static let conversationMin: CGFloat = 420
         public static let inspectorMin: CGFloat = 260
         public static let inspectorIdeal: CGFloat = 300
         public static let inspectorMax: CGFloat = 380

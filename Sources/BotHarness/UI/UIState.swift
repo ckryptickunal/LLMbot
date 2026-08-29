@@ -15,6 +15,10 @@ final class UIState {
     var panel: Panel = .screen
     var showPanel = true
 
+    /// True when the window closed the inspector because it did not fit, as opposed to the
+    /// person closing it. Only the first case is reopened automatically.
+    var panelClosedByWindow = false
+
     /// Bumped whenever something should put the cursor back in the composer.
     ///
     /// A counter rather than a Bool: setting a flag that is already true changes nothing, so

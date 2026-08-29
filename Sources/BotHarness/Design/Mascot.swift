@@ -288,9 +288,10 @@ private enum Walk {
 public struct WalkingMascot: View {
     private let width: CGFloat
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.controlActiveState) private var windowState
     @State private var began = Date()
 
-    /// The default is the size the original renders at on a desktop screen.
+    /// The default is the size it takes on the strip above the composer.
     public init(width: CGFloat = DS.Size.mascot) {
         self.width = width
     }
@@ -302,9 +303,15 @@ public struct WalkingMascot: View {
             } else {
                 // A timeline rather than repeating animations: the pose is a function of the
                 // clock, so there is no animation state to fall out of step, and the loop
-                // closes exactly. This runs at the display's refresh rate for as long as it is
-                // on screen, which is why it lives in an empty state and nowhere else.
-                TimelineView(.animation) { timeline in
+                // closes exactly.
+                //
+                // Paused when the window is not the front one. This sits above the composer
+                // and is therefore on screen for as long as the app is, which in this app
+                // means all day — redrawing it at the display's refresh rate behind someone
+                // else's window is spending a laptop's battery on a picture nobody is looking
+                // at. Because the pose is computed from the clock rather than accumulated,
+                // resuming lands on the right frame with no visible seam.
+                TimelineView(.animation(paused: windowState == .inactive)) { timeline in
                     canvas(at: timeline.date.timeIntervalSince(began)
                         .truncatingRemainder(dividingBy: Walk.loop))
                 }
