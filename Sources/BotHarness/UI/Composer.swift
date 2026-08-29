@@ -23,7 +23,6 @@ struct Composer: View {
             field
             controls
         }
-        .padding(.horizontal, DS.Space.xxl - 2)
         .padding(.bottom, DS.Space.lg + 2)
     }
 
@@ -58,8 +57,7 @@ struct Composer: View {
                 sendButton
             }
         }
-        .padding(.horizontal, DS.Space.lg)
-        .padding(.vertical, DS.Space.md + 1)
+        .dsInset(DS.Inset.composer)
         .background(DS.Tint.t3, in: RoundedRectangle(cornerRadius: DS.Radius.pill))
         .overlay(
             RoundedRectangle(cornerRadius: DS.Radius.pill)

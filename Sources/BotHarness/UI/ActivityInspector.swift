@@ -37,7 +37,7 @@ struct ActivityInspector: View {
             .padding(.horizontal, DS.Space.xxl - 2)
             .padding(.bottom, DS.Space.sm)
             .dsAnimation(DS.Motion.panel, value: expanded)
-            .dsAnimation(DS.Motion.instant, value: steps.count)
+            .motion(DS.Motion.rowInsert, value: steps.count)
         }
     }
 
@@ -52,7 +52,7 @@ struct ActivityInspector: View {
                     .rotationEffect(.degrees(expanded ? 90 : 0))
 
                 if isRunning {
-                    Spinner(size: DS.Size.glyph)
+                    DelayedSpinner(size: DS.Size.glyph)
                 }
 
                 Text(isRunning ? "Working" : "Activity")

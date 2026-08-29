@@ -54,11 +54,13 @@ private struct TextBubble: View {
                 .foregroundStyle(DS.Ink.primary)
                 .lineSpacing(DS.Text.bodyLineSpacing)
                 .textSelection(.enabled)
-                .padding(.horizontal, DS.Space.lg + 1)
-                .padding(.vertical, DS.Space.lg - 2)
+                .dsInset(DS.Inset.bubble)
                 .background(isUser ? DS.Surface.active : DS.Surface.raised,
                             in: RoundedRectangle(cornerRadius: DS.Radius.xl))
+                // Hugs its content up to the measure. A bubble stretched to the column edge
+                // stops reading as a spoken turn and starts reading as a paragraph of layout.
                 .frame(maxWidth: DS.Size.bubbleMax, alignment: isUser ? .trailing : .leading)
+                .fixedSize(horizontal: false, vertical: true)
             if !isUser { Spacer(minLength: DS.Space.xxxl + DS.Space.xl) }
         }
     }
@@ -81,7 +83,7 @@ private struct ToolCard: View {
     @State private var expanded = false
 
     var body: some View {
-        Surface(padding: DS.Space.lg - 1) {
+        Surface(padding: DS.Inset.card.top) {
             VStack(alignment: .leading, spacing: DS.Space.md) {
                 HStack(spacing: DS.Space.md) {
                     Image(systemName: icon)

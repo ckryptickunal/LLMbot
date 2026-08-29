@@ -314,6 +314,9 @@ public enum DS {
 
         public static let titlebar: CGFloat = 52
         public static let bubbleMax: CGFloat = 620
+        /// The widest a column of prose may get before it stops being comfortable to read.
+        /// Used by `ReadingColumn`.
+        public static let readingMax: CGFloat = 720
         public static let cardMax: CGFloat = 640
         public static let hairline: CGFloat = 1
 

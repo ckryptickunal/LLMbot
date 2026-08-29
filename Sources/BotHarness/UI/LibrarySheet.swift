@@ -122,7 +122,7 @@ private struct ConnectionsList: View {
                     .foregroundStyle(DS.Ink.secondary)
                 Spacer()
                 if model.isRefreshing {
-                    Spinner()
+                    DelayedSpinner()
                 } else {
                     SecondaryButton("Refresh") { Task { await model.refresh() } }
                 }

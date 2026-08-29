@@ -34,8 +34,9 @@ struct Sidebar: View {
             } else {
                 ScrollView {
                     LazyVStack(spacing: DS.Space.hair) {
-                        ForEach(filtered) { conversation in
+                        ForEach(Array(filtered.enumerated()), id: \.element.id) { index, conversation in
                             SidebarRow(conversation: conversation)
+                                .staggered(index)
                                 .onTapGesture { store.selection = conversation.id }
                         }
                     }
@@ -131,6 +132,9 @@ struct Sidebar: View {
             }
             .menuStyle(.borderlessButton)
             .menuIndicator(.hidden)
+            // Without this the menu sizes to its label and centres, so the account row stops
+            // sharing a left edge with the two rows above it.
+            .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.bottom, DS.Space.sm)
         }
     }
@@ -147,7 +151,8 @@ struct Sidebar: View {
             Spacer()
         }
         .padding(.horizontal, DS.Space.lg + 2)
-        .padding(.vertical, DS.Space.md + 1)
+        .frame(height: DS.Size.connectionRow, alignment: .leading)
+        .hoverRow(shape: RoundedRectangle(cornerRadius: DS.Radius.sm))
         .contentShape(Rectangle())
     }
 }
@@ -157,7 +162,6 @@ struct Sidebar: View {
 private struct SidebarRow: View {
     @Environment(Store.self) private var store
     let conversation: Conversation
-    @State private var hovering = false
 
     var body: some View {
         HStack(spacing: DS.Space.lg - 2) {
@@ -180,17 +184,9 @@ private struct SidebarRow: View {
                     .lineLimit(1)
             }
         }
-        .padding(.horizontal, DS.Space.lg - 2)
-        .padding(.vertical, DS.Space.md + 1)
-        .background(background, in: RoundedRectangle(cornerRadius: DS.Radius.md))
+        .dsInset(DS.Inset.row)
+        .hoverRow(resting: isSelected ? DS.Surface.active : .clear)
         .contentShape(Rectangle())
-        .onHover { hovering = $0 }
-        .dsAnimation(DS.Motion.instant, value: hovering)
-    }
-
-    private var background: Color {
-        if isSelected { return DS.Tint.t5 }
-        return hovering ? DS.Tint.t3 : .clear
     }
 
     private var isSelected: Bool { store.selection == conversation.id }
@@ -204,18 +200,22 @@ private struct SidebarRow: View {
         if conversation.isChannel {
             ZStack(alignment: .leading) {
                 ForEach(Array(conversation.participants.prefix(3).enumerated()), id: \.offset) { index, id in
-                    Circle()
-                        .fill(store.bot(id)?.tint ?? DS.Ink.tertiary)
-                        .frame(width: DS.Size.avatarRoster - 10, height: DS.Size.avatarRoster - 10)
-                        .overlay(Circle().stroke(DS.Surface.panel, lineWidth: 1.5))
-                        .offset(x: CGFloat(index) * (DS.Space.md + 1))
+                    if let member = store.bot(id) {
+                        BotAvatar(bot: member, size: DS.Size.avatarRoster - 6)
+                            .overlay(Circle().stroke(DS.Surface.panel, lineWidth: 1.5))
+                            .offset(x: CGFloat(index) * (DS.Space.md + 1))
+                    }
                 }
             }
-            .frame(width: DS.Size.avatarRoster + 2, height: DS.Size.avatarRoster, alignment: .leading)
+            .frame(width: DS.Size.avatarRoster + DS.Space.md, height: DS.Size.avatarRoster,
+                   alignment: .leading)
         } else {
-            Circle()
-                .fill(store.bot(conversation.participants.first)?.tint ?? DS.Ink.tertiary)
-                .frame(width: DS.Size.avatarRoster, height: DS.Size.avatarRoster)
+            if let bot = store.bot(conversation.participants.first) {
+                BotAvatar(bot: bot, size: DS.Size.avatarRoster)
+            } else {
+                Circle().fill(DS.Tint.t3)
+                    .frame(width: DS.Size.avatarRoster, height: DS.Size.avatarRoster)
+            }
         }
     }
 
