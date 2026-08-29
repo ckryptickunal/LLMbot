@@ -21,6 +21,27 @@ Versioning follows [Semantic Versioning 2.0.0](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+### Security
+- **The safety floor now reads a shell command instead of scanning it for words.** Four commands
+  that used to get past it no longer do: `rm -fr /` (flags in the other order), `rm -rf "$HOME"`
+  (home named without a `~`), appending a key to `~/.ssh/authorized_keys` (the floor could not
+  see redirects), and `curl … | sh` (nor pipes). Commands hidden behind `sudo`, `env`, `xargs`,
+  `sh -c "…"`, `$(…)` and subshells are now found too, and a delete pointed at something that
+  cannot be resolved without running it — `rm -rf "$TARGET"` — is treated as the most alarming
+  case rather than the least.
+- **"I could not read this command" is now a real answer**, and it asks you. Previously an
+  unparseable command was indistinguishable from a safe one. 27 new tests; no new dependency
+  (see docs/decisions/0010-parse-shell-before-judging-it.md).
+
+### Added — research
+- **Grok Bot's `app.asar` read for the first time** (`docs/research/grok-bot-app-asar.md`).
+  Their permission model turns out to be five layers, not the one natural-language rule table
+  the screenshots showed: a real `tree-sitter-bash` parse of every command, a classifier over
+  that parse, a model risk judgement, the natural-language rules, and an admin-set ceiling.
+  Also documents a gap in our own safety floor — it matches substrings, so `rm -fr /`,
+  `rm -rf "$HOME"`, a redirect into `~/.ssh/authorized_keys`, and `curl … | sh` all get past it.
+  Written up, not fixed; the fix needs its own ADR.
+
 ### Fixed
 - **The app no longer asks for your Mac login password over and over.** It was asking every
   time an eval run started, and in the running app it was asking as you typed — the check for

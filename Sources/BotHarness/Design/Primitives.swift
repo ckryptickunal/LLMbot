@@ -138,14 +138,17 @@ public struct SecondaryButton: View {
                 Text(title).font(DS.Text.caption)
             }
             .foregroundStyle(role == .destructive ? DS.Status.failed.mark : DS.Ink.primary)
-            .padding(.horizontal, DS.Space.lg - 1)
-            .padding(.vertical, DS.Space.sm)
+            .padding(.horizontal, DS.Space.lg)
+            // Shares the control baseline, so a button beside a field lines up with it.
+            .frame(minHeight: DS.Size.controlHeight)
+            // Keeps its label whole rather than compressing beside a growing sibling.
+            .fixedSize(horizontal: true, vertical: false)
             .background(hovering ? DS.Tint.t4 : DS.Tint.t3,
                         in: RoundedRectangle(cornerRadius: DS.Radius.sm))
         }
         .buttonStyle(PressableStyle())
         .onHover { hovering = $0 }
-        .dsAnimation(DS.Motion.instant, value: hovering)
+        .motion(DS.Motion.hoverOut, value: hovering)
     }
 }
 
@@ -195,7 +198,7 @@ public struct Chip: View {
     }
 
     public var body: some View {
-        HStack(spacing: DS.Space.xs + 1) {
+        HStack(spacing: DS.Space.sm) {
             if let systemImage {
                 Image(systemName: systemImage).font(.system(size: 9)).foregroundStyle(tint)
             }
@@ -207,7 +210,7 @@ public struct Chip: View {
             }
         }
         .padding(.horizontal, DS.Space.md)
-        .frame(minHeight: DS.Size.glyph + DS.Space.md, maxHeight: DS.Size.controlHeight)
+        .frame(minHeight: DS.Size.glyph, maxHeight: DS.Size.controlHeight)  // cap: chips never grow with their row
         // Truncate rather than compress: a chip that shrinks makes the row beside it jump.
         .fixedSize(horizontal: true, vertical: false)
         .background(DS.Tint.t3, in: Capsule())
@@ -236,15 +239,15 @@ public struct StatusPill: View {
     public init(_ state: State, _ label: String) { self.state = state; self.label = label }
 
     public var body: some View {
-        HStack(spacing: DS.Space.xs + 1) {
+        HStack(spacing: DS.Space.sm) {
             Circle().fill(state.tint).frame(width: DS.Size.statusDot, height: DS.Size.statusDot)
             Text(label).font(DS.Text.micro.weight(.medium)).foregroundStyle(DS.Ink.secondary)
         }
         .padding(.horizontal, DS.Space.md)
-        .padding(.vertical, DS.Space.hair + 1)
+        .padding(.vertical, DS.Space.hair)
         // "Running" and "Done" are different widths, and a pill that resizes on every status
         // change makes the whole card twitch. A floor holds the geometry still.
-        .frame(minWidth: 62, minHeight: DS.Size.glyph + DS.Space.xs, alignment: .leading)
+        .frame(minWidth: DS.Size.statusPillMin, minHeight: DS.Size.glyph + DS.Space.xs, alignment: .leading)
         .background(DS.Tint.t3, in: Capsule())
     }
 }
@@ -299,7 +302,7 @@ public struct Skeleton: View {
             .overlay(
                 GeometryReader { geo in
                     LinearGradient(
-                        colors: [.clear, Color.white.opacity(0.06), .clear],
+                        colors: [.clear, DS.Tint.t2, .clear],
                         startPoint: .leading, endPoint: .trailing
                     )
                     .frame(width: geo.size.width * 0.6)
@@ -320,14 +323,18 @@ public struct Skeleton: View {
 public struct SkeletonBlock: View {
     var lines: Int = 3
     public init(lines: Int = 3) { self.lines = lines }
+    private var minHeight: CGFloat { CGFloat(lines) * DS.Space.xl }
 
     public var body: some View {
         VStack(alignment: .leading, spacing: DS.Space.md) {
             ForEach(0..<lines, id: \.self) { index in
                 // Ragged right edge, like real prose. A stack of equal bars reads as a table.
-                Skeleton(width: index == lines - 1 ? 140 : nil, height: 11)
+                Skeleton(width: index == lines - 1 ? DS.Window.popoverMin - DS.Space.xxxl : nil,
+                         height: DS.Space.lg)
             }
         }
+        // Reserves the space the real text will occupy, so nothing below it jumps on arrival.
+        .frame(minHeight: minHeight, alignment: .top)
     }
 }
 
@@ -356,13 +363,13 @@ public struct EmptyState: View {
             Image(systemName: systemImage)
                 .font(.system(size: 22, weight: .light))
                 .foregroundStyle(DS.Ink.tertiary)
-            VStack(spacing: DS.Space.xs + 1) {
+            VStack(spacing: DS.Space.sm) {
                 Text(title).font(DS.Text.title).foregroundStyle(DS.Ink.primary)
                 Text(message)
                     .font(DS.Text.caption)
                     .foregroundStyle(DS.Ink.tertiary)
                     .multilineTextAlignment(.center)
-                    .frame(maxWidth: 340)
+                    .frame(maxWidth: DS.Window.proseMax)
                     .fixedSize(horizontal: false, vertical: true)
             }
             if let actionTitle, let action {
@@ -398,6 +405,7 @@ public struct ErrorState: View {
                 if let retry { SecondaryButton("Try again", action: retry) }
             }
         }
+        .frame(minWidth: DS.Size.cardMin, maxWidth: DS.Size.cardMax, alignment: .leading)
     }
 }
 
@@ -409,9 +417,13 @@ public struct SectionLabel: View {
     public init(_ text: String) { self.text = text }
     public var body: some View {
         Text(text.uppercased())
-            .font(.system(size: 10, weight: .semibold))
+            .font(DS.Text.micro.weight(.semibold))
             .kerning(0.4)
             .foregroundStyle(DS.Ink.tertiary)
+            // A consistent band above every group, so sections sit on the same rhythm whether
+            // their label is one word or four.
+            .frame(minHeight: DS.Space.xl, alignment: .bottomLeading)
+            .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 
@@ -450,6 +462,8 @@ public struct Disclosure<Header: View, Content: View>: View {
 
             if expanded { content }
         }
+        // Collapsed, the header alone must still be comfortably clickable.
+        .frame(minHeight: DS.Size.hit, alignment: .top)
         .dsAnimation(DS.Motion.panel, value: expanded)
     }
 }

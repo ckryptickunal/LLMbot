@@ -23,6 +23,35 @@ public struct PermissionEngine {
                          reason: "this was asked for by a page or document rather than by you, so it is not treated as an instruction",
                          decidedBy: .safetyFloor)
         }
+        // 1a. A shell command is judged by what it would actually run.
+        //
+        // This runs *before* the text scan below and can only add decisions, never remove one.
+        // The text scan stays because it covers the tools that are not shell commands, and
+        // because two nets that miss different things beat one net.
+        if let command = shellCommand(in: action) {
+            switch ShellFloor.judge(command, insideWorkspace: pathInsideWorkspace) {
+            case .unreadable(let why):
+                // The whole reason this value exists. "I could not tell" must reach a person;
+                // it must never quietly become "nothing found".
+                return .init(outcome: .asked,
+                             reason: "this command could not be read closely enough to judge — \(why)",
+                             decidedBy: .safetyFloor)
+            case .floor(let floor, let why):
+                switch floor.floorBehaviour {
+                case .neverAllow:
+                    return .init(outcome: .refused,
+                                 reason: "\(why), which is never delegated",
+                                 decidedBy: .safetyFloor)
+                case .askFirst, .allowAutomatically:
+                    return .init(outcome: .asked,
+                                 reason: "\(why), so it needs your approval",
+                                 decidedBy: .safetyFloor)
+                }
+            case .clear:
+                break
+            }
+        }
+
         if let floor = classify(action, tool: tool) {
             switch floor.floorBehaviour {
             case .neverAllow:
@@ -129,6 +158,25 @@ public struct PermissionEngine {
 
     private func contains(_ haystack: String, _ needles: [String]) -> Bool {
         needles.contains { haystack.contains($0) }
+    }
+
+    /// The command text of a shell action, or nil when this is not one.
+    private func shellCommand(in action: ProposedAction) -> String? {
+        guard action.tool.hasPrefix("shell.") else { return nil }
+        guard let command = action.arguments["command"], !command.isEmpty else { return nil }
+        return command
+    }
+
+    /// Whether a resolved path is somewhere this bot may already write. Prefix matching on a
+    /// real path, unlike `insideWorkspace(_:)` below, which searches a rendered string.
+    private func pathInsideWorkspace(_ path: String) -> Bool {
+        contract.authority.writable.contains { pattern in
+            let base = (pattern as NSString).expandingTildeInPath
+                .replacingOccurrences(of: "/**", with: "")
+                .replacingOccurrences(of: "/*", with: "")
+            guard !base.isEmpty, base != "/" else { return false }
+            return path == base || path.hasPrefix(base.hasSuffix("/") ? base : base + "/")
+        }
     }
 
     private func insideWorkspace(_ detail: String) -> Bool {

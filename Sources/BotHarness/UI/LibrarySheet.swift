@@ -42,7 +42,7 @@ struct LibrarySheet: View {
                 }
             }
         }
-        .frame(width: 560, height: 480)
+        .frame(width: DS.Window.sheetWidth, height: DS.Window.sheetHeight)
         .background(DS.Surface.panel)
     }
 
@@ -57,7 +57,7 @@ struct LibrarySheet: View {
                         Text(item.title).font(DS.Text.callout.weight(.medium))
                     }
                     .foregroundStyle(tab == item ? DS.Ink.primary : DS.Ink.secondary)
-                    .padding(.horizontal, DS.Space.lg - 1)
+                    .padding(.horizontal, DS.Space.lg)
                     .padding(.vertical, DS.Space.sm)
                     .background(tab == item ? DS.Tint.t5 : .clear,
                                 in: RoundedRectangle(cornerRadius: DS.Radius.sm))
@@ -67,8 +67,8 @@ struct LibrarySheet: View {
             Spacer()
             SecondaryButton("Done") { dismiss() }
         }
-        .padding(.horizontal, DS.Space.lg + 2)
-        .padding(.vertical, DS.Space.lg - 1)
+        .padding(.horizontal, DS.Space.lg)
+        .padding(.vertical, DS.Space.lg)
     }
 }
 
@@ -140,7 +140,7 @@ private struct ConnectionsList: View {
                 // Shaped like the rows that are coming, so nothing jumps when they land.
                 VStack(spacing: DS.Space.md) {
                     ForEach(0..<3, id: \.self) { _ in
-                        Skeleton(height: 46, radius: DS.Radius.md)
+                        Skeleton(height: DS.Size.connectionRow + DS.Space.xl, radius: DS.Radius.md)
                     }
                 }
             } else if model.rows.isEmpty {
@@ -155,7 +155,7 @@ private struct ConnectionsList: View {
                               toolCount: entry.health.toolCount)
             }
         }
-        .padding(DS.Space.xxl - 4)
+        .dsInset(DS.Inset.pane)
         .task { await model.refresh() }
     }
 
@@ -175,7 +175,7 @@ private struct ConnectionRow: View {
     let toolCount: Int
 
     var body: some View {
-        HStack(spacing: DS.Space.lg - 1) {
+        HStack(spacing: DS.Space.lg) {
             Circle()
                 .fill(colour)
                 .frame(width: DS.Size.statusDot, height: DS.Size.statusDot)
@@ -202,7 +202,7 @@ private struct ConnectionRow: View {
                 Text(status.displayName).font(DS.Text.micro).foregroundStyle(DS.Ink.tertiary)
             }
         }
-        .padding(DS.Space.lg - 1)
+        .padding(DS.Space.lg)
         .background(DS.Tint.t3, in: RoundedRectangle(cornerRadius: DS.Radius.md))
     }
 
@@ -232,7 +232,7 @@ private struct SkillsList: View {
                        title: "No skills yet",
                        message: "When a bot does something well more than once, you will be able to save it here and ask for it by name.")
         }
-        .padding(DS.Space.xxl - 4)
+        .dsInset(DS.Inset.pane)
     }
 }
 
@@ -248,8 +248,8 @@ private struct ComputersList: View {
                 .foregroundStyle(DS.Ink.secondary)
 
             Surface(fill: DS.Tint.t3, bordered: false) {
-                VStack(alignment: .leading, spacing: DS.Space.lg - 2) {
-                    HStack(spacing: DS.Space.lg - 2) {
+                VStack(alignment: .leading, spacing: DS.Space.lg) {
+                    HStack(spacing: DS.Space.lg) {
                         Image(systemName: "desktopcomputer")
                             .font(DS.Text.glyph)
                             .foregroundStyle(DS.Ink.primary)
@@ -274,7 +274,7 @@ private struct ComputersList: View {
             }
 
             Surface(fill: DS.Tint.t3.opacity(0.5), bordered: false) {
-                HStack(spacing: DS.Space.lg - 2) {
+                HStack(spacing: DS.Space.lg) {
                     Image(systemName: "cube")
                         .font(DS.Text.glyph)
                         .foregroundStyle(DS.Ink.tertiary)
@@ -286,7 +286,7 @@ private struct ComputersList: View {
                     }
                     Spacer()
                     Text("Soon").font(DS.Text.micro).foregroundStyle(DS.Ink.tertiary)
-                        .padding(.horizontal, DS.Space.sm + 1)
+                        .padding(.horizontal, DS.Space.md)
                         .padding(.vertical, DS.Space.hair)
                         .background(DS.Tint.t3, in: Capsule())
                 }
@@ -294,12 +294,12 @@ private struct ComputersList: View {
 
             Spacer()
         }
-        .padding(DS.Space.xxl - 4)
+        .dsInset(DS.Inset.pane)
         .onAppear { permissions = ComputerExecutor.permissions }
     }
 
     private func permissionRow(_ title: String, _ why: String, granted: Bool, pane: String) -> some View {
-        HStack(spacing: DS.Space.md + 1) {
+        HStack(spacing: DS.Space.md) {
             Image(systemName: granted ? "checkmark.circle.fill" : "exclamationmark.circle")
                 .font(DS.Text.glyph)
                 .foregroundStyle(granted ? DS.Status.done.mark : DS.Status.running.mark)

@@ -34,7 +34,7 @@ struct ActivityInspector: View {
                 RoundedRectangle(cornerRadius: DS.Radius.lg)
                     .stroke(DS.Tint.t6, lineWidth: DS.Size.hairline)
             )
-            .padding(.horizontal, DS.Space.xxl - 2)
+            .padding(.horizontal, DS.Space.xxl)
             .padding(.bottom, DS.Space.sm)
             .dsAnimation(DS.Motion.panel, value: expanded)
             .motion(DS.Motion.rowInsert, value: steps.count)
@@ -73,7 +73,7 @@ struct ActivityInspector: View {
                     .font(DS.Text.monoSmall)
                     .foregroundStyle(DS.Ink.tertiary)
             }
-            .padding(.horizontal, DS.Space.lg - 1)
+            .padding(.horizontal, DS.Space.lg)
             .frame(minHeight: DS.Size.hit)
             .contentShape(Rectangle())
         }
@@ -86,15 +86,15 @@ struct ActivityInspector: View {
     private var stream: some View {
         ScrollViewReader { proxy in
             ScrollView {
-                LazyVStack(alignment: .leading, spacing: DS.Space.sm - 1) {
+                LazyVStack(alignment: .leading, spacing: DS.Space.sm) {
                     ForEach(steps) { step in
                         row(step).id(step.id)
                     }
                 }
-                .padding(.horizontal, DS.Space.lg - 1)
-                .padding(.vertical, DS.Space.md + 1)
+                .padding(.horizontal, DS.Space.lg)
+                .padding(.vertical, DS.Space.md)
             }
-            .frame(maxHeight: DS.Size.activityStreamMax)
+            .frame(maxHeight: DS.Size.activityStreamMax)  // cap: a peek, not a second transcript
             .onChange(of: steps.count) {
                 guard let last = steps.last else { return }
                 withAnimation(DS.Motion.instant) { proxy.scrollTo(last.id, anchor: .bottom) }
@@ -107,7 +107,7 @@ struct ActivityInspector: View {
             Image(systemName: step.kind.icon)
                 .font(DS.Text.glyphSmall)
                 .foregroundStyle(tint(step.kind))
-                .frame(width: DS.Space.lg + 1, height: DS.Space.xl - 2)
+                .frame(width: DS.Space.lg, height: DS.Space.lg)
 
             VStack(alignment: .leading, spacing: 1) {
                 Text(step.text)

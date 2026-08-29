@@ -44,7 +44,7 @@ struct ContextPanelView: View {
                 Color.clear.frame(width: DS.Size.iconButton, height: DS.Size.iconButton)
             }
         }
-        .padding(.horizontal, DS.Space.lg + 2)
+        .padding(.horizontal, DS.Space.lg)
         .frame(height: DS.Size.rosterRow)
         .padding(.top, DS.Space.md)
     }
@@ -62,7 +62,7 @@ private struct ScreenPane: View {
     let bot: Bot?
 
     var body: some View {
-        VStack(spacing: DS.Space.lg - 2) {
+        VStack(spacing: DS.Space.lg) {
             RoundedRectangle(cornerRadius: DS.Radius.md)
                 .fill(DS.Surface.ground)
                 .aspectRatio(16.0 / 10.0, contentMode: .fit)
@@ -80,7 +80,7 @@ private struct ScreenPane: View {
                     .foregroundStyle(DS.Ink.tertiary)
             }
         }
-        .padding(DS.Space.lg + 2)
+        .padding(DS.Space.lg)
     }
 }
 
@@ -150,8 +150,8 @@ private struct BotSettingsPane: View {
                         }))
                         .font(DS.Text.callout)
                         .scrollContentBackground(.hidden)
-                        .frame(height: 130)
-                        .padding(DS.Space.sm + 1)
+                        .frame(height: DS.Window.personaEditorHeight)
+                        .padding(DS.Space.md)
                         .background(DS.Tint.t3, in: RoundedRectangle(cornerRadius: DS.Radius.sm))
                 }
 
@@ -169,7 +169,7 @@ private struct BotSettingsPane: View {
                 }
                 .frame(maxWidth: .infinity)
             }
-            .padding(DS.Space.lg + 2)
+            .dsInset(DS.Inset.pane)
         } else {
             EmptyState(systemImage: "person.crop.circle",
                        title: "No bot selected",
@@ -222,8 +222,8 @@ private struct BotSettingsPane: View {
                 .textFieldStyle(.plain)
                 .font(DS.Text.callout)
                 .foregroundStyle(DS.Ink.primary)
-                .padding(.horizontal, DS.Space.md + 1)
-                .padding(.vertical, DS.Space.sm + 1)
+                .padding(.horizontal, DS.Space.md)
+                .padding(.vertical, DS.Space.md)
                 .background(DS.Tint.t3, in: RoundedRectangle(cornerRadius: DS.Radius.sm))
         }
     }
@@ -238,14 +238,14 @@ private struct BotSettingsPane: View {
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.horizontal, DS.Space.md + 1)
-            .padding(.vertical, DS.Space.sm + 1)
+            .padding(.horizontal, DS.Space.md)
+            .padding(.vertical, DS.Space.md)
             .background(DS.Tint.t3, in: RoundedRectangle(cornerRadius: DS.Radius.sm))
         }
     }
 
     private func toggle(_ title: String, _ detail: String, _ isOn: Binding<Bool>) -> some View {
-        HStack(alignment: .top, spacing: DS.Space.lg - 2) {
+        HStack(alignment: .top, spacing: DS.Space.lg) {
             VStack(alignment: .leading, spacing: DS.Space.hair) {
                 Text(title).font(DS.Text.callout).foregroundStyle(DS.Ink.primary)
                 Text(detail)
@@ -259,7 +259,7 @@ private struct BotSettingsPane: View {
                 .toggleStyle(.switch)
                 .controlSize(.mini)
         }
-        .padding(DS.Space.lg - 1)
+        .padding(DS.Space.lg)
         .background(DS.Tint.t3, in: RoundedRectangle(cornerRadius: DS.Radius.md))
     }
 }

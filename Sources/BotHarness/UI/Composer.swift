@@ -20,17 +20,16 @@ struct Composer: View {
 
     var body: some View {
         VStack(spacing: DS.Space.md) {
-            WalkingMascot()
             field
             controls
         }
-        .padding(.bottom, DS.Space.lg + 2)
+        .padding(.bottom, DS.Space.lg)
     }
 
     // MARK: Field
 
     private var field: some View {
-        HStack(alignment: .bottom, spacing: DS.Space.lg - 2) {
+        HStack(alignment: .bottom, spacing: DS.Space.lg) {
             IconButton("plus", help: "Attach a file", action: attach)
 
             TextField(placeholder, text: $draft, axis: .vertical)
@@ -105,9 +104,9 @@ struct Composer: View {
 
     private var stopButton: some View {
         Button { runner.stop(conversationID) } label: {
-            RoundedRectangle(cornerRadius: DS.Radius.xs - 1)
+            RoundedRectangle(cornerRadius: DS.Radius.xs)
                 .fill(Color.white)
-                .frame(width: DS.Space.md + 1, height: DS.Space.md + 1)
+                .frame(width: DS.Space.md, height: DS.Space.md)
                 .frame(width: DS.Size.iconButton, height: DS.Size.iconButton)
                 .background(DS.Accent.live, in: Circle())
         }

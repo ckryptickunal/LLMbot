@@ -77,11 +77,14 @@ public struct PermissionRule: Identifiable, Codable, Hashable {
 public struct ProposedAction: Hashable {
 
     /// Memberwise initialiser, public so the app and tests can build one.
-    public init(tool: String, summary: String, detail: String, botID: UUID, originatedFromUntrustedContent: Bool = false) {
+    public init(tool: String, summary: String, detail: String, botID: UUID,
+                arguments: [String: String] = [:],
+                originatedFromUntrustedContent: Bool = false) {
         self.tool = tool
         self.summary = summary
         self.detail = detail
         self.botID = botID
+        self.arguments = arguments
         self.originatedFromUntrustedContent = originatedFromUntrustedContent
     }
     /// The tool about to run, e.g. "shell", "files.write", "browser.click".
@@ -97,6 +100,12 @@ public struct ProposedAction: Hashable {
 
     /// Which bot is asking.
     public var botID: UUID
+
+    /// The tool's arguments as they were actually given, before anything rendered them for a
+    /// human. The floor judges these; `summary` and `detail` are for the person reading the
+    /// approval prompt. Keeping the two apart is the point: a floor that reads prose is a
+    /// floor whose input is written by the thing it constrains.
+    public var arguments: [String: String] = [:]
 
     /// Set when any part of this action's justification came from content the agent read
     /// rather than from the user — a web page, a file, an email.
@@ -174,6 +183,12 @@ public enum SafetyFloor: String, Codable, CaseIterable {
     /// Changing system settings, security settings, or TCC grants.
     case changingSystemConfiguration
 
+    /// Running code fetched from the network without anyone reading it first — `curl … | sh`
+    /// and its relatives. Added because it is the one genuinely common shell shape that none
+    /// of the categories above describes: it is not a delete, not a config change, and not a
+    /// grant, but it can become all three a second later.
+    case runningUnreviewedCode
+
     /// Publishing or modifying anything publicly visible.
     case publishing
 
@@ -201,6 +216,7 @@ public enum SafetyFloor: String, Codable, CaseIterable {
         case .sendingToNewRecipient:         return "sends a message to someone new"
         case .grantingAccess:                return "grants access to your accounts"
         case .changingSystemConfiguration:   return "changes how your Mac is configured"
+        case .runningUnreviewedCode:         return "runs code off the internet without showing it to you"
         case .publishing:                    return "publishes something publicly"
         case .instructionFromUntrustedContent:
             return "was requested by a web page or document, not by you"

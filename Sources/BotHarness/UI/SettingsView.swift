@@ -42,7 +42,7 @@ struct SettingsView: View {
                 .tag(item)
             }
         }
-        .frame(width: 560, height: 460)
+        .frame(width: DS.Window.sheetWidth, height: DS.Window.sheetHeight)
     }
 }
 
@@ -65,7 +65,7 @@ struct ProviderSettings: View {
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: DS.Space.xl + 2) {
+            VStack(alignment: .leading, spacing: DS.Space.xl) {
                 Text("Bot-Harness runs on your own accounts. Keys are stored in the macOS Keychain and are never written to a file, put in a prompt, or recorded in a trace.")
                     .font(DS.Text.caption)
                     .foregroundStyle(DS.Ink.secondary)
@@ -97,17 +97,17 @@ struct ProviderSettings: View {
                         .transition(.opacity)
                 }
             }
-            .padding(DS.Space.xxl - 4)
+            .dsInset(DS.Inset.pane)
         }
         .task { refresh() }
     }
 
     private var claudeCodeRow: some View {
-        HStack(alignment: .top, spacing: DS.Space.lg - 1) {
+        HStack(alignment: .top, spacing: DS.Space.lg) {
             Image(systemName: claudeCLIPath == nil ? "xmark.circle" : "checkmark.circle.fill")
                 .foregroundStyle(claudeCLIPath == nil ? DS.Ink.secondary : DS.Status.done.mark)
                 .font(DS.Text.glyph)
-            VStack(alignment: .leading, spacing: DS.Space.xs - 1) {
+            VStack(alignment: .leading, spacing: DS.Space.hair) {
                 Text("Claude Code")
                     .font(DS.Text.body.weight(.semibold))
                     .foregroundStyle(DS.Ink.primary)
@@ -176,7 +176,7 @@ private struct KeyField: View {
     @State private var replacing = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: DS.Space.sm + 1) {
+        VStack(alignment: .leading, spacing: DS.Space.md) {
             HStack(spacing: DS.Space.md) {
                 Text(title).font(DS.Text.body.weight(.semibold)).foregroundStyle(DS.Ink.primary)
                 if isPresent && !replacing {
@@ -208,7 +208,7 @@ private struct KeyField: View {
                         .textFieldStyle(.plain)
                         .font(DS.Text.monoSmall)
                         .foregroundStyle(DS.Ink.primary)
-                        .padding(.horizontal, DS.Space.md + 1)
+                        .padding(.horizontal, DS.Space.md)
                         .frame(minHeight: DS.Size.controlHeight)
                         .background(DS.Tint.t3, in: RoundedRectangle(cornerRadius: DS.Radius.sm))
                         .onSubmit(commit)
@@ -261,7 +261,7 @@ struct PermissionSettings: View {
                                 .font(DS.Text.glyphSmall)
                                 .foregroundStyle(floor.floorBehaviour == .neverAllow
                                                  ? DS.Status.failed.mark : DS.Status.running.mark)
-                                .frame(width: DS.Space.lg + 2)
+                                .frame(width: DS.Space.lg)
                             Text("Anything that \(floor.explanation)")
                                 .font(DS.Text.caption)
                                 .foregroundStyle(DS.Ink.primary)
@@ -273,7 +273,7 @@ struct PermissionSettings: View {
                     }
                 }
             }
-            .padding(DS.Space.xxl - 4)
+            .dsInset(DS.Inset.pane)
         }
     }
 }
@@ -282,7 +282,7 @@ private struct RuleRow: View {
     let rule: PermissionRule
 
     var body: some View {
-        HStack(alignment: .top, spacing: DS.Space.lg - 2) {
+        HStack(alignment: .top, spacing: DS.Space.lg) {
             Image(systemName: icon)
                 .foregroundStyle(colour)
                 .font(DS.Text.glyph)
@@ -297,7 +297,7 @@ private struct RuleRow: View {
             }
             Spacer()
         }
-        .padding(DS.Space.lg - 1)
+        .padding(DS.Space.lg)
         .frame(minHeight: DS.Size.settingsRow, alignment: .leading)
         .background(DS.Tint.t3, in: RoundedRectangle(cornerRadius: DS.Radius.sm))
     }
@@ -343,7 +343,7 @@ struct AboutSettings: View {
                 .lineSpacing(DS.Text.bodyLineSpacing)
                 .fixedSize(horizontal: false, vertical: true)
         }
-        .padding(DS.Space.xxl - 4)
+        .dsInset(DS.Inset.pane)
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 

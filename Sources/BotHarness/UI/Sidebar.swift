@@ -89,7 +89,7 @@ struct Sidebar: View {
     }
 
     private var search: some View {
-        HStack(spacing: DS.Space.sm + 1) {
+        HStack(spacing: DS.Space.md) {
             Image(systemName: "magnifyingglass")
                 .font(DS.Text.glyphSmall)
                 .foregroundStyle(DS.Ink.tertiary)
@@ -99,8 +99,8 @@ struct Sidebar: View {
                 .font(DS.Text.callout)
                 .foregroundStyle(DS.Ink.primary)
         }
-        .padding(.horizontal, DS.Space.md + 1)
-        .padding(.vertical, DS.Space.sm + 1)
+        .padding(.horizontal, DS.Space.md)
+        .padding(.vertical, DS.Space.md)
         .background(DS.Tint.t3, in: RoundedRectangle(cornerRadius: DS.Radius.sm))
         .padding(.horizontal, DS.Space.lg)
         .padding(.bottom, DS.Space.sm)
@@ -156,7 +156,7 @@ struct Sidebar: View {
             menuItem("power", "Quit Bot-Harness") { NSApp.terminate(nil) }
         }
         .padding(DS.Space.md)
-        .frame(minWidth: 190)
+        .frame(minWidth: DS.Window.popoverMin)
     }
 
     private func menuItem(_ icon: String, _ title: String, action: @escaping () -> Void) -> some View {
@@ -168,12 +168,12 @@ struct Sidebar: View {
                 Image(systemName: icon)
                     .font(DS.Text.glyphSmall)
                     .foregroundStyle(DS.Ink.secondary)
-                    .frame(width: DS.Space.xl - 2)
+                    .frame(width: DS.Space.lg)
                 Text(title).font(DS.Text.caption).foregroundStyle(DS.Ink.primary)
                 Spacer(minLength: 0)
             }
             .padding(.horizontal, DS.Space.md)
-            .frame(minHeight: DS.Size.hit - 4)
+            .frame(minHeight: DS.Size.avatarRoster)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -181,7 +181,7 @@ struct Sidebar: View {
     }
 
     private func footerRow(_ icon: String, _ label: String) -> some View {
-        HStack(spacing: DS.Space.md + 1) {
+        HStack(spacing: DS.Space.md) {
             Image(systemName: icon)
                 .font(DS.Text.glyph)
                 .foregroundStyle(DS.Ink.secondary)
@@ -207,7 +207,7 @@ private struct SidebarRow: View {
     let conversation: Conversation
 
     var body: some View {
-        HStack(spacing: DS.Space.lg - 2) {
+        HStack(spacing: DS.Space.lg) {
             avatar
             VStack(alignment: .leading, spacing: DS.Space.hair) {
                 HStack(spacing: DS.Space.sm) {
@@ -247,9 +247,9 @@ private struct SidebarRow: View {
             ZStack(alignment: .leading) {
                 ForEach(Array(conversation.participants.prefix(3).enumerated()), id: \.offset) { index, id in
                     if let member = store.bot(id) {
-                        BotAvatar(bot: member, size: DS.Size.avatarRoster - 6)
+                        BotAvatar(bot: member, size: DS.Size.avatarRoster)
                             .overlay(Circle().stroke(DS.Surface.panel, lineWidth: 1.5))
-                            .offset(x: CGFloat(index) * (DS.Space.md + 1))
+                            .offset(x: CGFloat(index) * (DS.Space.md))
                     }
                 }
             }

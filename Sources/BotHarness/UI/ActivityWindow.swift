@@ -16,10 +16,10 @@ struct ActivityWindow: View {
 
     var body: some View {
         HSplitView {
-            runList.frame(minWidth: 260, idealWidth: 300, maxWidth: 380)
-            detail.frame(minWidth: 460)
+            runList.frame(minWidth: DS.Window.activityListMin, idealWidth: DS.Window.activityListIdeal, maxWidth: DS.Window.activityListMax)
+            detail.frame(minWidth: DS.Window.activityDetailMin)
         }
-        .frame(minWidth: 820, minHeight: 520)
+        .frame(minWidth: DS.Window.activityMinWidth, minHeight: DS.Window.mainMinHeight)
         .background(DS.Surface.ground)
         .task { await reload() }
     }
@@ -53,14 +53,14 @@ struct ActivityWindow: View {
                     Task { await reload() }
                 }
             }
-            .padding(.horizontal, DS.Space.lg + 2)
-            .padding(.vertical, DS.Space.lg - 2)
+            .padding(.horizontal, DS.Space.lg)
+            .padding(.vertical, DS.Space.lg)
 
             Hairline()
 
             if loading {
                 VStack(spacing: DS.Space.md) {
-                    ForEach(0..<5, id: \.self) { _ in Skeleton(height: 44, radius: DS.Radius.md) }
+                    ForEach(0..<5, id: \.self) { _ in Skeleton(height: DS.Size.settingsRow, radius: DS.Radius.md) }
                 }
                 .padding(DS.Space.md)
                 Spacer()
@@ -88,10 +88,10 @@ struct ActivityWindow: View {
     }
 
     private func runRow(_ run: TraceReader.Run) -> some View {
-        VStack(alignment: .leading, spacing: DS.Space.xs - 1) {
+        VStack(alignment: .leading, spacing: DS.Space.hair) {
             HStack(spacing: DS.Space.sm) {
                 Circle().fill(colour(for: run))
-                    .frame(width: DS.Size.statusDot - 0.5, height: DS.Size.statusDot - 0.5)
+                    .frame(width: DS.Size.statusDot, height: DS.Size.statusDot)
                 Text(run.manifest?.goal ?? run.id)
                     .font(DS.Text.callout.weight(.medium))
                     .foregroundStyle(DS.Ink.primary)
@@ -111,8 +111,8 @@ struct ActivityWindow: View {
                 Text(failure).font(DS.Text.micro).foregroundStyle(DS.Status.failed.mark).lineLimit(1)
             }
         }
-        .padding(.horizontal, DS.Space.md + 1)
-        .padding(.vertical, DS.Space.sm + 1)
+        .padding(.horizontal, DS.Space.md)
+        .padding(.vertical, DS.Space.md)
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
@@ -134,10 +134,10 @@ struct ActivityWindow: View {
                 header(run)
                 Hairline()
                 ScrollView {
-                    LazyVStack(alignment: .leading, spacing: DS.Space.sm + 1) {
+                    LazyVStack(alignment: .leading, spacing: DS.Space.md) {
                         ForEach(timeline) { StepRow(entry: $0) }
                     }
-                    .padding(DS.Space.lg + 2)
+                    .padding(DS.Space.lg)
                 }
             }
         } else {
@@ -218,14 +218,14 @@ private struct StepRow: View {
                 Text("\(entry.seq)")
                     .font(DS.Text.monoSmall)
                     .foregroundStyle(DS.Ink.tertiary)
-                    .frame(width: DS.Space.xxl - 2, alignment: .trailing)
+                    .frame(width: DS.Space.xxl, alignment: .trailing)
 
                 Image(systemName: icon)
                     .font(DS.Text.glyphSmall)
                     .foregroundStyle(tint)
-                    .frame(width: DS.Space.lg + 2)
+                    .frame(width: DS.Space.lg)
 
-                VStack(alignment: .leading, spacing: DS.Space.xs - 1) {
+                VStack(alignment: .leading, spacing: DS.Space.hair) {
                     Text(entry.summary)
                         .font(DS.Text.callout)
                         .foregroundStyle(DS.Ink.primary)
@@ -240,7 +240,7 @@ private struct StepRow: View {
                     }
 
                     if let permission = entry.permission {
-                        HStack(spacing: DS.Space.xs + 1) {
+                        HStack(spacing: DS.Space.sm) {
                             Image(systemName: permissionIcon(permission.outcome))
                                 .font(DS.Text.glyphSmall)
                             Text("\(permission.outcome) — \(permission.reason)")
@@ -276,7 +276,7 @@ private struct StepRow: View {
                 }
             }
         }
-        .padding(DS.Space.lg - 2)
+        .padding(DS.Space.lg)
         .frame(minHeight: DS.Size.denseRow, alignment: .leading)
         .background(DS.Surface.raised, in: RoundedRectangle(cornerRadius: DS.Radius.md))
         .contentShape(Rectangle())
@@ -284,7 +284,7 @@ private struct StepRow: View {
     }
 
     private func block(_ title: String, _ text: String) -> some View {
-        VStack(alignment: .leading, spacing: DS.Space.xs - 1) {
+        VStack(alignment: .leading, spacing: DS.Space.hair) {
             Text(title).font(DS.Text.micro).foregroundStyle(DS.Ink.tertiary)
             Text(text)
                 .font(DS.Text.mono)
@@ -294,7 +294,7 @@ private struct StepRow: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .background(DS.Surface.ground, in: RoundedRectangle(cornerRadius: DS.Radius.sm))
         }
-        .padding(.leading, DS.Space.xxl + DS.Space.xl + 2)
+        .padding(.leading, DS.Space.xxl + DS.Space.xl)
     }
 
     private func permissionIcon(_ outcome: String) -> String {

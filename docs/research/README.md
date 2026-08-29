@@ -11,6 +11,7 @@ this project started from.
 |---|---|
 | [`00-synthesis`](00-synthesis.md) | 00-synthesis |
 | [`grok-bot-teardown`](grok-bot-teardown.md) | Grok Bot teardown |
+| [`grok-bot-app-asar`](grok-bot-app-asar.md) | What is inside Grok Bot's `app.asar`: the five-layer permission stack, the bash parse, the 23-field shell tool, the hook surface |
 | [`reference-products-grokbot-hermes`](reference-products-grokbot-hermes.md) | Reference products for Bot-Harness: "Grok Bot" (SpaceXAI + Cursor desktop agent app) and "Hermes Agent" (Nous Research) — UI/UX teardown and |
 | [`openclaw`](openclaw.md) | OpenClaw (ex-Clawdbot, ex-Moltbot) — architecture, permission model, and what a Mac-native computer-use harness should borrow |
 | [`gemini-computer-use`](gemini-computer-use.md) | Google Gemini Computer Use — current state as of 2026-08-29 (tool shape, model IDs, safety keys, SDK, desktop support) for the Bot-Harness M |

@@ -326,6 +326,8 @@ public enum DS {
 
         /// Smallest comfortable pointer target. Anything under this is a control people miss.
         public static let hit: CGFloat = 28
+        /// Holds the status pill's geometry still as "Running" becomes "Done".
+        public static let statusPillMin: CGFloat = 62
         /// Text control heights, so a field and a button beside it share a baseline.
         public static let controlHeight: CGFloat = 28
         public static let controlHeightLarge: CGFloat = 34
@@ -354,6 +356,48 @@ public enum DS {
         public static let inspectorMin: CGFloat = 260
         public static let inspectorIdeal: CGFloat = 300
         public static let inspectorMax: CGFloat = 380
+    }
+
+    // MARK: - Window
+    //
+    // Window and sheet dimensions. These were the last raw numbers in the app, and they are
+    // the ones that matter most: a sheet 40 points too short clips its own content, and
+    // nobody notices until a connector name is long.
+
+    public enum Window {
+        /// Main window default. Wide enough for roster, transcript and inspector at once.
+        public static let mainWidth: CGFloat = 1280
+        public static let mainHeight: CGFloat = 820
+        /// Floor for the main window: roster plus a readable transcript, nothing narrower.
+        public static let mainMinHeight: CGFloat = 520
+
+        /// The activity window is a two-pane reader, so it needs more width than a sheet.
+        public static let activityWidth: CGFloat = 980
+        public static let activityHeight: CGFloat = 620
+        public static let activityMinWidth: CGFloat = 820
+        public static let activityListMin: CGFloat = 260
+        public static let activityListIdeal: CGFloat = 300
+        public static let activityListMax: CGFloat = 380
+        public static let activityDetailMin: CGFloat = 460
+
+        /// Settings and the library share one size, so switching between them does not resize.
+        public static let sheetWidth: CGFloat = 560
+        public static let sheetHeight: CGFloat = 480
+
+        /// A popover menu wide enough that no item wraps.
+        public static let popoverMin: CGFloat = 190
+
+        /// Full-size screenshot viewer.
+        public static let viewerMinWidth: CGFloat = 720
+        public static let viewerMinHeight: CGFloat = 480
+
+        /// The persona paragraph in an empty conversation.
+        public static let proseMax: CGFloat = 420
+        /// The Computer card, which is narrower than a full card on purpose: it is a status
+        /// object, not a body of text.
+        public static let computerCardMax: CGFloat = 400
+        /// The bot description editor.
+        public static let personaEditorHeight: CGFloat = 130
     }
 
     // MARK: - Inset

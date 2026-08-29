@@ -156,7 +156,7 @@ private struct ComputerCard: View {
 
     var body: some View {
         Surface {
-            VStack(alignment: .leading, spacing: DS.Space.md + 1) {
+            VStack(alignment: .leading, spacing: DS.Space.md) {
                 HStack {
                     Text("Computer")
                         .font(DS.Text.callout.weight(.semibold))
@@ -182,7 +182,7 @@ private struct ComputerCard: View {
                 }
             }
         }
-        .frame(maxWidth: 400, alignment: .leading)
+        .frame(maxWidth: DS.Window.computerCardMax, alignment: .leading)
     }
 }
 
@@ -201,8 +201,8 @@ private struct ApprovalCard: View {
 
     var body: some View {
         Surface(borderTint: DS.Status.waiting.mark.opacity(0.35)) {
-            VStack(alignment: .leading, spacing: DS.Space.lg - 2) {
-                HStack(spacing: DS.Space.sm + 1) {
+            VStack(alignment: .leading, spacing: DS.Space.lg) {
+                HStack(spacing: DS.Space.md) {
                     Image(systemName: "hand.raised.fill")
                         .font(DS.Text.glyphSmall)
                         .foregroundStyle(DS.Status.waiting.mark)
@@ -222,7 +222,7 @@ private struct ApprovalCard: View {
                     .font(DS.Text.mono)
                     .foregroundStyle(DS.Ink.secondary)
                     .textSelection(.enabled)
-                    .padding(DS.Space.md + 1)
+                    .padding(DS.Space.md)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .background(DS.Surface.ground, in: RoundedRectangle(cornerRadius: DS.Radius.sm))
 
@@ -329,7 +329,7 @@ struct ScreenshotCard: View {
                 }
                 .padding(DS.Space.lg)
             }
-            .frame(minWidth: 720, minHeight: 480)
+            .frame(minWidth: DS.Window.viewerMinWidth, minHeight: DS.Window.viewerMinHeight)
             .background(DS.Surface.ground)
         }
     }

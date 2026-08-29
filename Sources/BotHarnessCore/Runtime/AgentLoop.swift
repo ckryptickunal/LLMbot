@@ -274,6 +274,7 @@ public actor AgentLoop {
             summary: summary,
             detail: detail,
             botID: bot.id,
+            arguments: action.arguments.mapValues { ($0 as? String) ?? String(describing: $0) },
             // Gemini's own prompt-injection detector reporting `blocked` is treated as a claim
             // that this action came from page content rather than from the user.
             originatedFromUntrustedContent: action.safety?.isBlocked ?? false

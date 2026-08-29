@@ -54,7 +54,7 @@ struct ConversationView: View {
             ReadingColumn {
                 HStack(spacing: DS.Space.md) {
                     if let bot {
-                        BotAvatar(bot: bot, size: DS.Size.avatarRoster - 4)
+                        BotAvatar(bot: bot, size: DS.Size.avatarRoster)
                         VStack(alignment: .leading, spacing: 0) {
                             Text(conversation?.title ?? bot.name)
                                 .font(DS.Text.title)
@@ -160,6 +160,17 @@ struct ConversationView: View {
     @ViewBuilder private var introduction: some View {
         if let bot {
             VStack(spacing: DS.Space.lg) {
+                // The mascot lives here rather than above the composer.
+                //
+                // In the composer it appeared in every conversation, permanently, wedged
+                // between the last message and the input — a second focal point competing
+                // with the transcript it was sitting on top of. An empty conversation is the
+                // one moment there is nothing to compete with, and the one moment a small
+                // piece of delight is worth its cost.
+                WalkingMascot()
+                    .frame(height: Mascot.stageHeight(width: DS.Size.mascot))
+                    .padding(.bottom, DS.Space.md)
+
                 BotAvatar(bot: bot, size: DS.Size.avatarInspector)
                 Text(bot.name)
                     .font(DS.Text.title)
@@ -171,7 +182,7 @@ struct ConversationView: View {
                     .foregroundStyle(bot.persona.isEmpty ? DS.Ink.tertiary : DS.Ink.secondary)
                     .multilineTextAlignment(.center)
                     .lineSpacing(DS.Text.bodyLineSpacing)
-                    .frame(maxWidth: 420)
+                    .frame(maxWidth: DS.Window.proseMax)
                     .fixedSize(horizontal: false, vertical: true)
             }
             .frame(maxWidth: .infinity)
