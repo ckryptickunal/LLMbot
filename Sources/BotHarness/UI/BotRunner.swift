@@ -125,7 +125,10 @@ final class BotRunner {
         case .finished(let closure, let note):
             switch closure {
             case .succeeded:
-                store.append(Message(author: bot.id, body: .text(note)), to: id)
+                // An empty note means the bot already said its piece this turn.
+                if !note.isEmpty {
+                    store.append(Message(author: bot.id, body: .text(note)), to: id)
+                }
             case .escalated:
                 store.append(Message(author: bot.id, body: .notice(note)), to: id)
             case .budgetExhausted:
@@ -158,7 +161,7 @@ final class BotRunner {
             contract.urgency = .high
         }
 
-        contract.autonomy = bot.environment == .thisMac ? .confirmBeforeChange : .autonomousWorkspace
+        contract.autonomy = bot.defaultAutonomy
 
         let workspace = bot.workspace?.path ?? NSHomeDirectory() + "/Desktop"
         contract.authority = Authority(
@@ -175,14 +178,21 @@ final class BotRunner {
     }
 
     /// Which brain answers for this bot.
+    /// Which brain answers for this bot.
+    ///
+    /// Only Gemini is implemented. The others are selectable but fall back, and the composer
+    /// chip says so rather than showing a name that is not the one answering — a control that
+    /// reports a state the system is not in is worse than one that admits the gap.
     static func brain(for bot: Bot) -> any BrainAdapter {
         switch bot.brain {
-        case .gemini(let model):  return GeminiAdapter(model: model)
-        case .claudeCLI, .anthropic, .openAI:
-            // Only Gemini is implemented so far. Falling back keeps a misconfigured bot
-            // working rather than silently doing nothing, and the adapter reports honestly
-            // when its key is missing.
-            return GeminiAdapter()
+        case .gemini(let model): return GeminiAdapter(model: model)
+        default:                 return GeminiAdapter()
         }
+    }
+
+    /// True when the selected brain is not the one that will actually answer.
+    static func isFallingBack(_ bot: Bot) -> Bool {
+        if case .gemini = bot.brain { return false }
+        return true
     }
 }

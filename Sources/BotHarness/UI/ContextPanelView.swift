@@ -7,14 +7,14 @@ import SwiftUI
 /// zoom levels — "what is this bot doing" and "what is this bot".
 struct ContextPanelView: View {
     @Environment(Store.self) private var store
-    @Binding var panel: RootView.ContextPanel
+    @Environment(UIState.self) private var ui
 
     var body: some View {
         VStack(spacing: 0) {
             header
             Divider().overlay(Theme.separator)
             ScrollView {
-                switch panel {
+                switch ui.panel {
                 case .screen:   ScreenPane(bot: currentBot)
                 case .settings: SettingsPane(bot: currentBot)
                 }
@@ -29,9 +29,9 @@ struct ContextPanelView: View {
 
     private var header: some View {
         HStack {
-            if panel == .settings {
+            if ui.panel == .settings {
                 Button {
-                    withAnimation(Motion.routine) { panel = .screen }
+                    withAnimation(Motion.routine) { ui.panel = .screen }
                 } label: {
                     Image(systemName: "chevron.left")
                         .font(.system(size: 12))
@@ -40,12 +40,12 @@ struct ContextPanelView: View {
                 .buttonStyle(.plain)
             }
             Spacer()
-            Text(panel == .settings ? "Settings" : "Screen")
+            Text(ui.panel == .settings ? "Settings" : "Screen")
                 .font(.system(size: 12.5, weight: .semibold))
                 .foregroundStyle(Theme.primary)
             Spacer()
             // Balances the leading chevron so the title stays optically centred.
-            if panel == .settings { Color.clear.frame(width: 12) }
+            if ui.panel == .settings { Color.clear.frame(width: 12) }
         }
         .padding(.horizontal, 14)
         .frame(height: 44)
@@ -159,7 +159,7 @@ private struct SettingsPane: View {
 
                 Spacer(minLength: 12)
 
-                Button { } label: {
+                Button { exportTemplate(working) } label: {
                     HStack(spacing: 6) {
                         Image(systemName: "square.and.arrow.up")
                             .font(.system(size: 11))
@@ -179,6 +179,27 @@ private struct SettingsPane: View {
             }
         }
         .padding(14)
+    }
+
+    /// Write the bot's shareable parts to a file: name, label, persona, brain, autonomy.
+    /// Never its workspace path, its history, or anything from the Keychain.
+    private func exportTemplate(_ bot: Bot) {
+        let template: [String: Any] = [
+            "name": bot.name,
+            "label": bot.label,
+            "description": bot.persona,
+            "brain": bot.brain.displayName,
+            "autonomy": bot.defaultAutonomy.displayName,
+            "environment": bot.environment.rawValue,
+        ]
+        let panel = NSSavePanel()
+        panel.nameFieldStringValue = bot.name.replacingOccurrences(of: " ", with: "-").lowercased() + ".bot.json"
+        panel.prompt = "Export"
+        guard panel.runModal() == .OK, let url = panel.url,
+              let data = try? JSONSerialization.data(withJSONObject: template,
+                                                     options: [.prettyPrinted, .sortedKeys])
+        else { return }
+        try? data.write(to: url)
     }
 
     private func mutate(_ change: (inout Bot) -> Void) {

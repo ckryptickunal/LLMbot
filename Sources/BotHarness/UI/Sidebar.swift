@@ -9,6 +9,7 @@ import SwiftUI
 struct Sidebar: View {
     @Environment(Store.self) private var store
     @State private var query = ""
+    @State private var library: LibrarySheet.Tab?
 
     var body: some View {
         VStack(spacing: 0) {
@@ -30,6 +31,7 @@ struct Sidebar: View {
             footer
         }
         .background(Theme.panel)
+        .sheet(item: $library) { tab in LibrarySheet(tab: tab) }
     }
 
     private var filtered: [Conversation] {
@@ -93,9 +95,36 @@ struct Sidebar: View {
     private var footer: some View {
         VStack(spacing: 0) {
             Divider().overlay(Theme.separator)
-            footerRow(icon: "puzzlepiece.extension", label: "Plugins")
-            footerRow(icon: "person.crop.circle", label: "Kunal Bairwa")
-                .padding(.bottom, 6)
+            Button { library = .connections } label: {
+                footerRow(icon: "app.connected.to.app.below.fill", label: "Connections")
+            }
+            .buttonStyle(.plain)
+
+            Button { library = .computers } label: {
+                footerRow(icon: "desktopcomputer", label: "Computers")
+            }
+            .buttonStyle(.plain)
+
+            Menu {
+                Button("Settings…") {
+                    NSApp.sendAction(Selector(("showSettingsWindow:")), to: nil, from: nil)
+                }
+                Button("Skills…") { library = .skills }
+                Divider()
+                Button("Open trace folder") {
+                    NSWorkspace.shared.open(Paths.traces)
+                }
+                Button("Open data folder") {
+                    NSWorkspace.shared.open(Paths.root)
+                }
+                Divider()
+                Button("Quit Bot-Harness") { NSApp.terminate(nil) }
+            } label: {
+                footerRow(icon: "person.crop.circle", label: NSFullUserName())
+            }
+            .menuStyle(.borderlessButton)
+            .menuIndicator(.hidden)
+            .padding(.bottom, 6)
         }
     }
 

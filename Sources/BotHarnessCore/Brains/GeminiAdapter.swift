@@ -10,12 +10,20 @@ import Foundation
 ///
 /// Written with no dependencies: URLSession and JSONSerialization. See ADR 0002.
 ///
-/// **Verification status, stated honestly.** Every field name, model ID, coordinate
-/// convention and safety key below is copied from Google's live documentation
-/// (`docs/research/gemini-computer-use.md`, fetched 2026-08-29). None of it has yet been
-/// exercised against a real key, because none is configured. The response parser is therefore
-/// deliberately forgiving and keeps the raw body on every reply, so that the first live run
-/// reports exactly how the documentation and reality differ instead of failing opaquely.
+/// **Verified against the live API on 2026-08-29**, and the documentation was wrong in three
+/// places that each would have broken the product silently:
+///
+/// 1. **Function tools are one-per-entry with the name at the top level** —
+///    `{"type":"function","name":…,"description":…,"parameters":…}`. The nested
+///    `{"function":{…}}` form and the older `function_declarations` array are both rejected.
+/// 2. **Replies arrive as `model_output` with a `content` array**, not as a `text` field. A
+///    parser looking for `step["text"]` finds nothing, so every reply the model made would
+///    have been dropped and the conversation would have looked dead.
+/// 3. **Usage keys are `total_input_tokens` / `total_output_tokens` / `total_tokens`**, not
+///    `prompt_tokens` or `promptTokenCount`, so cost and token accounting read zero.
+///
+/// Conversations continue with `previous_interaction_id` rather than by resending history,
+/// which is both cheaper and what the server expects.
 public struct GeminiAdapter: BrainAdapter {
 
     public let name: String
@@ -51,6 +59,12 @@ public struct GeminiAdapter: BrainAdapter {
             "input": buildInput(request),
         ]
 
+        // Continue the server-side conversation rather than resending it. Cheaper, and it is
+        // how the API expects multi-turn work to proceed.
+        if let previous = request.previousInteractionID {
+            body["previous_interaction_id"] = previous
+        }
+
         var tools: [[String: Any]] = []
 
         if request.computerUse != .off {
@@ -69,16 +83,16 @@ public struct GeminiAdapter: BrainAdapter {
             tools.append(computerUse)
         }
 
-        if !request.tools.isEmpty {
+        // One entry per function, name at the top level. Verified: the nested
+        // {"type":"function","function":{…}} form returns
+        // "Unknown parameter 'function' at 'tools[0]'".
+        for tool in request.tools {
             tools.append([
                 "type": "function",
-                "functions": request.tools.map { tool in
-                    [
-                        "name": tool.id.replacingOccurrences(of: ".", with: "__"),
-                        "description": tool.summary,
-                        "parameters": (try? JSONSerialization.jsonObject(with: Data(tool.schema.utf8))) ?? [:],
-                    ] as [String: Any]
-                },
+                // Dots are rejected in function names, so they round-trip through "__".
+                "name": tool.id.replacingOccurrences(of: ".", with: "__"),
+                "description": tool.summary,
+                "parameters": (try? JSONSerialization.jsonObject(with: Data(tool.schema.utf8))) ?? [:],
             ])
         }
 
@@ -113,25 +127,28 @@ public struct GeminiAdapter: BrainAdapter {
     /// A single user turn is sent as a plain string; anything richer becomes parts.
     private func buildInput(_ request: BrainRequest) -> Any {
         var parts: [[String: Any]] = []
+        // When continuing, send only what is new — the server already has the history.
+        let turns = request.previousInteractionID == nil ? request.turns : request.turns.suffix(1).map { $0 }
 
+        // Every part carries a type. Without it the API answers
+        // "Provide a 'role' field (for Turn[]), or a 'type' field (for Step[])".
         if let observation = request.observation, !observation.isEmpty {
-            parts.append(["text": "Current state of the computer:\n\(observation)"])
+            parts.append(["type": "text", "text": "Current state of the computer:\n\(observation)"])
         }
 
-        for turn in request.turns {
+        for turn in turns {
             switch turn.role {
-            case .user:      parts.append(["text": turn.text])
-            case .assistant: parts.append(["text": turn.text])
+            case .user:      parts.append(["type": "text", "text": turn.text])
+            case .assistant: parts.append(["type": "text", "text": turn.text])
             case .tool:
                 let label = turn.toolCallID.map { "Result of \($0):" } ?? "Tool result:"
-                parts.append(["text": "\(label)\n\(turn.text)"])
+                parts.append(["type": "text", "text": "\(label)\n\(turn.text)"])
             }
         }
 
         if let shot = request.screenshot {
-            parts.append([
-                "inline_data": ["mime_type": "image/png", "data": shot.base64EncodedString()]
-            ])
+            parts.append(["type": "image", "mime_type": "image/png",
+                          "data": shot.base64EncodedString()])
         }
 
         if parts.count == 1, let only = parts.first, let text = only["text"] as? String {
@@ -156,44 +173,41 @@ public struct GeminiAdapter: BrainAdapter {
         var text: String?
         var actions: [BrainAction] = []
 
-        // Documented shape: { "steps": [ { "type": "function_call", ... } ] }
-        let steps = (root["steps"] as? [[String: Any]])
-            ?? (root["output"] as? [[String: Any]])
-            ?? []
-
-        for (index, step) in steps.enumerated() {
-            let kind = step["type"] as? String
-            if kind == "function_call" || step["name"] != nil {
+        for (index, step) in ((root["steps"] as? [[String: Any]]) ?? []).enumerated() {
+            switch step["type"] as? String {
+            case "function_call":
                 actions.append(action(from: step, index: index))
-            } else if let t = step["text"] as? String {
-                text = (text ?? "") + t
-            }
-        }
 
-        // generate_content shape: candidates[].content.parts[].functionCall
-        if actions.isEmpty, steps.isEmpty,
-           let candidates = root["candidates"] as? [[String: Any]],
-           let content = candidates.first?["content"] as? [String: Any],
-           let parts = content["parts"] as? [[String: Any]] {
-            for (index, part) in parts.enumerated() {
-                if let call = part["functionCall"] as? [String: Any] {
-                    actions.append(action(from: call, index: index))
-                } else if let t = part["text"] as? String {
+            case "model_output", "message", "content":
+                // Replies are a content array of typed parts, not a plain string.
+                if let content = step["content"] as? [[String: Any]] {
+                    let joined = content.compactMap { $0["text"] as? String }.joined()
+                    if !joined.isEmpty { text = (text ?? "") + joined }
+                } else if let t = step["text"] as? String {
                     text = (text ?? "") + t
                 }
+
+            case "thought":
+                // An opaque signature, not readable reasoning. Nothing to show or store.
+                continue
+
+            default:
+                if let t = step["text"] as? String { text = (text ?? "") + t }
             }
         }
 
-        if text == nil, let t = root["text"] as? String { text = t }
-
         var usage = BrainResponse.Usage()
-        if let u = (root["usage"] as? [String: Any]) ?? (root["usageMetadata"] as? [String: Any]) {
-            usage.promptTokens = (u["prompt_tokens"] ?? u["promptTokenCount"]) as? Int ?? 0
-            usage.completionTokens = (u["completion_tokens"] ?? u["candidatesTokenCount"]) as? Int ?? 0
-            usage.costUSD = Self.cost(model: model, prompt: usage.promptTokens, completion: usage.completionTokens)
+        if let u = root["usage"] as? [String: Any] {
+            usage.promptTokens = (u["total_input_tokens"] as? Int) ?? 0
+            usage.completionTokens = (u["total_output_tokens"] as? Int) ?? 0
+            usage.costUSD = Self.cost(model: model, prompt: usage.promptTokens,
+                                      completion: usage.completionTokens)
         }
 
-        return BrainResponse(text: text, actions: actions, usage: usage, raw: raw)
+        return BrainResponse(text: text, actions: actions, usage: usage,
+                             interactionID: root["id"] as? String,
+                             needsAction: (root["status"] as? String) == "requires_action",
+                             raw: raw)
     }
 
     private func action(from step: [String: Any], index: Int) -> BrainAction {

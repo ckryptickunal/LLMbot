@@ -30,13 +30,14 @@ public protocol BrainAdapter: Sendable {
 public struct BrainRequest: Sendable {
 
     /// Memberwise initialiser, public so the app and tests can build one.
-    public init(system: String, turns: [BrainTurn], tools: [ToolDescriptor], computerUse: ComputerUseMode = .off, screenshot: Data? = nil, observation: String? = nil) {
+    public init(system: String, turns: [BrainTurn], tools: [ToolDescriptor], computerUse: ComputerUseMode = .off, screenshot: Data? = nil, observation: String? = nil, previousInteractionID: String? = nil) {
         self.system = system
         self.turns = turns
         self.tools = tools
         self.computerUse = computerUse
         self.screenshot = screenshot
         self.observation = observation
+        self.previousInteractionID = previousInteractionID
     }
     /// Persona, doctrine, contract, loaded skills. Assembled by the context router.
     public var system: String
@@ -56,6 +57,9 @@ public struct BrainRequest: Sendable {
     /// Structured observation: active app, windows, accessibility tree digest. Cheaper than
     /// a screenshot and usually sufficient, so it is sent even when a screenshot is not.
     public var observation: String?
+
+    /// Continue a server-side conversation instead of resending its history.
+    public var previousInteractionID: String?
 
     public enum ComputerUseMode: Sendable, Equatable {
         case off
@@ -84,10 +88,12 @@ public struct BrainTurn: Sendable {
 public struct BrainResponse: Sendable {
 
     /// Memberwise initialiser, public so the app and tests can build one.
-    public init(text: String? = nil, actions: [BrainAction], usage: Usage, raw: String? = nil) {
+    public init(text: String? = nil, actions: [BrainAction], usage: Usage, interactionID: String? = nil, needsAction: Bool = false, raw: String? = nil) {
         self.text = text
         self.actions = actions
         self.usage = usage
+        self.interactionID = interactionID
+        self.needsAction = needsAction
         self.raw = raw
     }
     /// Prose for the user, if the model said anything.
@@ -98,6 +104,12 @@ public struct BrainResponse: Sendable {
     public var actions: [BrainAction]
 
     public var usage: Usage
+
+    /// Handle for continuing this conversation on the next turn.
+    public var interactionID: String?
+
+    /// The provider says it is waiting on tool results.
+    public var needsAction: Bool = false
 
     /// The raw response body, kept for the trace.
     ///

@@ -51,10 +51,17 @@ public struct Bot: Identifiable, Codable, Hashable {
 
     /// Which model runs this bot. Per bot, never global: a routine that watches an inbox
     /// should not cost what a bot that writes code costs.
-    public var brain: BrainSpec = .claudeCode
+    public var brain: BrainSpec = .gemini(model: "gemini-3.7-flash")
 
     /// Where this bot's computer is.
     public var environment: EnvironmentKind = .thisMac
+
+    /// How much this bot decides on its own, as a starting point for each run.
+    ///
+    /// Surfaced in the composer as three names — Ask, Work, Autopilot — because nobody should
+    /// have to think in six rungs to send a message. The ladder underneath keeps its full
+    /// resolution for contracts that need it.
+    public var defaultAutonomy: Autonomy = .confirmBeforeChange
 
     /// The directory this bot treats as home. File and shell tools are scoped to it unless
     /// a permission rule widens that.
@@ -140,6 +147,19 @@ public enum BrainSpec: Codable, Hashable {
         case .claudeCLI(let m): return m.map { "Claude Code · \($0)" } ?? "Claude Code"
         case .anthropic(let m): return m
         case .openAI(let m):    return m
+        }
+    }
+
+    /// Short enough for a chip. "gemini-3.7-flash" becomes "Gemini 3.7 Flash".
+    public var shortName: String {
+        switch self {
+        case .gemini(let m):
+            return m.replacingOccurrences(of: "gemini-", with: "Gemini ")
+                    .replacingOccurrences(of: "-flash-lite", with: " Flash-Lite")
+                    .replacingOccurrences(of: "-flash", with: " Flash")
+        case .claudeCLI:        return "Claude Code"
+        case .anthropic(let m): return m.replacingOccurrences(of: "claude-", with: "Claude ").capitalized
+        case .openAI(let m):    return m.uppercased()
         }
     }
 

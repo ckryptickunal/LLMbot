@@ -135,6 +135,7 @@ private struct ToolCard: View {
 /// that is at once the progress indicator, the plain-language explanation of what the machine
 /// is being asked to do, and the door through which the human takes over.
 private struct ComputerCard: View {
+    @Environment(UIState.self) private var ui
     let activity: ComputerActivity
 
     var body: some View {
@@ -159,7 +160,7 @@ private struct ComputerCard: View {
             }
 
             Button {
-                // Opens the screen panel focused on this activity.
+                ui.openComputer()
             } label: {
                 HStack(spacing: 6) {
                     Image(systemName: "display")
@@ -172,7 +173,7 @@ private struct ComputerCard: View {
                 .padding(.vertical, 6)
                 .background(Color.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 7))
             }
-            .buttonStyle(.plain)
+            .buttonStyle(PressableButtonStyle())
         }
         .padding(12)
         .frame(maxWidth: 400, alignment: .leading)

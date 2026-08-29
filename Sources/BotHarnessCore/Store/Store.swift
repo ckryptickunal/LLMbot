@@ -217,7 +217,7 @@ public final class Store {
             assuming, and says plainly when something failed. Reports what it did and what \
             it concluded, not how it thought.
             """
-        starter.brain = .claudeCode
+        starter.brain = .gemini(model: GeminiAdapter.defaultModel)
         starter.environment = .thisMac
         bots = [starter]
 

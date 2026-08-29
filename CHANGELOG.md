@@ -21,7 +21,29 @@ Versioning follows [Semantic Versioning 2.0.0](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+### Fixed — the app now actually responds
+- **Nothing could be sent.** A `TextField` with `axis: .vertical` swallows Return, so
+  `.onSubmit` never fired; there was no send button to fall back on; and the field never took
+  focus. Three dead ends in one control, and together they made the whole app inert. Return
+  now sends, Shift-Return makes a newline, a send button appears when there is something to
+  send, and the composer takes focus when a conversation opens.
+- **Four API shape errors**, each found by calling the live endpoint rather than trusting the
+  docs. Function tools are one entry each with the name at the top level. Replies arrive as
+  `model_output` with a `content` array, not a `text` field — so every reply would have been
+  silently dropped. Every input part needs a `type`. Usage keys are `total_input_tokens` and
+  `total_output_tokens`, so cost and tokens read zero.
+- **`files.glob` never expanded `~`**, so every lookup under `~/Desktop` matched nothing, and
+  an empty result was returned as an empty string — which tells the model nothing and sends it
+  round the same call again. Empty results now say so in words.
+- Replies were posted twice, because the closing note repeated what the bot had already said.
+
 ### Added
+- **A brain switcher**, in the composer where the decision actually gets made. Also an
+  autonomy switch: Ask, Work, Autopilot.
+- **Connections, Computers and Skills**, reachable from the sidebar, listing what a bot can
+  reach and saying plainly where something is not built yet.
+- Every button now leads somewhere. The account row opens a menu, Share as template writes a
+  file, Open computer reveals the screen panel, and Grant opens the right privacy pane.
 - **The agent loop actually runs.** `observe → context → brain → permission → execute →
   observe → verify → continue`, with observation escalating from structured state to the
   accessibility tree to a screenshot only when the cheaper level was not enough.

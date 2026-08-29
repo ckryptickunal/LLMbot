@@ -9,19 +9,28 @@ import SwiftUI
 struct ConversationView: View {
     @Environment(Store.self) private var store
     @Environment(BotRunner.self) private var runner
-    @Binding var showContext: Bool
-    @Binding var contextPanel: RootView.ContextPanel
+    @Environment(UIState.self) private var ui
 
     @State private var draft = ""
+    @FocusState private var composerFocused: Bool
 
     var body: some View {
         VStack(spacing: 0) {
             header
             Divider().overlay(Theme.separator)
             timeline
-            composer
+            Composer(conversationID: store.selection ?? UUID(),
+                     draft: $draft,
+                     focused: $composerFocused)
         }
         .background(Theme.ground)
+        // Focus has to wait for the window to become key. Setting @FocusState directly in
+        // onAppear runs before that happens and is silently dropped, which leaves the app
+        // looking usable while typing does nothing.
+        .task(id: store.selection) {
+            try? await Task.sleep(for: .milliseconds(120))
+            composerFocused = true
+        }
     }
 
     private var conversation: Conversation? { store.conversation(store.selection) }
@@ -41,8 +50,7 @@ struct ConversationView: View {
             Spacer()
 
             Button {
-                contextPanel = .settings
-                showContext = true
+                ui.openBotSettings()
             } label: {
                 Image(systemName: "gearshape")
                     .font(.system(size: 12.5))
@@ -52,14 +60,14 @@ struct ConversationView: View {
             .help("Bot settings")
 
             Button {
-                showContext.toggle()
+                ui.showPanel.toggle()
             } label: {
-                Image(systemName: showContext ? "chevron.right.2" : "chevron.left.2")
+                Image(systemName: ui.showPanel ? "chevron.right.2" : "chevron.left.2")
                     .font(.system(size: 12.5))
                     .foregroundStyle(Theme.secondary)
             }
             .buttonStyle(.plain)
-            .help(showContext ? "Hide panel" : "Show panel")
+            .help(ui.showPanel ? "Hide panel" : "Show panel")
         }
         .padding(.horizontal, 16)
         .frame(height: 44)
@@ -97,57 +105,6 @@ struct ConversationView: View {
 
     // MARK: Composer
 
-    private var composer: some View {
-        HStack(spacing: 10) {
-            Button {
-                // Attachments — not yet implemented.
-            } label: {
-                Image(systemName: "plus")
-                    .font(.system(size: 14, weight: .medium))
-                    .foregroundStyle(Theme.secondary)
-                    .frame(width: 26, height: 26)
-                    .background(Color.white.opacity(0.07), in: Circle())
-            }
-            .buttonStyle(.plain)
-
-            TextField(placeholder, text: $draft, axis: .vertical)
-                .textFieldStyle(.plain)
-                .font(.system(size: 13.5))
-                .foregroundStyle(Theme.primary)
-                .lineLimit(1...8)
-                .onSubmit(send)
-
-            Button {
-                // Voice input — not yet implemented.
-            } label: {
-                Image(systemName: "mic.fill")
-                    .font(.system(size: 12))
-                    .foregroundStyle(Theme.ground)
-                    .frame(width: 26, height: 26)
-                    .background(Theme.primary, in: Circle())
-            }
-            .buttonStyle(.plain)
-        }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 9)
-        .background(Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 22))
-        .padding(.horizontal, 22)
-        .padding(.bottom, 16)
-        .padding(.top, 4)
-    }
-
-    private var placeholder: String {
-        guard let c = conversation else { return "Message" }
-        let name = c.title ?? store.bot(c.participants.first)?.name ?? "bot"
-        return "Message \(name)"
-    }
-
-    private func send() {
-        let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !text.isEmpty, let id = store.selection else { return }
-        draft = ""
-        runner.send(text, in: id)
-    }
 }
 
 /// What a bot with no history says for itself. An empty list teaches nobody what the app is

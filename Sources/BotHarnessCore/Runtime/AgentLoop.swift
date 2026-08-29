@@ -56,6 +56,10 @@ public actor AgentLoop {
     private var turns: [BrainTurn] = []
     private var lastObservation = ""
 
+    /// Handle for the server-side conversation, so each turn continues it rather than
+    /// resending the whole history.
+    private var interactionID: String?
+
     /// Set by the UI when the user answers an approval prompt.
     private var pendingApproval: CheckedContinuation<ApprovalRequest.Answer, Never>?
 
@@ -94,9 +98,9 @@ public actor AgentLoop {
         turns.append(.init(role: .user, text: goal))
 
         guard await brain.isConfigured() else {
-            let message = "\(brain.name) is not set up. Add the key in Settings (⌘,)."
-            await finish(.failed, note: message, emit: emit)
-            emit(.failed(message))
+            await finish(.failed,
+                         note: "\(brain.name) is not set up. Add the key in Settings (⌘,).",
+                         emit: emit)
             return
         }
 
@@ -126,7 +130,8 @@ public actor AgentLoop {
                 turns: turns,
                 tools: exposed,
                 computerUse: usesComputer(exposed) ? .desktop : .off,
-                observation: observation
+                observation: observation,
+                previousInteractionID: interactionID
             )
             if contract.urgency.budget.observationDepth == .full, brain.canDriveComputer {
                 request.screenshot = try? await computer.screenshot()
@@ -141,12 +146,12 @@ public actor AgentLoop {
                 contract.spend.promptTokens += response.usage.promptTokens
                 contract.spend.completionTokens += response.usage.completionTokens
                 contract.spend.usd += response.usage.costUSD
+                if let id = response.interactionID { interactionID = id }
                 await trace.complete(call, outcome: .succeeded, output: response.raw)
             } catch {
                 let message = error.localizedDescription
                 await trace.record(.init(kind: .modelResponse, summary: "model call failed: \(message)"))
                 await finish(.failed, note: message, emit: emit)
-                emit(.failed(message))
                 return
             }
 
@@ -160,9 +165,10 @@ public actor AgentLoop {
                 emit(.verifying)
                 let outstanding = await checkCriteria()
                 if outstanding.isEmpty {
-                    await finish(.succeeded,
-                                 note: response.text ?? "Done.",
-                                 emit: emit)
+                    // The reply was already emitted above; repeating it as a closing note
+                    // would post it to the conversation twice.
+                    await finish(.succeeded, note: response.text ?? "Done.",
+                                 alreadySaid: response.text != nil, emit: emit)
                     return
                 }
                 let notice = verifier.continuationNotice(outstanding: outstanding)
@@ -271,7 +277,12 @@ public actor AgentLoop {
         }())
 
         do {
-            let output = try await dispatch(action)
+            var output = try await dispatch(action)
+            // An empty result teaches the model nothing, so it tries the same thing again.
+            // Say plainly that the call succeeded and produced nothing.
+            if output.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                output = "(the command succeeded and produced no output)"
+            }
             await trace.complete(step, outcome: .succeeded, output: output)
             turns.append(.init(role: .tool, text: output, toolCallID: action.id))
             emit(.toolFinished(id: action.id, output: output, ok: true))
@@ -307,12 +318,22 @@ public actor AgentLoop {
             guard let path = str("path") else { throw Bad.missing("path") }
             return try await files.delete(path)
         case "files.search", "files.glob":
-            let pattern = str("pattern") ?? ""
-            let root = str("path") ?? bot.workspace?.path ?? NSHomeDirectory()
+            // Tildes have to be expanded here: the path goes into a single-quoted shell
+            // argument, where ~ is literal. Left unexpanded, every lookup under ~/Desktop
+            // silently matched nothing.
+            let rawRoot = str("path") ?? bot.workspace?.path ?? NSHomeDirectory()
+            let root = (rawRoot as NSString).expandingTildeInPath
+            let pattern = str("pattern") ?? "*"
+
+            // `find` rather than a zsh recursive glob: predictable under `zsh -lc`, and it
+            // does not depend on shell options that may or may not be set.
             let command = action.name == "files.search"
-                ? "rg -n --max-count 40 -- \(shellQuote(pattern)) \(shellQuote(root)) | head -60"
-                : "cd \(shellQuote(root)) && ls -1t **/\(pattern) 2>/dev/null | head -60"
-            return await shell.run(command).stdout
+                ? "rg -n --max-count 40 -- \(shellQuote(pattern)) \(shellQuote(root)) 2>/dev/null | head -60"
+                : "find \(shellQuote(root)) -maxdepth 2 -name \(shellQuote(pattern)) 2>/dev/null | head -60"
+            let out = await shell.run(command)
+            return out.stdout.isEmpty
+                ? "No matches for \(pattern) under \(root)."
+                : out.stdout
 
         // — shell —
         case "shell.exec":
@@ -501,6 +522,7 @@ public actor AgentLoop {
     // MARK: - Finish
 
     private func finish(_ closure: TaskContract.Closure, note: String,
+                        alreadySaid: Bool = false,
                         emit: @escaping @Sendable (Event) -> Void) async {
         contract.closedAt = Date()
         contract.closure = closure
@@ -516,7 +538,7 @@ public actor AgentLoop {
             totalCompletionTokens: contract.spend.completionTokens,
             closingNote: note
         ))
-        emit(.finished(closure, note: note))
+        emit(.finished(closure, note: alreadySaid ? "" : note))
     }
 
     // MARK: - Small helpers

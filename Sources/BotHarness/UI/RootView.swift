@@ -9,10 +9,7 @@ import SwiftUI
 /// the conversation gets the middle and everything else gets out of its way.
 struct RootView: View {
     @Environment(Store.self) private var store
-    @State private var contextPanel: ContextPanel = .screen
-    @State private var showContext = true
-
-    enum ContextPanel { case screen, settings }
+    @State private var ui = UIState()
 
     var body: some View {
         HStack(spacing: 0) {
@@ -21,20 +18,18 @@ struct RootView: View {
 
             Divider().overlay(Theme.separator)
 
-            ConversationView(
-                showContext: $showContext,
-                contextPanel: $contextPanel
-            )
-            .frame(maxWidth: .infinity)
+            ConversationView()
+                .frame(maxWidth: .infinity)
 
-            if showContext {
+            if ui.showPanel {
                 Divider().overlay(Theme.separator)
-                ContextPanelView(panel: $contextPanel)
+                ContextPanelView()
                     .frame(width: Theme.contextWidth)
                     .transition(.move(edge: .trailing).combined(with: .opacity))
             }
         }
         .background(Theme.ground)
-        .animation(Motion.occasional, value: showContext)
+        .environment(ui)
+        .animation(Motion.occasional, value: ui.showPanel)
     }
 }
