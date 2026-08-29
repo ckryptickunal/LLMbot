@@ -55,6 +55,14 @@ public actor AgentLoop {
     private let selector = SurfaceSelector()
     private let verifier = Verifier()
     private var stuck = StuckDetector()
+    private var loopGuard = LoopGuard()
+
+    /// Seeded once per run from the Keychain, so streamed output cannot carry a key into the
+    /// trace — which, being hash-chained, cannot be edited afterwards.
+    private var redactor = StreamingRedactor.forRun()
+
+    /// How many frames this run has sent. Only for the trace; the context prune is by position.
+    private var framesSent = 0
 
     /// Keeps unchanged screens out of the prompt and prunes stale ones.
     private var screenshots = ScreenshotBudget()
@@ -188,7 +196,10 @@ public actor AgentLoop {
                 return
             }
 
-            if let text = response.text, !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            if let raw = response.text, !raw.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                // Through the redactor before it reaches the conversation or the trace. The
+                // trace is hash-chained, so a leaked key there cannot be removed afterwards.
+                let text = redactor.redact(raw)
                 turns.append(.init(role: .assistant, text: text))
                 emit(.said(text))
             }
@@ -212,6 +223,13 @@ public actor AgentLoop {
 
             // — act —
             for action in response.actions {
+                if let explanation = loopGuard.record(tool: action.name,
+                                                      arguments: describe(arguments: action.arguments)) {
+                    await trace.record(.init(kind: .stuckDetected, summary: explanation))
+                    emit(.said(explanation))
+                    await finish(.succeeded, note: explanation, alreadySaid: true, emit: emit)
+                    return
+                }
                 let carried = await perform(action, exposed: exposed, emit: emit)
                 if case .halt(let why) = carried {
                     await finish(.escalated, note: why, emit: emit)
@@ -332,6 +350,7 @@ public actor AgentLoop {
             if output.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                 output = "(the command succeeded and produced no output)"
             }
+            output = redactor.redact(output)
             await trace.complete(step, outcome: .succeeded, output: output)
             turns.append(.init(role: .tool, text: output, toolCallID: action.id))
             emit(.toolFinished(id: action.id, output: output, ok: true))

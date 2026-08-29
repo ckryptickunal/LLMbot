@@ -8,6 +8,7 @@ import SwiftUI
 /// what makes a list of agents feel like a list of colleagues rather than a list of jobs.
 struct Sidebar: View {
     @Environment(Store.self) private var store
+    @Environment(UIState.self) private var ui
     @State private var query = ""
     @State private var library: LibrarySheet.Tab?
     @Environment(\.openWindow) private var openWindow
@@ -61,6 +62,7 @@ struct Sidebar: View {
             Spacer()
             Button {
                 store.createBot(name: "New Bot")
+                ui.focusComposer()
             } label: {
                 Image(systemName: "plus")
                     .font(.system(size: 13, weight: .medium))

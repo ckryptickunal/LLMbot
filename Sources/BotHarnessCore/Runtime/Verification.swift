@@ -115,6 +115,46 @@ public struct CommandOutput: Sendable {
 
 // MARK: - Stuck detection
 
+/// Counts consecutive identical tool calls.
+///
+/// Distinct from `StuckDetector`, which watches whether the *world* changed. This watches
+/// whether the *agent* is repeating itself verbatim, which is a different failure and has a
+/// cleaner signal: the same tool with byte-identical arguments, several times running.
+///
+/// The important design choice, taken from rakazo: tripping this **ends the run as a
+/// completion, not a failure**. The user gets a plain message naming the tool and the count,
+/// and the conversation stays coherent. A thrown error would leave a red run and no
+/// explanation, which tells the user nothing they can act on.
+public struct LoopGuard {
+
+    /// Six identical calls. Low enough to stop waste, high enough that a legitimate retry
+    /// loop — poll, wait, poll — is not cut short.
+    public var limit = 6
+
+    private var lastKey: String?
+    private var streak = 0
+
+    public init() {}
+
+    /// Returns an explanation when the run should stop, or nil to continue.
+    public mutating func record(tool: String, arguments: String) -> String? {
+        let key = tool + "\u{1}" + arguments
+        if key == lastKey {
+            streak += 1
+        } else {
+            lastKey = key
+            streak = 1
+            return nil
+        }
+        guard streak >= limit else { return nil }
+        streak = 0
+        return "I called \(tool) \(limit) times with the same arguments and kept getting the "
+             + "same result, so I stopped rather than keep going. Tell me what to try instead."
+    }
+
+    public mutating func reset() { lastKey = nil; streak = 0 }
+}
+
 /// Notices that a run has stopped making progress, before the step budget notices for it.
 ///
 /// The failure this prevents is the expensive one: an agent that retries the same click

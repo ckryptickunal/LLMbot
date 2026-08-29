@@ -3,6 +3,7 @@ import CoreGraphics
 import ScreenCaptureKit
 import ApplicationServices
 import AppKit
+import CryptoKit
 
 /// Driving the actual Mac: screen, keyboard, mouse, and the accessibility tree.
 ///
@@ -27,6 +28,14 @@ public actor ComputerExecutor {
     public static let normalisedMax: Double = 999
 
     private var lastScreenshot: Data?
+
+    /// Content hash of the last frame, so an unchanged screen costs nothing.
+    ///
+    /// The common GUI pattern is look, wait, look again — and most of those looks return an
+    /// identical image. A full frame is roughly 1,500 tokens, so returning "unchanged" instead
+    /// of the same picture again is the single cheapest saving available in a screen-driving
+    /// run.
+    private var lastFrameHash: String?
 
     // MARK: - Permissions
 
@@ -113,7 +122,34 @@ public actor ComputerExecutor {
         let image = try await SCScreenshotManager.captureImage(contentFilter: filter, configuration: config)
         guard let data = Self.png(from: image) else { throw ExecutorError.encodingFailed }
         lastScreenshot = data
+        lastFrameHash = Self.hash(data)
         return data
+    }
+
+    /// A capture that reports whether anything actually changed.
+    ///
+    /// Returns nil image data when the frame is byte-identical to the previous one, so the
+    /// caller can send a sentence instead of a picture.
+    public func observe(scaleTo maxWidth: Int = 1280) async throws -> Observation {
+        let previous = lastFrameHash
+        let data = try await screenshot(scaleTo: maxWidth)
+        let changed = previous != lastFrameHash || previous == nil
+        return Observation(image: changed ? data : nil,
+                           changed: changed,
+                           frameID: lastFrameHash ?? "")
+    }
+
+    public struct Observation: Sendable {
+        public var image: Data?
+        public var changed: Bool
+        public var frameID: String
+
+        /// What to tell the model when nothing moved.
+        public var unchangedNote: String { "(screen unchanged since the last look)" }
+    }
+
+    nonisolated private static func hash(_ data: Data) -> String {
+        SHA256.hash(data: data).prefix(8).map { String(format: "%02x", $0) }.joined()
     }
 
     nonisolated private static func png(from image: CGImage) -> Data? {

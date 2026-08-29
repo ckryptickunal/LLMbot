@@ -45,6 +45,25 @@ Versioning follows [Semantic Versioning 2.0.0](https://semver.org/spec/v2.0.0.ht
   build and dependency directories are pruned, and an empty result explains the pattern rule
   rather than just saying nothing was found.
 
+### Added — bots that describe themselves, and four patterns from rakazo
+- **Bots write their own name and description.** After a successful run a bot updates its
+  description from what it has actually been asked to do, the way Grok Bot does. A fresh bot
+  asked to count Swift files named itself "File Scout" and wrote its own summary. Editing the
+  text by hand locks it and the bot never overwrites your words; a button gives it back.
+- **Live activity stream** behind a chevron between the conversation and the composer.
+- **Streaming secret redactor.** Seeded with the actual key values for the run, not regexes, and
+  it holds back the tail of the buffer so a secret split across two stream chunks is still
+  caught. This matters here specifically: the trace is hash-chained, so a leaked key cannot be
+  edited out afterwards without breaking the chain.
+- **Loop guard.** Six identical tool calls ends the run — as a *completion* with a plain
+  explanation naming the tool and the count, not as a failure. A red run with no explanation
+  tells the user nothing they can act on.
+- **Screenshot economy.** Frames are content-hashed, and an unchanged screen returns a sentence
+  instead of an identical picture. Most looks in a GUI loop return the same frame, and paying
+  roughly 1,500 tokens to say "still the same" is the most wasteful thing a screen agent does.
+- `docs/research/rakazo-teardown.md` — 112 KB from reading elie222/rakazo's source, 36 patterns
+  ranked by value and effort.
+
 ### Added — capabilities, and a way to see what happened
 - **A working MCP client**, written against the wire format with no dependencies. stdio and
   HTTP transports, both verified against real servers. This is the piece that turns a list of
@@ -63,6 +82,15 @@ Versioning follows [Semantic Versioning 2.0.0](https://semver.org/spec/v2.0.0.ht
   which layer decided it, tokens and cost. It verifies the hash chain on open, because a
   tamper-evident log nobody checks is just a log.
 - **Connections screen driven by real health**, not a hardcoded list.
+
+### Fixed
+- **⌘N left the composer unfocused**, so creating a bot and typing did nothing. Focus now
+  follows an explicit request rather than a flag, because setting a flag that is already true
+  changes nothing and that was exactly the case.
+- **`files.glob` could not handle `**/*.swift`.** `find -name` matches basenames and treats
+  `**` literally, and the depth limit was 2 — too shallow for a real source tree. A bot asked
+  to count Swift files got nothing back, tried three more globs, and reached for Terminal.
+  Recursive patterns now work and results are counted.
 
 ### Fixed — the app now actually responds
 - **Nothing could be sent.** A `TextField` with `axis: .vertical` swallows Return, so

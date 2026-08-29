@@ -15,6 +15,16 @@ final class UIState {
     var panel: Panel = .screen
     var showPanel = true
 
+    /// Bumped whenever something should put the cursor back in the composer.
+    ///
+    /// A counter rather than a Bool: setting a flag that is already true changes nothing, so
+    /// two consecutive "focus the composer" requests would only work once. Creating a bot with
+    /// ⌘N and then typing was exactly that case — the field never took focus and the app
+    /// looked broken.
+    var focusRequests = 0
+
+    func focusComposer() { focusRequests += 1 }
+
     /// Reveal the bot's screen. Called from the Computer card.
     func openComputer() {
         panel = .screen

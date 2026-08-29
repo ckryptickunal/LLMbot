@@ -172,11 +172,18 @@ final class AgentLoopTests: XCTestCase {
         let bot = makeBot(dir)
 
         // A model that never finishes and never satisfies the criterion.
+        //
+        // Its calls must VARY. Repeating one identical call is a different failure, caught
+        // earlier and more cheaply by LoopGuard, which ends the run as a completion. The
+        // budget exists for the other case: an agent making endless but different calls, which
+        // no repetition check can see.
         final class Endless: BrainAdapter, @unchecked Sendable {
             let name = "endless"; let canDriveComputer = false
+            private var n = 0
             func isConfigured() async -> Bool { true }
             func step(_ request: BrainRequest) async throws -> BrainResponse {
-                .call("shell.exec", ["command": "true"], intent: "keep going")
+                n += 1
+                return .call("shell.exec", ["command": "echo \(n)"], intent: "keep going")
             }
         }
 
