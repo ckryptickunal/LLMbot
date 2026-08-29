@@ -63,6 +63,9 @@ public struct IconButton: View {
                 }
             }
             .frame(width: size, height: size)
+            // The visible disc may be small; the target must not be. A 24-point control with
+            // a 24-point hit area is one people miss.
+            .frame(minWidth: DS.Size.hit, minHeight: DS.Size.hit)
             .contentShape(Circle())
         }
         .buttonStyle(PressableStyle())
@@ -99,7 +102,8 @@ public struct PrimaryButton: View {
             }
             .foregroundStyle(isEnabled ? Color.white : DS.Ink.quaternary)
             .padding(.horizontal, DS.Space.lg)
-            .padding(.vertical, DS.Space.md - 1)
+            .frame(minHeight: DS.Size.controlHeight)
+            .fixedSize(horizontal: true, vertical: false)
             .background(isEnabled ? DS.Accent.live : DS.Tint.t3,
                         in: RoundedRectangle(cornerRadius: DS.Radius.md))
             // Content changes size when it swaps to a spinner; blur bridges the two states so
@@ -166,6 +170,9 @@ public struct Surface<Content: View>: View {
     public var body: some View {
         content
             .padding(padding)
+            // A card narrower than this stops reading as a card, and one that tracks the pane
+            // width stops reading as an object in the transcript.
+            .frame(minWidth: DS.Size.cardMin, maxWidth: DS.Size.cardMax, alignment: .leading)
             .background(fill, in: RoundedRectangle(cornerRadius: radius))
             .overlay(
                 RoundedRectangle(cornerRadius: radius)
@@ -200,7 +207,9 @@ public struct Chip: View {
             }
         }
         .padding(.horizontal, DS.Space.md)
-        .padding(.vertical, DS.Space.xs)
+        .frame(minHeight: DS.Size.glyph + DS.Space.md, maxHeight: DS.Size.controlHeight)
+        // Truncate rather than compress: a chip that shrinks makes the row beside it jump.
+        .fixedSize(horizontal: true, vertical: false)
         .background(DS.Tint.t3, in: Capsule())
         .contentShape(Capsule())
     }
@@ -233,6 +242,9 @@ public struct StatusPill: View {
         }
         .padding(.horizontal, DS.Space.md)
         .padding(.vertical, DS.Space.hair + 1)
+        // "Running" and "Done" are different widths, and a pill that resizes on every status
+        // change makes the whole card twitch. A floor holds the geometry still.
+        .frame(minWidth: 62, minHeight: DS.Size.glyph + DS.Space.xs, alignment: .leading)
         .background(DS.Tint.t3, in: Capsule())
     }
 }
@@ -281,7 +293,9 @@ public struct Skeleton: View {
     public var body: some View {
         RoundedRectangle(cornerRadius: radius)
             .fill(DS.Tint.t3)
+            // A minimum, because a placeholder with no width is indistinguishable from a bug.
             .frame(width: width, height: height)
+            .frame(minWidth: DS.Space.xxxl)
             .overlay(
                 GeometryReader { geo in
                     LinearGradient(
@@ -355,7 +369,7 @@ public struct EmptyState: View {
                 SecondaryButton(actionTitle, action: action)
             }
         }
-        .frame(maxWidth: .infinity)
+        .frame(maxWidth: .infinity, minHeight: DS.Size.hit * 4)
         .padding(.vertical, DS.Space.xxxl)
     }
 }
@@ -460,6 +474,8 @@ public struct ReadingColumn<Content: View>: View {
     var alignment: HorizontalAlignment = .leading
     @ViewBuilder let content: Content
 
+    @State private var available: CGFloat = 0
+
     public init(maxWidth: CGFloat = DS.Size.readingMax,
                 alignment: HorizontalAlignment = .leading,
                 @ViewBuilder content: () -> Content) {
@@ -468,16 +484,32 @@ public struct ReadingColumn<Content: View>: View {
 
     public var body: some View {
         VStack(alignment: alignment, spacing: 0) { content }
-            // Two frames, not a Spacer. The inner one caps the measure; the outer one claims
-            // the available width and anchors the capped column to its leading edge.
-            //
-            // The Spacer version overflowed: in an HStack the column asks for its full
-            // maxWidth, and when the pane is narrower than that the stack hands it the width
-            // it asked for and the transcript runs off the right edge of the window.
-            .frame(maxWidth: maxWidth, alignment: Alignment(horizontal: alignment, vertical: .center))
+            .frame(width: columnWidth,
+                   alignment: Alignment(horizontal: alignment, vertical: .center))
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.leading, DS.Space.xxl)
             .padding(.trailing, DS.Space.lg)
+            .background {
+                // Measure the width actually granted rather than trusting the proposal.
+                //
+                // Two earlier versions overflowed the window. A Spacer in an HStack let the
+                // column claim its full measure regardless of the pane. Nesting two maxWidth
+                // frames failed too, because a child asking for `.infinity` inside the capped
+                // frame claims the cap rather than the pane. Measuring removes the guesswork:
+                // the column is never wider than the space it was handed.
+                GeometryReader { geo in
+                    Color.clear
+                        .onAppear { available = geo.size.width }
+                        .onChange(of: geo.size.width) { _, width in available = width }
+                }
+            }
+    }
+
+    /// Never wider than the space available, never wider than a comfortable measure.
+    private var columnWidth: CGFloat? {
+        guard available > 1 else { return nil }
+        return min(maxWidth, available)
     }
 }
+
 

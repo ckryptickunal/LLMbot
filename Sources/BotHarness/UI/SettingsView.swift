@@ -209,7 +209,7 @@ private struct KeyField: View {
                         .font(DS.Text.monoSmall)
                         .foregroundStyle(DS.Ink.primary)
                         .padding(.horizontal, DS.Space.md + 1)
-                        .padding(.vertical, DS.Space.sm + 1)
+                        .frame(minHeight: DS.Size.controlHeight)
                         .background(DS.Tint.t3, in: RoundedRectangle(cornerRadius: DS.Radius.sm))
                         .onSubmit(commit)
                     PrimaryButton("Save", isEnabled: !entry.trimmingCharacters(in: .whitespaces).isEmpty,
@@ -298,6 +298,7 @@ private struct RuleRow: View {
             Spacer()
         }
         .padding(DS.Space.lg - 1)
+        .frame(minHeight: DS.Size.settingsRow, alignment: .leading)
         .background(DS.Tint.t3, in: RoundedRectangle(cornerRadius: DS.Radius.sm))
     }
 

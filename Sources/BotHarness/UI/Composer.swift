@@ -38,6 +38,9 @@ struct Composer: View {
                 .font(DS.Text.body)
                 .foregroundStyle(DS.Ink.primary)
                 .lineLimit(1...10)
+                // The field is the one thing in the row allowed to take the slack, and it has
+                // a floor so a long attachment path cannot squeeze it to nothing.
+                .frame(minWidth: DS.Size.fieldMin, maxWidth: .infinity)
                 .focused($focused)
                 // A vertical-axis field consumes Return itself, so the key has to be caught
                 // before it reaches the editor. Shift-Return falls through and inserts a
@@ -59,6 +62,12 @@ struct Composer: View {
             }
         }
         .dsInset(DS.Inset.composer)
+        // Hugs its content. A maxHeight here does not cap growth, it *claims* the space:
+        // the VStack offers the composer everything left over and a maxHeight accepts it, so
+        // an empty field rendered as a 220-point pill. Growth is already bounded by the
+        // field's own line limit.
+        .frame(minHeight: DS.Size.composerMin)
+        .fixedSize(horizontal: false, vertical: true)
         .background(DS.Tint.t3, in: RoundedRectangle(cornerRadius: DS.Radius.pill))
         .overlay(
             RoundedRectangle(cornerRadius: DS.Radius.pill)

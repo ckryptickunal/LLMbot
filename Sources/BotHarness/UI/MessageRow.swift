@@ -59,7 +59,11 @@ private struct TextBubble: View {
                             in: RoundedRectangle(cornerRadius: DS.Radius.xl))
                 // Hugs its content up to the measure. A bubble stretched to the column edge
                 // stops reading as a spoken turn and starts reading as a paragraph of layout.
-                .frame(maxWidth: DS.Size.bubbleMax, alignment: isUser ? .trailing : .leading)
+                // A floor as well as a ceiling: below the minimum a bubble wraps to one word
+                // a line, which reads as broken rather than tight.
+                .frame(minWidth: DS.Size.bubbleMin,
+                       maxWidth: DS.Size.bubbleMax,
+                       alignment: isUser ? .trailing : .leading)
                 .fixedSize(horizontal: false, vertical: true)
             if !isUser { Spacer(minLength: DS.Space.xxxl + DS.Space.xl) }
         }
@@ -299,10 +303,10 @@ struct ScreenshotCard: View {
                     }
                 } else {
                     // Sized like the image it stands in for, so nothing jumps when it lands.
-                    Skeleton(height: 220, radius: DS.Radius.md)
+                    Skeleton(height: DS.Size.activityStreamMax, radius: DS.Radius.md)
                 }
             }
-            .frame(maxWidth: 460)
+            .frame(minWidth: DS.Size.screenshotMin, maxWidth: DS.Size.screenshotMax)
 
             Text(shot.caption)
                 .font(DS.Text.caption)

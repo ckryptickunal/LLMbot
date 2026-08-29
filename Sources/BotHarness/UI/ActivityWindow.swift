@@ -277,6 +277,7 @@ private struct StepRow: View {
             }
         }
         .padding(DS.Space.lg - 2)
+        .frame(minHeight: DS.Size.denseRow, alignment: .leading)
         .background(DS.Surface.raised, in: RoundedRectangle(cornerRadius: DS.Radius.md))
         .contentShape(Rectangle())
         .onTapGesture { withAnimation(DS.Motion.panel) { expanded.toggle() } }

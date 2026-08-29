@@ -74,7 +74,7 @@ struct ActivityInspector: View {
                     .foregroundStyle(DS.Ink.tertiary)
             }
             .padding(.horizontal, DS.Space.lg - 1)
-            .padding(.vertical, DS.Space.md)
+            .frame(minHeight: DS.Size.hit)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -94,7 +94,7 @@ struct ActivityInspector: View {
                 .padding(.horizontal, DS.Space.lg - 1)
                 .padding(.vertical, DS.Space.md + 1)
             }
-            .frame(maxHeight: 220)
+            .frame(maxHeight: DS.Size.activityStreamMax)
             .onChange(of: steps.count) {
                 guard let last = steps.last else { return }
                 withAnimation(DS.Motion.instant) { proxy.scrollTo(last.id, anchor: .bottom) }

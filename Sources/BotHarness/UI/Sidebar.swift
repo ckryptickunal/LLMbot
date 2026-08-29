@@ -13,6 +13,7 @@ struct Sidebar: View {
 
     @State private var query = ""
     @State private var library: LibrarySheet.Tab?
+    @State private var accountOpen = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -94,6 +95,7 @@ struct Sidebar: View {
                 .foregroundStyle(DS.Ink.tertiary)
             TextField("Search", text: $query)
                 .textFieldStyle(.plain)
+                .frame(minWidth: DS.Size.fieldMin / 2)
                 .font(DS.Text.callout)
                 .foregroundStyle(DS.Ink.primary)
         }
@@ -118,27 +120,64 @@ struct Sidebar: View {
             }
             .buttonStyle(.plain)
 
-            Menu {
-                Button("Settings…") {
-                    NSApp.sendAction(Selector(("showSettingsWindow:")), to: nil, from: nil)
-                }
-                Button("Skills…") { library = .skills }
-                Button("Activity…") { openWindow(id: "activity") }
-                Divider()
-                Button("Open trace folder") { NSWorkspace.shared.open(Paths.traces) }
-                Button("Open data folder") { NSWorkspace.shared.open(Paths.root) }
-                Divider()
-                Button("Quit Bot-Harness") { NSApp.terminate(nil) }
-            } label: {
+            // A Button with a popover rather than a Menu.
+            //
+            // `Menu` applies its own internal insets to whatever label it is given, so the
+            // account row sat several points right of the two above it and broke the column's
+            // left edge. There is no supported way to remove those insets, and compensating
+            // with a negative padding is a number that goes wrong the moment the style
+            // changes. A button that opens a popover is fully ours to align.
+            Button { accountOpen.toggle() } label: {
                 footerRow("person.crop.circle", NSFullUserName())
             }
-            .menuStyle(.borderlessButton)
-            .menuIndicator(.hidden)
-            // Without this the menu sizes to its label and centres, so the account row stops
-            // sharing a left edge with the two rows above it.
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.bottom, DS.Space.sm)
+            .buttonStyle(.plain)
+            .popover(isPresented: $accountOpen, arrowEdge: .top) {
+                accountMenu
+            }
         }
+        .padding(.bottom, DS.Space.sm)
+    }
+
+    private var accountMenu: some View {
+        VStack(alignment: .leading, spacing: DS.Space.hair) {
+            menuItem("gearshape", "Settings…") {
+                NSApp.sendAction(Selector(("showSettingsWindow:")), to: nil, from: nil)
+            }
+            menuItem("sparkles", "Skills…") { library = .skills }
+            menuItem("clock.arrow.circlepath", "Activity…") { openWindow(id: "activity") }
+
+            Hairline().padding(.vertical, DS.Space.xs)
+
+            menuItem("folder", "Open trace folder") { NSWorkspace.shared.open(Paths.traces) }
+            menuItem("internaldrive", "Open data folder") { NSWorkspace.shared.open(Paths.root) }
+
+            Hairline().padding(.vertical, DS.Space.xs)
+
+            menuItem("power", "Quit Bot-Harness") { NSApp.terminate(nil) }
+        }
+        .padding(DS.Space.md)
+        .frame(minWidth: 190)
+    }
+
+    private func menuItem(_ icon: String, _ title: String, action: @escaping () -> Void) -> some View {
+        Button {
+            accountOpen = false
+            action()
+        } label: {
+            HStack(spacing: DS.Space.md) {
+                Image(systemName: icon)
+                    .font(DS.Text.glyphSmall)
+                    .foregroundStyle(DS.Ink.secondary)
+                    .frame(width: DS.Space.xl - 2)
+                Text(title).font(DS.Text.caption).foregroundStyle(DS.Ink.primary)
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, DS.Space.md)
+            .frame(minHeight: DS.Size.hit - 4)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .hoverRow(shape: RoundedRectangle(cornerRadius: DS.Radius.xs))
     }
 
     private func footerRow(_ icon: String, _ label: String) -> some View {
@@ -146,14 +185,16 @@ struct Sidebar: View {
             Image(systemName: icon)
                 .font(DS.Text.glyph)
                 .foregroundStyle(DS.Ink.secondary)
-                .frame(width: DS.Space.xl + 2)
+                // A fixed gutter, so every label in the footer starts on the same pixel
+                // whatever the width of its icon.
+                .frame(width: DS.Space.xl, alignment: .center)
             Text(label)
                 .font(DS.Text.callout)
                 .foregroundStyle(DS.Ink.primary)
             Spacer()
         }
-        .padding(.horizontal, DS.Space.lg + 2)
-        .frame(height: DS.Size.connectionRow, alignment: .leading)
+        .padding(.horizontal, DS.Space.lg)
+        .frame(height: DS.Size.hit + DS.Space.xs, alignment: .leading)
         .hoverRow(shape: RoundedRectangle(cornerRadius: DS.Radius.sm))
         .contentShape(Rectangle())
     }
@@ -187,6 +228,9 @@ private struct SidebarRow: View {
             }
         }
         .dsInset(DS.Inset.row)
+        // Avatar plus two lines. A fixed floor keeps the list on a rhythm whether a preview
+        // is one line or empty.
+        .frame(minHeight: DS.Size.rosterRow + DS.Space.xl, alignment: .leading)
         .hoverRow(resting: isSelected ? DS.Surface.active : .clear)
         .contentShape(Rectangle())
     }

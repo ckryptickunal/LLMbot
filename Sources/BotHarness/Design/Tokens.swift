@@ -320,6 +320,30 @@ public enum DS {
         public static let cardMax: CGFloat = 640
         public static let hairline: CGFloat = 1
 
+        // Minimums. A component that does not declare its own floor is a component a parent
+        // can squash, and every squashed control in this app so far was one that had not said
+        // how small it was willing to get.
+
+        /// Smallest comfortable pointer target. Anything under this is a control people miss.
+        public static let hit: CGFloat = 28
+        /// Text control heights, so a field and a button beside it share a baseline.
+        public static let controlHeight: CGFloat = 28
+        public static let controlHeightLarge: CGFloat = 34
+        /// A field stops being usable below this and should truncate rather than shrink.
+        public static let fieldMin: CGFloat = 120
+        /// Bubbles and cards never get narrower than this; below it, text wraps to one word
+        /// a line and the layout looks broken rather than tight.
+        public static let bubbleMin: CGFloat = 64
+        public static let cardMin: CGFloat = 180
+        /// Composer growth bounds.
+        public static let composerMin: CGFloat = 36
+        public static let composerMax: CGFloat = 220
+        /// Screenshot cards in the transcript.
+        public static let screenshotMin: CGFloat = 200
+        public static let screenshotMax: CGFloat = 460
+        /// The activity stream is a peek, not a second transcript.
+        public static let activityStreamMax: CGFloat = 220
+
         // Split-view columns. Resizable ranges, not the fixed Electron numbers Grok Bot uses.
         public static let rosterMin: CGFloat = 180
         public static let rosterIdeal: CGFloat = 240
