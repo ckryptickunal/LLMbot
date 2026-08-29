@@ -61,17 +61,37 @@ cat > "$APP/Contents/Info.plist" <<PLIST
 </plist>
 PLIST
 
-# Ad-hoc signature. Adequate for running locally; rejected by Gatekeeper if the bundle is ever
-# quarantined (i.e. downloaded or AirDropped). Distribution needs a Developer ID + notarisation.
-# Set BOTHARNESS_SIGN_IDENTITY to sign with a real certificate instead.
-IDENTITY="${BOTHARNESS_SIGN_IDENTITY:--}"
-codesign --force --sign "$IDENTITY" --timestamp=none "$APP"
+# Signing identity.
+#
+# This matters far more than it looks. macOS ties TCC grants — Screen Recording and
+# Accessibility, the two permissions this entire product runs on — to the app's designated
+# requirement. An ad-hoc signature's requirement is a per-build cdhash, so every single
+# rebuild would look to macOS like a different app and silently revoke both grants. During
+# active development that is unbearable.
+#
+# So: sign with a real certificate if one exists, and only fall back to ad-hoc if none does.
+IDENTITY="${BOTHARNESS_SIGN_IDENTITY:-}"
+if [[ -z "$IDENTITY" ]]; then
+  IDENTITY=$(security find-identity -v -p codesigning 2>/dev/null \
+             | grep -oE '"Apple Development: [^"]+"' | head -1 | tr -d '"')
+fi
+if [[ -z "$IDENTITY" ]]; then
+  IDENTITY="-"
+  print -P "%F{yellow}warn%f  no signing identity found; falling back to ad-hoc."
+  print    "      Screen Recording and Accessibility grants will be revoked on every rebuild."
+fi
+
+codesign --force --sign "$IDENTITY" --options runtime --timestamp=none "$APP"
 
 print -P "%F{green}built%f  $APP  ($VERSION, signed with '${IDENTITY}')"
 print    "run with: open $APP"
 
+# The designated requirement is what TCC keys grants against. Print it so a rebuild that
+# silently changes identity is visible rather than mysterious.
+print -P "\n%Bdesignated requirement%b"
+codesign -d -r- "$APP" 2>&1 | grep -E '^designated' | sed 's/^/  /'
+
 if [[ "$IDENTITY" == "-" ]]; then
-  print -P "\n%F{yellow}note%f  Ad-hoc signing changes the app's identity on every rebuild, so macOS may"
-  print    "      re-ask for Accessibility and Screen Recording after each build. Set"
-  print    "      BOTHARNESS_SIGN_IDENTITY to a stable certificate to avoid that."
+  print -P "\n%F{yellow}note%f  Ad-hoc signed. macOS will re-ask for Accessibility and Screen Recording"
+  print    "      after every rebuild. Set BOTHARNESS_SIGN_IDENTITY to avoid that."
 fi

@@ -1,0 +1,72 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-settings.json",
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "$CLAUDE_PROJECT_DIR/.claude/hooks/trace.py",
+            "timeout": 10,
+            "async": true
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "$CLAUDE_PROJECT_DIR/.claude/hooks/trace.py",
+            "timeout": 10,
+            "async": true
+          }
+        ]
+      }
+    ],
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "$CLAUDE_PROJECT_DIR/.claude/hooks/trace.py",
+            "timeout": 10,
+            "async": true
+          }
+        ]
+      }
+    ]
+  },
+  "permissions": {
+    "allow": [
+      "Bash(swift build:*)",
+      "Bash(swift run:*)",
+      "Bash(./scripts/doctor.sh)",
+      "Bash(./scripts/bundle.sh:*)",
+      "Bash(codesign -d:*)",
+      "Bash(codesign -dv:*)",
+      "Bash(security find-identity:*)",
+      "Bash(git status:*)",
+      "Bash(git diff:*)",
+      "Bash(git log:*)",
+      "Read(//Users/Kunal/Desktop/FableEnable/**)",
+      "Read(//Applications/Grok Bot.app/Contents/Info.plist)"
+    ],
+    "ask": [
+      "Bash(git push:*)",
+      "Bash(gh repo:*)",
+      "Bash(rm:*)",
+      "Bash(security add-generic-password:*)",
+      "Bash(security delete-generic-password:*)"
+    ],
+    "deny": [
+      "Read(//Users/Kunal/Desktop/**/.env)",
+      "Read(//Users/Kunal/Desktop/**/.env.*)",
+      "Read(//Users/Kunal/.aws/**)",
+      "Read(//Users/Kunal/.ssh/**)",
+      "Bash(security find-generic-password:* -w*)"
+    ]
+  }
+}

@@ -1,7 +1,14 @@
 # Build environment — verified facts
 
 Everything here was executed on this machine on 2026-08-29. Nothing is assumed.
-Re-run `scripts/doctor.sh` to re-verify after any OS or toolchain update.
+Run `scripts/doctor.sh` to re-verify after any OS or toolchain update.
+
+> **This document was wrong once already.** An earlier version stated that full Xcode was not
+> installed, because `xcode-select -p` returns the Command Line Tools path and `xcodebuild`
+> therefore errors. Both observations were correct and the conclusion drawn from them was
+> false: Xcode 26.6 is on disk, it is simply not the selected developer directory. The
+> correction is recorded here rather than quietly edited away, because "the tool errored, so
+> the thing is absent" is a mistake worth not repeating.
 
 ## The machine
 
@@ -9,98 +16,76 @@ Re-run `scripts/doctor.sh` to re-verify after any OS or toolchain update.
 |---|---|
 | macOS | 26.5.2 (build 25F84) |
 | Architecture | arm64 (Apple Silicon) |
-| Swift | 6.0.3 (`swiftlang-6.0.3.1.10`), target `arm64-apple-macosx16.0` |
-| Xcode | **Not installed.** Only Command Line Tools at `/Library/Developer/CommandLineTools` |
-| Node | v24.6.0, npm 11.5.1, pnpm 11.2.2 (no bun) |
-| Python | 3.10.11 (`/Library/Frameworks/Python.framework/Versions/3.10`) |
-| Rust | not installed |
+| **Selected** developer dir | `/Library/Developer/CommandLineTools` — Swift 6.0.3, SDK 15.2, target `macosx16.0` |
+| **Available** developer dir | `/Applications/Xcode.app` — **Xcode 26.6 (17F113)**, Swift 6.3.3, target `macosx26.0` |
+| SDKs under Xcode | `MacOSX.sdk`, `MacOSX26.sdk`, `MacOSX26.5.sdk` |
+| Signing identity | `Apple Development: kunalbairwa232@gmail.com (PNJ8A4A6JP)` — `224FA75C1E159B4B50EE901312F3B38632663F97` |
+| XcodeGen | 2.45.4 (`/opt/homebrew/bin/xcodegen`) |
+| Node | v24.6.0, npm 11.5.1, pnpm 11.2.2 |
+| Python | 3.10.11 default; **3.11 at `/opt/homebrew/bin/python3.11`**; `uv` 0.9.11 at `~/.local/bin/uv` |
 | Docker | 29.3.1 |
-| Homebrew | 6.0.16 |
-| gh | 2.93.0, authenticated as `ckryptickunal`, scopes `gist, read:org, repo, workflow` |
+| gh | 2.93.0, authenticated as `ckryptickunal` (`gist, read:org, repo, workflow`) |
 | claude CLI | 2.1.238 at `~/.local/bin/claude` |
-| Main display | 1800 × 1169 points (Retina, so 3600 × 2338 pixels) |
+| Main display | 1800 × 1169 points → 3600 × 2338 pixels (2× Retina) |
 
-## The finding that unblocks the project
+### Two toolchains, and which one we use
 
-**A SwiftUI app that links ScreenCaptureKit, ApplicationServices and AVFoundation builds
-cleanly with Command Line Tools alone. Xcode is not required.**
-
-Verified by compiling a program that imports `SwiftUI`, `ScreenCaptureKit`,
-`ApplicationServices` and `AVFoundation`, uses `@main struct App: App`, and calls
-`SCShareableContent.excludingDesktopWindows(_:onScreenWindowsOnly:)`:
-
-```
-swift build -c release   →  Build complete! (38.39s), exit 0
-```
-
-This matters because the entire "native Mac app" requirement rested on it, and because the
-alternative (installing Xcode) is a ~16 GB download the user has not chosen to make.
-
-### Minimum `Package.swift`
-
-```swift
-// swift-tools-version: 6.0
-import PackageDescription
-
-let package = Package(
-    name: "BotHarness",
-    platforms: [.macOS(.v14)],
-    targets: [
-        .executableTarget(
-            name: "BotHarness",
-            path: "Sources/BotHarness",
-            swiftSettings: [.swiftLanguageMode(.v5)]
-        )
-    ]
-)
-```
-
-`.swiftLanguageMode(.v5)` is deliberate: Swift 6 strict concurrency makes SwiftUI view code
-noisy to write, and this project's concurrency risk lives in the agent runtime, not the views.
-Revisit per target, not globally.
-
-### Assembling the `.app`
-
-Swift Package Manager produces a bare executable, not a bundle. The bundle is assembled by
-hand — this is the pattern already proven in `~/Desktop/FableEnable/bundle.sh`:
+The default toolchain is old because `xcode-select` points at Command Line Tools. To use the
+current one, either set the environment variable per-invocation or switch globally:
 
 ```bash
-swift build -c release
+# per-invocation, no admin rights needed — this is what scripts/ do
+DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer swift build -c release
 
-APP=build/BotHarness.app
-rm -rf "$APP"
-mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
-cp .build/release/BotHarness "$APP/Contents/MacOS/BotHarness"
-cat > "$APP/Contents/Info.plist" <<'PLIST'
-… CFBundleExecutable / CFBundleIdentifier / usage-description keys …
-PLIST
-codesign --force -s - "$APP"
-open "$APP"
+# or switch globally (needs your password)
+sudo xcode-select -s /Applications/Xcode.app/Contents/Developer
 ```
 
-## Code signing: what ad-hoc actually gets you
+**Bot-Harness currently builds against the CLT toolchain (Swift 6.0.3 / SDK 15.2) and works.**
+The Xcode toolchain becomes necessary the moment we want macOS 26 SDK APIs — which includes
+the current design language. That switch is a decision, not a default; see `docs/decisions/`.
 
+## Building
+
+A SwiftUI app that links ScreenCaptureKit, ApplicationServices and AVFoundation compiles with
+**either** toolchain, and Swift Package Manager plus a hand-assembled bundle is enough. No
+`.xcodeproj` is required.
+
+```bash
+./scripts/bundle.sh          # swift build → assemble .app → sign → print designated requirement
+open build/BotHarness.app
 ```
-$ codesign --force -s - build/Smoke.app
-$ codesign -dv build/Smoke.app
-  CodeDirectory v=20400 … flags=0x2(adhoc)
-  Signature=adhoc
-$ spctl -a -vv build/Smoke.app
-  build/Smoke.app: rejected
-```
 
-**Ad-hoc signing is rejected by Gatekeeper assessment.** It still runs locally, because an app
-you built yourself never receives the `com.apple.quarantine` extended attribute and so is never
-assessed. The practical consequences:
+Verified: `swift build -c release` completes in 38s cold, ~1.5s warm, exit 0.
 
-- Local development and personal use: fine. This is how Fable already ships on this machine.
-- Sending the `.app` to anyone else, or downloading it from anywhere: it will be quarantined,
-  assessed, and refused. Distribution needs a Developer ID certificate and notarisation.
-- **Ad-hoc signatures are not stable across rebuilds.** macOS ties TCC permission grants
-  (Accessibility, Screen Recording) to the code signature. Every rebuild can therefore look
-  like a different app and re-prompt for permissions. This is the single most annoying thing
-  about this build path and needs a real answer before the app asks users for permissions —
-  see the open question in `docs/decisions/`.
+## Code signing — the finding that saves weeks
+
+macOS keys TCC permission grants (Screen Recording, Accessibility) to an app's **designated
+requirement**. This is not a detail; it is the difference between a pleasant project and a
+miserable one.
+
+- **Ad-hoc signing (`codesign -s -`)** produces a designated requirement built from the
+  per-build **cdhash**. Every rebuild is therefore a different app, and macOS silently revokes
+  both permissions. For an app whose entire purpose requires those two permissions, that is
+  fatal to the development loop.
+- **The Apple Development certificate on this machine** produces an identity-based requirement
+  with no hash in it:
+
+  ```
+  designated => identifier "app.botharness.mac"
+                and anchor apple generic
+                and certificate leaf[subject.CN] = "Apple Development: kunalbairwa232@gmail.com (PNJ8A4A6JP)"
+                and certificate 1[field.1.2.840.113635.100.6.2.1] /* exists */
+  ```
+
+**Verified empirically:** built twice with a source change between builds. The cdhash changed;
+the designated requirement was byte-identical. Grants persist. `scripts/bundle.sh` therefore
+discovers and uses this certificate automatically and only falls back to ad-hoc if no
+certificate exists, printing a warning when it does.
+
+`spctl -a -vv` still reports `rejected`, because an Apple Development certificate is not a
+Developer ID. That only matters for giving the app to someone else; a locally built app is
+never quarantined and so is never assessed. Distribution needs Developer ID + notarisation.
 
 ## TCC / permission APIs — availability confirmed
 
@@ -108,37 +93,48 @@ Probed with non-prompting APIs only, so nothing was shown to the user:
 
 | Check | Result |
 |---|---|
-| `AXIsProcessTrusted()` | `true` *(inherited from the parent terminal process, not a grant to our app)* |
-| `CGPreflightScreenCaptureAccess()` | `true` *(same caveat)* |
+| `AXIsProcessTrusted()` | `true` |
+| `CGPreflightScreenCaptureAccess()` | `true` |
 | `AVCaptureDevice.authorizationStatus(for: .audio)` | `0` (notDetermined) |
-| `CGEventSource(stateID: .hidSystemState)` | constructible — **input synthesis is available** |
+| `CGEventSource(stateID: .hidSystemState)` | constructible — **input synthesis available** |
 | `CGEvent(mouseEventSource:…)` | constructible |
 
-> **Read the caveat carefully.** A command-line binary inherits the TCC identity of whatever
-> launched it. `true` here means the terminal running this session already holds Accessibility
-> and Screen Recording. It says nothing about what a freshly built `BotHarness.app` will get.
-> Our app will have to request its own grants under its own bundle identifier.
+> **Read the caveat.** A command-line binary inherits the TCC identity of whatever launched it.
+> Those `true` values describe the terminal running this session, not `BotHarness.app`. The app
+> must obtain its own grants under `app.botharness.mac`. That is the first thing to test on the
+> next run, and it is the one claim in this document that has been reasoned about but not yet
+> observed.
 
-## Credentials present on this machine
+## Open problem: disk space
+
+```
+/System/Volumes/Data   460Gi size   428Gi used   1.4Gi available   100% capacity
+```
+
+**1.4 GB free.** Enough to keep building this project, and not enough to install much of
+anything: a second Python toolchain, a browser automation runtime, a local eval harness, or
+any container image. Several things this project will eventually want are blocked until space
+is cleared. This is a real constraint on sequencing, not a nag.
+
+## Credentials
 
 - **No LLM API keys in the shell environment.** Only `ANTHROPIC_BASE_URL` is set.
+  `ANTHROPIC_API_KEY` and `GEMINI_API_KEY` are both unset.
 - Gemini keys exist in several project `.env` files (`transcriptor/`, `AraviAI/`, `KurtiAICLI/`,
-  `catalogue-platform/`, `reel-vault/`, and others). Their values were not read.
-- `gcloud` is configured for account `lanesurfdesign@gmail.com`, project `teaching-479115`.
-- The `claude` CLI is signed in via subscription and supports headless operation:
+  `catalogue-platform/`, `reel-vault/`). Their values were not read.
+- `gcloud` is configured for `lanesurfdesign@gmail.com`, project `teaching-479115`.
+- The `claude` CLI is signed in via subscription and supports headless streaming:
   `--print`, `--output-format stream-json`, `--input-format stream-json`, `--permission-mode`,
   `--mcp-config`, `--agents`, `--settings`, `--append-system-prompt`, `--model`, `--resume`.
 
-**Bot-Harness stores its own keys in the macOS Keychain and nowhere else.** It does not read
-these `.env` files. The pattern to copy is `~/Desktop/FableEnable/Sources/Fable/LLM.swift`,
-which wraps `SecItemAdd` / `SecItemCopyMatching` in about 30 lines with no dependencies.
+**Bot-Harness stores its own keys in the macOS Keychain under service `app.botharness.keys`
+and nowhere else.** It does not read those `.env` files. Add one with `scripts/set-key.sh gemini`.
 
 ## Prior art on this machine worth reading before writing code
 
 | Path | Why it matters |
 |---|---|
-| `~/Desktop/FableEnable/` | A zero-dependency SwiftUI macOS app, 2,878 lines, that already solves: the no-Xcode build, Keychain-backed keys, streaming SSE against Anthropic and OpenAI in pure `URLSession`, a ⌘K command palette, and a considered motion system. This is the closest thing to a starting point that exists. |
-| `~/Desktop/FableEnable/bundle.sh` | The exact, working `.app` assembly script. |
+| `~/Desktop/FableEnable/` | A zero-dependency SwiftUI macOS app, 2,878 lines, that already solves the SPM-only build, Keychain-backed keys, streaming SSE against Anthropic and OpenAI in pure `URLSession`, a ⌘K palette, and a considered motion system. |
 | `~/Desktop/FableEnable/Sources/Fable/LLM.swift` | Keychain wrapper plus provider failover chain. Directly reusable. |
-| `~/Desktop/FableEnable/.agents/skills/` | Local design skills: `swiftui-ui-patterns`, `impeccable`, `emil-design-eng`, `make-interfaces-feel-better`. Read before doing UI work. |
+| `~/Desktop/FableEnable/.agents/skills/` | Local design skills: `swiftui-ui-patterns`, `impeccable`, `emil-design-eng`, `make-interfaces-feel-better`. Read before UI work. |
 | `/Applications/Grok Bot.app` | The product being answered. See `docs/research/grok-bot-teardown.md`. |

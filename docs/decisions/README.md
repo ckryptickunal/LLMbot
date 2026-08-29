@@ -32,4 +32,9 @@ in `CHANGELOG.md` instead.
 
 | # | Title | Status | Date |
 |---|-------|--------|------|
-| _(populated as ADRs land)_ | | | |
+| [0001](0001-run-on-the-users-real-mac.md) | Bots run on the user's real Mac, not in a cloud VM | accepted | 2026-08-29 |
+| [0002](0002-native-swiftui-zero-dependencies.md) | Native SwiftUI in one Swift binary, with no third-party dependencies | accepted | 2026-08-29 |
+| [0003](0003-sign-with-a-real-certificate.md) | Sign with the Apple Development certificate, never ad hoc | accepted | 2026-08-29 |
+| [0004](0004-two-layer-permission-model.md) | Permissions are a natural-language rule layer over an unlowerable floor | accepted | 2026-08-29 |
+| [0005](0005-append-only-jsonl-traces.md) | Decision traces are append-only JSONL on disk, not a database | accepted | 2026-08-29 |
+| [0006](0006-two-brains-gemini-and-claude-cli.md) | Two brains — Gemini for computer use, the local claude CLI for coding | accepted | 2026-08-29 |
