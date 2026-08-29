@@ -1,10 +1,10 @@
 import BotHarnessCore
 import SwiftUI
 
-/// The right-hand panel: either the bot's screen or the bot's settings.
+/// The right-hand panel: the bot's screen, or the bot itself.
 ///
-/// Two modes rather than two panels, because they answer the same question at different
-/// zoom levels — "what is this bot doing" and "what is this bot".
+/// Two modes rather than two panels, because they answer the same question at different zoom
+/// levels — "what is this bot doing" and "what is this bot".
 struct ContextPanelView: View {
     @Environment(Store.self) private var store
     @Environment(UIState.self) private var ui
@@ -12,11 +12,11 @@ struct ContextPanelView: View {
     var body: some View {
         VStack(spacing: 0) {
             header
-            Divider().overlay(DS.Colour.line)
+            Hairline()
             ScrollView {
                 switch ui.panel {
                 case .screen:   ScreenPane(bot: currentBot)
-                case .settings: SettingsPane(bot: currentBot)
+                case .settings: BotSettingsPane(bot: currentBot)
                 }
             }
         }
@@ -30,159 +30,136 @@ struct ContextPanelView: View {
     private var header: some View {
         HStack {
             if ui.panel == .settings {
-                Button {
+                IconButton("chevron.left", filled: false, help: "Back to the screen") {
                     withAnimation(DS.Motion.instant) { ui.panel = .screen }
-                } label: {
-                    Image(systemName: "chevron.left")
-                        .font(.system(size: 12))
-                        .foregroundStyle(DS.Colour.inkSecondary)
                 }
-                .buttonStyle(.plain)
             }
             Spacer()
             Text(ui.panel == .settings ? "Settings" : "Screen")
-                .font(.system(size: 12.5, weight: .semibold))
+                .font(DS.Text.secondary.weight(.semibold))
                 .foregroundStyle(DS.Colour.ink)
             Spacer()
-            // Balances the leading chevron so the title stays optically centred.
-            if ui.panel == .settings { Color.clear.frame(width: 12) }
+            // Balances the leading control so the title stays optically centred.
+            if ui.panel == .settings {
+                Color.clear.frame(width: DS.Size.iconButton, height: DS.Size.iconButton)
+            }
         }
-        .padding(.horizontal, 14)
-        .frame(height: 44)
-        .padding(.top, 8)
+        .padding(.horizontal, DS.Space.lg + 2)
+        .frame(height: DS.Size.rowHeight)
+        .padding(.top, DS.Space.md)
     }
 }
 
+// MARK: - Screen
+
 /// The bot's screen.
 ///
-/// When the environment is this Mac, showing a live view is recursive — the app is on the
-/// screen it is capturing. The honest answer, and the one shipped tools use, is to show the
-/// most recent frame the agent actually acted on rather than a live mirror: it is what the
-/// bot saw when it decided, which is the useful thing, and it does not cost a capture stream.
+/// When the environment is this Mac, a live mirror is recursive — the app is on the screen it
+/// would be capturing. The honest answer, and the one shipped tools use, is the most recent
+/// frame the agent actually acted on: it is what the bot saw when it decided, which is the
+/// useful thing, and it costs no capture stream.
 private struct ScreenPane: View {
     let bot: Bot?
 
     var body: some View {
-        VStack(spacing: 10) {
-            RoundedRectangle(cornerRadius: 8)
-                .fill(Color.black.opacity(0.45))
+        VStack(spacing: DS.Space.lg - 2) {
+            RoundedRectangle(cornerRadius: DS.Radius.md)
+                .fill(DS.Colour.ground)
                 .aspectRatio(16.0 / 10.0, contentMode: .fit)
                 .overlay {
-                    VStack(spacing: 10) {
-                        Image(systemName: "display")
-                            .font(.system(size: 20))
-                            .foregroundStyle(DS.Colour.inkTertiary)
-                        Text("No screen yet")
-                            .font(.system(size: 12))
-                            .foregroundStyle(DS.Colour.inkSecondary)
-                        Text("Appears when this bot uses a computer.")
-                            .font(.system(size: 11))
-                            .foregroundStyle(DS.Colour.inkTertiary)
-                    }
+                    EmptyState(
+                        systemImage: "display",
+                        title: "No screen yet",
+                        message: "Appears when this bot uses a computer."
+                    )
                 }
 
             if let bot {
                 Text("\(bot.name)'s screen · \(bot.environment.displayName)")
-                    .font(.system(size: 11.5))
+                    .font(DS.Text.caption)
                     .foregroundStyle(DS.Colour.inkTertiary)
             }
         }
-        .padding(14)
+        .padding(DS.Space.lg + 2)
     }
 }
 
-/// Bot settings. The fields are Grok Bot's, because they are the right fields: identity,
-/// what it is for, whether it may interrupt you — and then the things they do not have,
-/// which are the brain and the environment.
-private struct SettingsPane: View {
+// MARK: - Bot settings
+
+/// The bot's identity.
+///
+/// The fields are Grok Bot's, because they are the right fields — name, label, description as
+/// persona, notifications — plus the two they do not have: which brain answers, and where its
+/// computer is.
+private struct BotSettingsPane: View {
     @Environment(Store.self) private var store
     let bot: Bot?
 
     @State private var draft: Bot?
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            if let working = draft ?? bot {
+        if let working = draft ?? bot {
+            VStack(alignment: .leading, spacing: DS.Space.xl) {
                 Circle()
                     .fill(working.tint)
-                    .frame(width: 56, height: 56)
+                    .frame(width: DS.Size.avatarLarge, height: DS.Size.avatarLarge)
                     .frame(maxWidth: .infinity)
-                    .padding(.top, 8)
+                    .padding(.top, DS.Space.md)
 
-                field("Name", text: Binding(
-                    get: { working.name },
-                    set: { v in mutate { $0.name = v; $0.nameIsAuto = false } }))
+                field("Name", text: binding(\.name, on: working))
+                field("Label (optional)", text: binding(\.label, on: working),
+                      placeholder: "Research, marketing, admin")
 
-                field("Label (optional)", text: Binding(
-                    get: { working.label },
-                    set: { v in mutate { $0.label = v } }),
-                    placeholder: "Research, marketing, admin")
-
-                VStack(alignment: .leading, spacing: 6) {
+                VStack(alignment: .leading, spacing: DS.Space.sm) {
                     Text("Description")
-                        .font(.system(size: 11.5))
+                        .font(DS.Text.caption)
                         .foregroundStyle(DS.Colour.inkSecondary)
-                    TextEditor(text: Binding(
-                        get: { working.persona },
-                        set: { v in mutate { $0.persona = v } }))
-                        .font(.system(size: 12.5))
+                    TextEditor(text: binding(\.persona, on: working))
+                        .font(DS.Text.secondary)
                         .scrollContentBackground(.hidden)
                         .frame(height: 130)
-                        .padding(7)
-                        .background(Color.white.opacity(0.05), in: RoundedRectangle(cornerRadius: 7))
+                        .padding(DS.Space.sm + 1)
+                        .background(DS.Colour.fill, in: RoundedRectangle(cornerRadius: DS.Radius.sm))
                 }
 
-                labelled("Brain") {
-                    Text(working.brain.displayName)
-                        .font(.system(size: 12.5))
-                        .foregroundStyle(DS.Colour.ink)
+                readOnly("Brain", working.brain.displayName, nil)
+                readOnly("Computer", working.environment.displayName, working.environment.explanation)
+
+                toggle("Notifications",
+                       "Get notified when this bot finishes or needs input",
+                       binding(\.notifies, on: working))
+
+                Spacer(minLength: DS.Space.lg)
+
+                SecondaryButton("Share as template", systemImage: "square.and.arrow.up") {
+                    exportTemplate(working)
                 }
-
-                labelled("Computer") {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(working.environment.displayName)
-                            .font(.system(size: 12.5))
-                            .foregroundStyle(DS.Colour.ink)
-                        Text(working.environment.explanation)
-                            .font(.system(size: 11))
-                            .foregroundStyle(DS.Colour.inkTertiary)
-                    }
-                }
-
-                toggleRow(
-                    "Notifications",
-                    detail: "Get notified when this bot finishes or needs input",
-                    isOn: Binding(
-                        get: { working.notifies },
-                        set: { v in mutate { $0.notifies = v } })
-                )
-
-                Spacer(minLength: 12)
-
-                Button { exportTemplate(working) } label: {
-                    HStack(spacing: 6) {
-                        Image(systemName: "square.and.arrow.up")
-                            .font(.system(size: 11))
-                        Text("Share as template")
-                            .font(.system(size: 12))
-                    }
-                    .foregroundStyle(DS.Colour.inkSecondary)
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 8)
-                    .background(Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 7))
-                }
-                .buttonStyle(.plain)
-            } else {
-                Text("No bot selected")
-                    .font(.system(size: 12.5))
-                    .foregroundStyle(DS.Colour.inkTertiary)
+                .frame(maxWidth: .infinity)
             }
+            .padding(DS.Space.lg + 2)
+        } else {
+            EmptyState(systemImage: "person.crop.circle",
+                       title: "No bot selected",
+                       message: "Pick one from the list to see its settings.")
         }
-        .padding(14)
     }
 
-    /// Write the bot's shareable parts to a file: name, label, persona, brain, autonomy.
-    /// Never its workspace path, its history, or anything from the Keychain.
+    // MARK: Editing
+
+    private func binding<V>(_ path: WritableKeyPath<Bot, V>, on working: Bot) -> Binding<V> {
+        Binding(
+            get: { working[keyPath: path] },
+            set: { newValue in
+                var updated = working
+                updated[keyPath: path] = newValue
+                draft = updated
+                store.update(updated)
+            }
+        )
+    }
+
+    /// Write the bot's shareable parts to a file: name, label, persona, brain, autonomy. Never
+    /// its workspace path, its history, or anything from the Keychain.
     private func exportTemplate(_ bot: Bot) {
         let template: [String: Any] = [
             "name": bot.name,
@@ -193,7 +170,8 @@ private struct SettingsPane: View {
             "environment": bot.environment.rawValue,
         ]
         let panel = NSSavePanel()
-        panel.nameFieldStringValue = bot.name.replacingOccurrences(of: " ", with: "-").lowercased() + ".bot.json"
+        panel.nameFieldStringValue = bot.name
+            .replacingOccurrences(of: " ", with: "-").lowercased() + ".bot.json"
         panel.prompt = "Export"
         guard panel.runModal() == .OK, let url = panel.url,
               let data = try? JSONSerialization.data(withJSONObject: template,
@@ -202,49 +180,43 @@ private struct SettingsPane: View {
         try? data.write(to: url)
     }
 
-    private func mutate(_ change: (inout Bot) -> Void) {
-        guard var b = draft ?? bot else { return }
-        change(&b)
-        draft = b
-        store.update(b)
-    }
+    // MARK: Pieces
 
     private func field(_ title: String, text: Binding<String>, placeholder: String = "") -> some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text(title)
-                .font(.system(size: 11.5))
-                .foregroundStyle(DS.Colour.inkSecondary)
+        VStack(alignment: .leading, spacing: DS.Space.sm) {
+            Text(title).font(DS.Text.caption).foregroundStyle(DS.Colour.inkSecondary)
             TextField(placeholder, text: text)
                 .textFieldStyle(.plain)
-                .font(.system(size: 12.5))
+                .font(DS.Text.secondary)
                 .foregroundStyle(DS.Colour.ink)
-                .padding(.horizontal, 9)
-                .padding(.vertical, 7)
-                .background(Color.white.opacity(0.05), in: RoundedRectangle(cornerRadius: 7))
+                .padding(.horizontal, DS.Space.md + 1)
+                .padding(.vertical, DS.Space.sm + 1)
+                .background(DS.Colour.fill, in: RoundedRectangle(cornerRadius: DS.Radius.sm))
         }
     }
 
-    private func labelled<Content: View>(_ title: String, @ViewBuilder content: () -> Content) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text(title)
-                .font(.system(size: 11.5))
-                .foregroundStyle(DS.Colour.inkSecondary)
-            content()
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.horizontal, 9)
-                .padding(.vertical, 7)
-                .background(Color.white.opacity(0.05), in: RoundedRectangle(cornerRadius: 7))
+    private func readOnly(_ title: String, _ value: String, _ detail: String?) -> some View {
+        VStack(alignment: .leading, spacing: DS.Space.sm) {
+            Text(title).font(DS.Text.caption).foregroundStyle(DS.Colour.inkSecondary)
+            VStack(alignment: .leading, spacing: DS.Space.hair) {
+                Text(value).font(DS.Text.secondary).foregroundStyle(DS.Colour.ink)
+                if let detail {
+                    Text(detail).font(DS.Text.micro).foregroundStyle(DS.Colour.inkTertiary)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, DS.Space.md + 1)
+            .padding(.vertical, DS.Space.sm + 1)
+            .background(DS.Colour.fill, in: RoundedRectangle(cornerRadius: DS.Radius.sm))
         }
     }
 
-    private func toggleRow(_ title: String, detail: String, isOn: Binding<Bool>) -> some View {
-        HStack(alignment: .top, spacing: 10) {
-            VStack(alignment: .leading, spacing: 2) {
-                Text(title)
-                    .font(.system(size: 12.5))
-                    .foregroundStyle(DS.Colour.ink)
+    private func toggle(_ title: String, _ detail: String, _ isOn: Binding<Bool>) -> some View {
+        HStack(alignment: .top, spacing: DS.Space.lg - 2) {
+            VStack(alignment: .leading, spacing: DS.Space.hair) {
+                Text(title).font(DS.Text.secondary).foregroundStyle(DS.Colour.ink)
                 Text(detail)
-                    .font(.system(size: 11))
+                    .font(DS.Text.micro)
                     .foregroundStyle(DS.Colour.inkTertiary)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -254,7 +226,7 @@ private struct SettingsPane: View {
                 .toggleStyle(.switch)
                 .controlSize(.mini)
         }
-        .padding(11)
-        .background(Color.white.opacity(0.04), in: RoundedRectangle(cornerRadius: 8))
+        .padding(DS.Space.lg - 1)
+        .background(DS.Colour.fill, in: RoundedRectangle(cornerRadius: DS.Radius.md))
     }
 }

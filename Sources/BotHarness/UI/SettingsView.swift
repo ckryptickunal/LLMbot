@@ -1,11 +1,11 @@
 import BotHarnessCore
 import SwiftUI
 
-/// Application settings. Opened with ⌘, like every other Mac app.
+/// Application settings, at ⌘, like every other Mac app.
 ///
-/// The product promise is that nothing a normal user does requires a terminal, and adding an
-/// API key is the very first thing every user does. `scripts/set-key.sh` still exists for
-/// scripting and for headless setup, but this is the path people actually take.
+/// The product promise is that nothing a normal person does needs a terminal, and adding an
+/// API key is the very first thing every person does. `scripts/set-key.sh` still exists for
+/// scripting and headless setup; this is the path people take.
 struct SettingsView: View {
     enum Tab: String, CaseIterable, Identifiable {
         case providers, permissions, about
@@ -30,16 +30,16 @@ struct SettingsView: View {
 
     var body: some View {
         TabView(selection: $tab) {
-            ForEach(Tab.allCases) { t in
+            ForEach(Tab.allCases) { item in
                 Group {
-                    switch t {
+                    switch item {
                     case .providers:   ProviderSettings()
                     case .permissions: PermissionSettings()
                     case .about:       AboutSettings()
                     }
                 }
-                .tabItem { Label(t.title, systemImage: t.icon) }
-                .tag(t)
+                .tabItem { Label(item.title, systemImage: item.icon) }
+                .tag(item)
             }
         }
         .frame(width: 560, height: 460)
@@ -50,16 +50,14 @@ struct SettingsView: View {
 
 /// Where API keys go.
 ///
-/// Three rules this screen follows, all of them load-bearing:
+/// Three rules, all load-bearing:
 ///
-/// 1. **A stored key is never displayed**, not even masked back to the user. There is no read
-///    path from this screen to a secret; it can write one and it can ask whether one exists.
-///    A settings pane that shows you your own key is a settings pane that shows it to anyone
-///    who opens your laptop, and to any screenshot you take of it.
-/// 2. **Keys go straight to the Keychain**, never to `state.json`, never to a `.env`, never
-///    into a prompt or a trace.
-/// 3. **The bot that needs no key is listed first**, because the fastest path to a working
-///    app is the one that requires nothing from the user at all.
+/// 1. **A stored key is never displayed**, not even masked. There is no read path from this
+///    screen to a secret; it can write one and ask whether one exists. A settings pane that
+///    shows you your own key shows it to anyone who opens your laptop, and to any screenshot.
+/// 2. **Keys go straight to the Keychain** — never to `state.json`, a `.env`, a prompt or a trace.
+/// 3. **The brain that needs no key is listed first**, because the fastest path to a working
+///    app is the one requiring nothing at all.
 struct ProviderSettings: View {
     @State private var present: [String: Bool] = [:]
     @State private var claudeCLIPath: String?
@@ -67,77 +65,63 @@ struct ProviderSettings: View {
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 18) {
+            VStack(alignment: .leading, spacing: DS.Space.xl + 2) {
                 Text("Bot-Harness runs on your own accounts. Keys are stored in the macOS Keychain and are never written to a file, put in a prompt, or recorded in a trace.")
-                    .font(.system(size: 11.5))
-                    .foregroundStyle(.secondary)
+                    .font(DS.Text.caption)
+                    .foregroundStyle(DS.Colour.inkSecondary)
+                    .lineSpacing(DS.Text.bodyLineSpacing)
                     .fixedSize(horizontal: false, vertical: true)
 
                 claudeCodeRow
+                Hairline()
 
-                Divider()
+                KeyField(provider: "gemini", title: "Google Gemini",
+                         detail: "Drives the computer — screen, keyboard and mouse. Get a key at aistudio.google.com.",
+                         placeholder: "AIza…", isPresent: present["gemini"] ?? false,
+                         onSave: { save("gemini", $0) }, onRemove: { remove("gemini") })
 
-                KeyField(
-                    provider: "gemini",
-                    title: "Google Gemini",
-                    detail: "Drives the computer — screen, keyboard and mouse. Get a key at aistudio.google.com.",
-                    placeholder: "AIza…",
-                    isPresent: present["gemini"] ?? false,
-                    onSave: { save("gemini", $0) },
-                    onRemove: { remove("gemini") }
-                )
+                KeyField(provider: "anthropic", title: "Anthropic",
+                         detail: "Only needed if you have an API key. A Claude Code subscription is handled above instead.",
+                         placeholder: "sk-ant-…", isPresent: present["anthropic"] ?? false,
+                         onSave: { save("anthropic", $0) }, onRemove: { remove("anthropic") })
 
-                KeyField(
-                    provider: "anthropic",
-                    title: "Anthropic",
-                    detail: "Only needed if you have an API key. A Claude Code subscription is handled above instead.",
-                    placeholder: "sk-ant-…",
-                    isPresent: present["anthropic"] ?? false,
-                    onSave: { save("anthropic", $0) },
-                    onRemove: { remove("anthropic") }
-                )
-
-                KeyField(
-                    provider: "openai",
-                    title: "OpenAI",
-                    detail: "Optional. Available as an additional brain for bots that want it.",
-                    placeholder: "sk-…",
-                    isPresent: present["openai"] ?? false,
-                    onSave: { save("openai", $0) },
-                    onRemove: { remove("openai") }
-                )
+                KeyField(provider: "openai", title: "OpenAI",
+                         detail: "Optional. Available as an additional brain for bots that want it.",
+                         placeholder: "sk-…", isPresent: present["openai"] ?? false,
+                         onSave: { save("openai", $0) }, onRemove: { remove("openai") })
 
                 if let justSaved {
                     Label("Saved \(justSaved) to your Keychain.", systemImage: "checkmark.circle.fill")
-                        .font(.system(size: 11.5))
-                        .foregroundStyle(.green)
+                        .font(DS.Text.caption)
+                        .foregroundStyle(DS.Colour.done)
                         .transition(.opacity)
                 }
             }
-            .padding(20)
+            .padding(DS.Space.xxl - 4)
         }
         .task { refresh() }
     }
 
     private var claudeCodeRow: some View {
-        HStack(alignment: .top, spacing: 11) {
+        HStack(alignment: .top, spacing: DS.Space.lg - 1) {
             Image(systemName: claudeCLIPath == nil ? "xmark.circle" : "checkmark.circle.fill")
-                .foregroundStyle(claudeCLIPath == nil ? Color.secondary : Color.green)
-                .font(.system(size: 14))
-            VStack(alignment: .leading, spacing: 3) {
+                .foregroundStyle(claudeCLIPath == nil ? DS.Colour.inkSecondary : DS.Colour.done)
+                .font(DS.Text.glyphMedium)
+            VStack(alignment: .leading, spacing: DS.Space.xs - 1) {
                 Text("Claude Code")
-                    .font(.system(size: 13, weight: .semibold))
+                    .font(DS.Text.body.weight(.semibold))
+                    .foregroundStyle(DS.Colour.ink)
                 if let path = claudeCLIPath {
                     Text("Signed in and ready — no API key needed. Billed to your subscription.")
-                        .font(.system(size: 11.5))
-                        .foregroundStyle(.secondary)
+                        .font(DS.Text.caption)
+                        .foregroundStyle(DS.Colour.inkSecondary)
                     Text(path)
-                        .font(.system(size: 10.5, design: .monospaced))
-                        .foregroundStyle(.tertiary)
+                        .font(DS.Text.mono(DS.Text.Scale.micro))
+                        .foregroundStyle(DS.Colour.inkTertiary)
                 } else {
                     Text("Not found. Install the Claude Code CLI to use your subscription as a brain.")
-                        .font(.system(size: 11.5))
-                        .foregroundStyle(.secondary)
+                        .font(DS.Text.caption)
+                        .foregroundStyle(DS.Colour.inkSecondary)
                 }
             }
             Spacer()
@@ -145,7 +129,7 @@ struct ProviderSettings: View {
     }
 
     private func refresh() {
-        for p in ["gemini", "anthropic", "openai"] { present[p] = Keychain.has(p) }
+        for provider in ["gemini", "anthropic", "openai"] { present[provider] = Keychain.has(provider) }
         claudeCLIPath = Self.findClaudeCLI()
     }
 
@@ -156,7 +140,7 @@ struct ProviderSettings: View {
         present[provider] = Keychain.has(provider)
         withAnimation(DS.Motion.instant) { justSaved = provider }
         Task {
-            try? await Task.sleep(for: .seconds(3))
+            try? await Task.sleep(for: .seconds(DS.Duration.toast))
             withAnimation(DS.Motion.instant) { justSaved = nil }
         }
     }
@@ -166,21 +150,19 @@ struct ProviderSettings: View {
         present[provider] = false
     }
 
-    /// The CLI is usually outside a GUI app's inherited PATH, so look where it actually
-    /// installs rather than relying on `which`.
+    /// The CLI is usually outside a GUI app's inherited PATH, so look where it installs rather
+    /// than relying on `which`.
     static func findClaudeCLI() -> String? {
-        let candidates = [
+        [
             "\(NSHomeDirectory())/.local/bin/claude",
             "/opt/homebrew/bin/claude",
             "/usr/local/bin/claude",
-        ]
-        return candidates.first { FileManager.default.isExecutableFile(atPath: $0) }
+        ].first { FileManager.default.isExecutableFile(atPath: $0) }
     }
 }
 
-/// One provider's key row.
-///
-/// Deliberately has no "show key" affordance. The stored value is write-only from this screen.
+/// One provider's key row. Deliberately has no "show key" affordance: the stored value is
+/// write-only from here.
 private struct KeyField: View {
     let provider: String
     let title: String
@@ -194,49 +176,48 @@ private struct KeyField: View {
     @State private var replacing = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 7) {
-            HStack(spacing: 8) {
-                Text(title).font(.system(size: 13, weight: .semibold))
+        VStack(alignment: .leading, spacing: DS.Space.sm + 1) {
+            HStack(spacing: DS.Space.md) {
+                Text(title).font(DS.Text.body.weight(.semibold)).foregroundStyle(DS.Colour.ink)
                 if isPresent && !replacing {
-                    Text("saved")
-                        .font(.system(size: 10, weight: .medium))
-                        .foregroundStyle(.green)
-                        .padding(.horizontal, 6).padding(.vertical, 2)
-                        .background(Color.green.opacity(0.14), in: Capsule())
+                    StatusPill(.done, "saved")
                 }
                 Spacer()
             }
 
             Text(detail)
-                .font(.system(size: 11.5))
-                .foregroundStyle(.secondary)
+                .font(DS.Text.caption)
+                .foregroundStyle(DS.Colour.inkSecondary)
+                .lineSpacing(DS.Text.bodyLineSpacing)
                 .fixedSize(horizontal: false, vertical: true)
 
             if isPresent && !replacing {
-                HStack(spacing: 8) {
+                HStack(spacing: DS.Space.md) {
                     Text("••••••••••••••••••••••••")
-                        .font(.system(size: 12, design: .monospaced))
-                        .foregroundStyle(.tertiary)
+                        .font(DS.Text.mono(DS.Text.Scale.secondary))
+                        .foregroundStyle(DS.Colour.inkTertiary)
                     Spacer()
-                    Button("Replace") { replacing = true; entry = "" }
-                    Button("Remove", role: .destructive) { onRemove() }
+                    SecondaryButton("Replace") { replacing = true; entry = "" }
+                    SecondaryButton("Remove", role: .destructive, action: onRemove)
                 }
-                .controlSize(.small)
             } else {
-                HStack(spacing: 8) {
+                HStack(spacing: DS.Space.md) {
                     // SecureField, so the key is never rendered as readable text and never
                     // captured in a screenshot of this window.
                     SecureField(placeholder, text: $entry)
-                        .textFieldStyle(.roundedBorder)
-                        .font(.system(size: 12, design: .monospaced))
-                        .onSubmit { commit() }
-                    Button("Save") { commit() }
-                        .disabled(entry.trimmingCharacters(in: .whitespaces).isEmpty)
+                        .textFieldStyle(.plain)
+                        .font(DS.Text.mono(DS.Text.Scale.secondary))
+                        .foregroundStyle(DS.Colour.ink)
+                        .padding(.horizontal, DS.Space.md + 1)
+                        .padding(.vertical, DS.Space.sm + 1)
+                        .background(DS.Colour.fill, in: RoundedRectangle(cornerRadius: DS.Radius.sm))
+                        .onSubmit(commit)
+                    PrimaryButton("Save", isEnabled: !entry.trimmingCharacters(in: .whitespaces).isEmpty,
+                                  action: commit)
                     if replacing {
-                        Button("Cancel") { replacing = false; entry = "" }
+                        SecondaryButton("Cancel") { replacing = false; entry = "" }
                     }
                 }
-                .controlSize(.small)
             }
         }
     }
@@ -255,69 +236,69 @@ struct PermissionSettings: View {
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 16) {
-                Text("Rules that apply to every bot. Write one short rule per action, in plain language. **Ask first always wins** when two rules could both apply.")
-                    .font(.system(size: 11.5))
-                    .foregroundStyle(.secondary)
+            VStack(alignment: .leading, spacing: DS.Space.xl) {
+                Text("Rules that apply to every bot. Write one short rule per action, in plain language. Ask first always wins when two rules could both apply.")
+                    .font(DS.Text.caption)
+                    .foregroundStyle(DS.Colour.inkSecondary)
+                    .lineSpacing(DS.Text.bodyLineSpacing)
                     .fixedSize(horizontal: false, vertical: true)
 
-                // Extracted into its own view. Inline, the row's builder chain took the
-                // type-checker past its budget and failed the build with a timeout rather
-                // than a real error.
-                ForEach(store.globalRules) { rule in
-                    RuleRow(rule: rule)
+                ForEach(store.globalRules) { RuleRow(rule: $0) }
+
+                Hairline()
+
+                VStack(alignment: .leading, spacing: DS.Space.sm) {
+                    SectionLabel("Always asked, and not editable")
+                    Text("These are built in. No rule you write can switch them off.")
+                        .font(DS.Text.caption)
+                        .foregroundStyle(DS.Colour.inkSecondary)
                 }
 
-                Divider()
-
-                Text("Always asked, and not editable")
-                    .font(.system(size: 12, weight: .semibold))
-                Text("These are built in. No rule you write can switch them off.")
-                    .font(.system(size: 11))
-                    .foregroundStyle(.secondary)
-
-                ForEach(SafetyFloor.allCases, id: \.self) { floor in
-                    HStack(spacing: 8) {
-                        Image(systemName: floor.floorBehaviour == .neverAllow ? "nosign" : "hand.raised.fill")
-                            .font(.system(size: 10))
-                            .foregroundStyle(floor.floorBehaviour == .neverAllow ? Color.red : Color.orange)
-                            .frame(width: 14)
-                        Text("Anything that \(floor.explanation)")
-                            .font(.system(size: 11.5))
-                        Spacer()
-                        Text(floor.floorBehaviour == .neverAllow ? "never" : "asks")
-                            .font(.system(size: 10.5))
-                            .foregroundStyle(.tertiary)
+                VStack(alignment: .leading, spacing: DS.Space.md) {
+                    ForEach(SafetyFloor.allCases, id: \.self) { floor in
+                        HStack(spacing: DS.Space.md) {
+                            Image(systemName: floor.floorBehaviour == .neverAllow ? "nosign" : "hand.raised.fill")
+                                .font(DS.Text.glyphSmall)
+                                .foregroundStyle(floor.floorBehaviour == .neverAllow
+                                                 ? DS.Colour.failed : DS.Colour.running)
+                                .frame(width: DS.Space.lg + 2)
+                            Text("Anything that \(floor.explanation)")
+                                .font(DS.Text.caption)
+                                .foregroundStyle(DS.Colour.ink)
+                            Spacer()
+                            Text(floor.floorBehaviour == .neverAllow ? "never" : "asks")
+                                .font(DS.Text.micro)
+                                .foregroundStyle(DS.Colour.inkTertiary)
+                        }
                     }
                 }
             }
-            .padding(20)
+            .padding(DS.Space.xxl - 4)
         }
     }
-
 }
 
-/// One global rule.
 private struct RuleRow: View {
     let rule: PermissionRule
 
     var body: some View {
-        HStack(alignment: .top, spacing: 10) {
+        HStack(alignment: .top, spacing: DS.Space.lg - 2) {
             Image(systemName: icon)
                 .foregroundStyle(colour)
-                .font(.system(size: 12))
-                .frame(width: 16)
-            VStack(alignment: .leading, spacing: 2) {
+                .font(DS.Text.glyph)
+                .frame(width: DS.Space.xl)
+            VStack(alignment: .leading, spacing: DS.Space.hair) {
                 Text("When a bot wants to " + rule.whenBotWantsTo)
-                    .font(.system(size: 12))
+                    .font(DS.Text.secondary)
+                    .foregroundStyle(DS.Colour.ink)
                 Text(rule.behaviour.displayName)
-                    .font(.system(size: 11))
-                    .foregroundStyle(.secondary)
+                    .font(DS.Text.caption)
+                    .foregroundStyle(DS.Colour.inkSecondary)
             }
             Spacer()
         }
-        .padding(9)
-        .background(Color.primary.opacity(0.04), in: RoundedRectangle(cornerRadius: 7))
+        .padding(DS.Space.lg - 1)
+        .background(DS.Colour.fill, in: RoundedRectangle(cornerRadius: DS.Radius.sm))
     }
 
     private var icon: String {
@@ -330,9 +311,9 @@ private struct RuleRow: View {
 
     private var colour: Color {
         switch rule.behaviour {
-        case .allowAutomatically: return .green
-        case .askFirst:           return .orange
-        case .neverAllow:         return .red
+        case .allowAutomatically: return DS.Colour.done
+        case .askFirst:           return DS.Colour.running
+        case .neverAllow:         return DS.Colour.failed
         }
     }
 }
@@ -341,36 +322,36 @@ private struct RuleRow: View {
 
 struct AboutSettings: View {
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("Bot-Harness").font(.system(size: 15, weight: .semibold))
+        VStack(alignment: .leading, spacing: DS.Space.lg) {
+            Text("Bot-Harness").font(DS.Text.display).foregroundStyle(DS.Colour.ink)
             Text("An open-source, local-first agent cockpit. Your bots, your Mac, your API keys.")
-                .font(.system(size: 12))
-                .foregroundStyle(.secondary)
+                .font(DS.Text.secondary)
+                .foregroundStyle(DS.Colour.inkSecondary)
 
-            Divider()
+            Hairline()
 
-            Group {
-                labelled("State", Paths.root.path)
-                labelled("Traces", Paths.traces.path)
-                labelled("Keychain service", Keychain.service)
-            }
+            path("State", Paths.root.path)
+            path("Traces", Paths.traces.path)
+            path("Keychain service", Keychain.service)
 
             Spacer()
 
             Text("Everything this app records is written where you can read it without this app: JSON for state, JSONL for traces, PNG for screenshots.")
-                .font(.system(size: 11))
-                .foregroundStyle(.tertiary)
+                .font(DS.Text.caption)
+                .foregroundStyle(DS.Colour.inkTertiary)
+                .lineSpacing(DS.Text.bodyLineSpacing)
                 .fixedSize(horizontal: false, vertical: true)
         }
-        .padding(20)
+        .padding(DS.Space.xxl - 4)
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
-    private func labelled(_ title: String, _ value: String) -> some View {
-        VStack(alignment: .leading, spacing: 2) {
-            Text(title).font(.system(size: 11)).foregroundStyle(.secondary)
+    private func path(_ title: String, _ value: String) -> some View {
+        VStack(alignment: .leading, spacing: DS.Space.hair) {
+            Text(title).font(DS.Text.caption).foregroundStyle(DS.Colour.inkSecondary)
             Text(value)
-                .font(.system(size: 11, design: .monospaced))
+                .font(DS.Text.mono(DS.Text.Scale.caption))
+                .foregroundStyle(DS.Colour.ink)
                 .textSelection(.enabled)
         }
     }

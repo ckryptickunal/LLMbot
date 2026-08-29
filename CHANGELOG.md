@@ -21,6 +21,23 @@ Versioning follows [Semantic Versioning 2.0.0](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+### Changed — the design system is now actually implemented
+- Every view is rebuilt on the token layer. An audit before this change found **157 raw font
+  sizes, 215 raw spacings, 23 raw corner radii and 26 raw colours** still inline, with most
+  components unused — `IconButton`, `Chip`, `EmptyState`, `Spinner`, `SectionLabel` and
+  `Hairline` were all at zero. The earlier claim that no view contained a raw number was a
+  token rename, not an implementation.
+- After: **zero raw font sizes, zero raw radii, zero raw colours**, 586 token references, and
+  every component in use. Icon sizes are named rather than derived, because arithmetic on a
+  token at the call site is the same exception the system exists to prevent — it just looks
+  more principled than a bare number.
+- Empty and loading states are now real everywhere they were missing: an empty sidebar offers
+  to make a bot, Connections shows row-shaped skeletons while it probes, the Activity window
+  shows run-shaped skeletons while it scans the disk, and a screenshot shows an
+  image-shaped one so nothing jumps when it lands.
+- Trace and run scanning moved off the main actor. Reading a directory of runs, and decoding a
+  Retina PNG, both dropped frames when done on the main thread while a run was streaming.
+
 ### Added — design system, live activity, screenshots in the conversation
 - **A complete design system.** Space, radius, type scale, colour, size, motion and duration as
   one namespace, with a component layer covering every state including loading, empty and

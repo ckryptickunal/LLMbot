@@ -3,48 +3,60 @@ import SwiftUI
 
 /// The roster.
 ///
-/// Rows are bots and channels, ordered by most recent activity. Each row carries the identity
-/// (avatar, name) and just enough of the last message to know whether it needs you — which is
-/// what makes a list of agents feel like a list of colleagues rather than a list of jobs.
+/// Rows are bots and channels, ordered by most recent activity. Each carries identity (avatar,
+/// name) and just enough of the last message to know whether it needs you — which is what
+/// makes a list of agents feel like a list of colleagues rather than a list of jobs.
 struct Sidebar: View {
     @Environment(Store.self) private var store
-    @Environment(UIState.self) private var ui
+    @Environment(\.openWindow) private var openWindow
+
     @State private var query = ""
     @State private var library: LibrarySheet.Tab?
-    @Environment(\.openWindow) private var openWindow
 
     var body: some View {
         VStack(spacing: 0) {
             header
             search
 
-            ScrollView {
-                LazyVStack(spacing: 2) {
-                    ForEach(filtered) { conversation in
-                        SidebarRow(conversation: conversation)
-                            .onTapGesture { store.selection = conversation.id }
+            if filtered.isEmpty {
+                EmptyState(
+                    systemImage: query.isEmpty ? "person.2" : "magnifyingglass",
+                    title: query.isEmpty ? "No bots yet" : "Nothing matches",
+                    message: query.isEmpty
+                        ? "Make one and tell it what you want done."
+                        : "Try a different word.",
+                    actionTitle: query.isEmpty ? "New bot" : nil,
+                    action: query.isEmpty ? { store.createBot(name: "New Bot") } : nil
+                )
+                .padding(.horizontal, DS.Space.lg)
+                Spacer()
+            } else {
+                ScrollView {
+                    LazyVStack(spacing: DS.Space.hair) {
+                        ForEach(filtered) { conversation in
+                            SidebarRow(conversation: conversation)
+                                .onTapGesture { store.selection = conversation.id }
+                        }
                     }
+                    .padding(.horizontal, DS.Space.md)
+                    .padding(.top, DS.Space.xs)
                 }
-                .padding(.horizontal, 8)
-                .padding(.top, 4)
             }
 
-            Spacer(minLength: 0)
             footer
         }
         .background(DS.Colour.panel)
-        .sheet(item: $library) { tab in LibrarySheet(tab: tab) }
+        .sheet(item: $library) { LibrarySheet(tab: $0) }
     }
 
     private var filtered: [Conversation] {
         let all = store.sortedConversations
         guard !query.isEmpty else { return all }
         return all.filter { conversation in
-            let name = title(for: conversation)
-            if name.localizedCaseInsensitiveContains(query) { return true }
+            if title(for: conversation).localizedCaseInsensitiveContains(query) { return true }
             return conversation.messages.contains { message in
-                if case .text(let t) = message.body {
-                    return t.localizedCaseInsensitiveContains(query)
+                if case .text(let text) = message.body {
+                    return text.localizedCaseInsensitiveContains(query)
                 }
                 return false
             }
@@ -60,51 +72,44 @@ struct Sidebar: View {
     private var header: some View {
         HStack {
             Spacer()
-            Button {
+            IconButton("plus", filled: false, help: "New bot (⌘N)") {
                 store.createBot(name: "New Bot")
-                ui.focusComposer()
-            } label: {
-                Image(systemName: "plus")
-                    .font(.system(size: 13, weight: .medium))
-                    .foregroundStyle(DS.Colour.inkSecondary)
-                    .frame(width: 26, height: 26)
             }
-            .buttonStyle(.plain)
-            .help("New bot (⌘N)")
         }
-        .padding(.horizontal, 12)
+        .padding(.horizontal, DS.Space.lg)
         // Leaves room for the traffic lights, since the title bar is hidden.
-        .padding(.top, 8)
-        .frame(height: 44)
+        .padding(.top, DS.Space.md)
+        .frame(height: DS.Size.rowHeight)
     }
 
     private var search: some View {
-        HStack(spacing: 7) {
+        HStack(spacing: DS.Space.sm + 1) {
             Image(systemName: "magnifyingglass")
-                .font(.system(size: 11))
+                .font(DS.Text.glyphTiny)
                 .foregroundStyle(DS.Colour.inkTertiary)
             TextField("Search", text: $query)
                 .textFieldStyle(.plain)
-                .font(.system(size: 12.5))
+                .font(DS.Text.secondary)
                 .foregroundStyle(DS.Colour.ink)
         }
-        .padding(.horizontal, 9)
-        .padding(.vertical, 7)
-        .background(Color.white.opacity(0.05), in: RoundedRectangle(cornerRadius: 7))
-        .padding(.horizontal, 12)
-        .padding(.bottom, 6)
+        .padding(.horizontal, DS.Space.md + 1)
+        .padding(.vertical, DS.Space.sm + 1)
+        .background(DS.Colour.fill, in: RoundedRectangle(cornerRadius: DS.Radius.sm))
+        .padding(.horizontal, DS.Space.lg)
+        .padding(.bottom, DS.Space.sm)
     }
 
     private var footer: some View {
         VStack(spacing: 0) {
-            Divider().overlay(DS.Colour.line)
+            Hairline()
+
             Button { library = .connections } label: {
-                footerRow(icon: "app.connected.to.app.below.fill", label: "Connections")
+                footerRow("app.connected.to.app.below.fill", "Connections")
             }
             .buttonStyle(.plain)
 
             Button { library = .computers } label: {
-                footerRow(icon: "desktopcomputer", label: "Computers")
+                footerRow("desktopcomputer", "Computers")
             }
             .buttonStyle(.plain)
 
@@ -115,72 +120,75 @@ struct Sidebar: View {
                 Button("Skills…") { library = .skills }
                 Button("Activity…") { openWindow(id: "activity") }
                 Divider()
-                Button("Open trace folder") {
-                    NSWorkspace.shared.open(Paths.traces)
-                }
-                Button("Open data folder") {
-                    NSWorkspace.shared.open(Paths.root)
-                }
+                Button("Open trace folder") { NSWorkspace.shared.open(Paths.traces) }
+                Button("Open data folder") { NSWorkspace.shared.open(Paths.root) }
                 Divider()
                 Button("Quit Bot-Harness") { NSApp.terminate(nil) }
             } label: {
-                footerRow(icon: "person.crop.circle", label: NSFullUserName())
+                footerRow("person.crop.circle", NSFullUserName())
             }
             .menuStyle(.borderlessButton)
             .menuIndicator(.hidden)
-            .padding(.bottom, 6)
+            .padding(.bottom, DS.Space.sm)
         }
     }
 
-    private func footerRow(icon: String, label: String) -> some View {
-        HStack(spacing: 9) {
+    private func footerRow(_ icon: String, _ label: String) -> some View {
+        HStack(spacing: DS.Space.md + 1) {
             Image(systemName: icon)
-                .font(.system(size: 12))
+                .font(DS.Text.glyph)
                 .foregroundStyle(DS.Colour.inkSecondary)
-                .frame(width: 18)
+                .frame(width: DS.Space.xl + 2)
             Text(label)
-                .font(.system(size: 12.5))
+                .font(DS.Text.secondary)
                 .foregroundStyle(DS.Colour.ink)
             Spacer()
         }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 9)
+        .padding(.horizontal, DS.Space.lg + 2)
+        .padding(.vertical, DS.Space.md + 1)
         .contentShape(Rectangle())
     }
 }
 
+// MARK: - One row
+
 private struct SidebarRow: View {
     @Environment(Store.self) private var store
     let conversation: Conversation
+    @State private var hovering = false
 
     var body: some View {
-        HStack(spacing: 10) {
+        HStack(spacing: DS.Space.lg - 2) {
             avatar
-            VStack(alignment: .leading, spacing: 2) {
-                HStack(spacing: 6) {
+            VStack(alignment: .leading, spacing: DS.Space.hair) {
+                HStack(spacing: DS.Space.sm) {
                     Text(title)
-                        .font(.system(size: 13, weight: .semibold))
+                        .font(DS.Text.body.weight(.semibold))
                         .foregroundStyle(DS.Colour.ink)
                         .lineLimit(1)
-                    Spacer(minLength: 4)
+                    Spacer(minLength: DS.Space.xs)
                     Text(relativeTime)
-                        .font(.system(size: 11))
+                        .font(DS.Text.micro)
                         .foregroundStyle(DS.Colour.inkTertiary)
                         .fixedSize()
                 }
                 Text(preview)
-                    .font(.system(size: 12))
+                    .font(DS.Text.secondary)
                     .foregroundStyle(DS.Colour.inkSecondary)
                     .lineLimit(1)
             }
         }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 9)
-        .background(
-            RoundedRectangle(cornerRadius: 8)
-                .fill(isSelected ? Color.white.opacity(0.07) : .clear)
-        )
+        .padding(.horizontal, DS.Space.lg - 2)
+        .padding(.vertical, DS.Space.md + 1)
+        .background(background, in: RoundedRectangle(cornerRadius: DS.Radius.md))
         .contentShape(Rectangle())
+        .onHover { hovering = $0 }
+        .dsAnimation(DS.Motion.instant, value: hovering)
+    }
+
+    private var background: Color {
+        if isSelected { return DS.Colour.fillSelected }
+        return hovering ? DS.Colour.fill : .clear
     }
 
     private var isSelected: Bool { store.selection == conversation.id }
@@ -193,38 +201,38 @@ private struct SidebarRow: View {
     @ViewBuilder private var avatar: some View {
         if conversation.isChannel {
             ZStack(alignment: .leading) {
-                ForEach(Array(conversation.participants.prefix(3).enumerated()), id: \.offset) { i, id in
+                ForEach(Array(conversation.participants.prefix(3).enumerated()), id: \.offset) { index, id in
                     Circle()
                         .fill(store.bot(id)?.tint ?? DS.Colour.inkTertiary)
-                        .frame(width: 20, height: 20)
+                        .frame(width: DS.Size.avatar - 10, height: DS.Size.avatar - 10)
                         .overlay(Circle().stroke(DS.Colour.panel, lineWidth: 1.5))
-                        .offset(x: CGFloat(i) * 9)
+                        .offset(x: CGFloat(index) * (DS.Space.md + 1))
                 }
             }
-            .frame(width: 32, height: 32, alignment: .leading)
+            .frame(width: DS.Size.avatar + 2, height: DS.Size.avatar, alignment: .leading)
         } else {
             Circle()
                 .fill(store.bot(conversation.participants.first)?.tint ?? DS.Colour.inkTertiary)
-                .frame(width: 30, height: 30)
+                .frame(width: DS.Size.avatar, height: DS.Size.avatar)
         }
     }
 
     private var preview: String {
         guard let last = conversation.messages.last else { return "No messages yet" }
         switch last.body {
-        case .text(let t):      return t.replacingOccurrences(of: "\n", with: " ")
-        case .toolUse(let a):   return a.summary
-        case .computer(let a):  return a.task
-        case .approval(let a):  return "Needs your approval — \(a.summary)"
-        case .notice(let n):    return n
-        case .failure(let f):   return f
+        case .text(let t):       return t.replacingOccurrences(of: "\n", with: " ")
+        case .toolUse(let a):    return a.summary
+        case .computer(let a):   return a.task
+        case .approval(let a):   return "Needs your approval — \(a.summary)"
+        case .notice(let n):     return n
+        case .failure(let f):    return f
         case .screenshot(let s): return s.caption
         }
     }
 
     private var relativeTime: String {
-        let f = RelativeDateTimeFormatter()
-        f.unitsStyle = .abbreviated
-        return f.localizedString(for: conversation.lastActivity, relativeTo: Date())
+        let formatter = RelativeDateTimeFormatter()
+        formatter.unitsStyle = .abbreviated
+        return formatter.localizedString(for: conversation.lastActivity, relativeTo: Date())
     }
 }

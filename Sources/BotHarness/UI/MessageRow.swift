@@ -1,10 +1,12 @@
 import BotHarnessCore
 import SwiftUI
 
-/// One entry in the timeline. Dispatches on the message body so that prose, tool activity,
-/// computer activity, approvals and notices all live in one date-ordered list.
+/// One entry in the timeline.
+///
+/// Dispatches on the message body so prose, tool activity, screenshots, approvals and system
+/// notices all live in one date-ordered list. That is the point: the record of the work and
+/// the record of the conversation are the same thing.
 struct MessageRow: View {
-    @Environment(Store.self) private var store
     let message: Message
 
     var body: some View {
@@ -21,57 +23,48 @@ struct MessageRow: View {
         case .approval(let request):
             ApprovalCard(request: request, messageID: message.id)
 
-        case .notice(let text):
-            Text(text)
-                .font(.system(size: 11.5))
-                .foregroundStyle(DS.Colour.inkTertiary)
-                .frame(maxWidth: .infinity, alignment: .center)
-                .padding(.vertical, 6)
-
         case .screenshot(let shot):
             ScreenshotCard(shot: shot)
 
+        case .notice(let text):
+            Text(text)
+                .font(DS.Text.caption)
+                .foregroundStyle(DS.Colour.inkTertiary)
+                .frame(maxWidth: .infinity, alignment: .center)
+                .padding(.vertical, DS.Space.sm)
+
         case .failure(let text):
-            HStack(alignment: .top, spacing: 7) {
-                Image(systemName: "exclamationmark.triangle.fill")
-                    .font(.system(size: 11))
-                    .foregroundStyle(DS.Colour.failed)
-                Text(text)
-                    .font(.system(size: 12.5))
-                    .foregroundStyle(DS.Colour.ink)
-            }
-            .padding(11)
-            .background(DS.Colour.failed.opacity(0.10), in: RoundedRectangle(cornerRadius: DS.Radius.lg))
+            ErrorState(text)
+                .frame(maxWidth: DS.Size.cardMax, alignment: .leading)
         }
     }
 }
+
+// MARK: - Prose
 
 private struct TextBubble: View {
     let text: String
     let isUser: Bool
 
     var body: some View {
-        HStack {
-            if isUser { Spacer(minLength: 60) }
+        HStack(spacing: 0) {
+            if isUser { Spacer(minLength: DS.Space.xxxl + DS.Space.xl) }
             Text(attributed)
-                .font(.system(size: 13.5))
+                .font(DS.Text.body)
                 .foregroundStyle(DS.Colour.ink)
+                .lineSpacing(DS.Text.bodyLineSpacing)
                 .textSelection(.enabled)
-                .padding(.horizontal, 13)
-                .padding(.vertical, 10)
-                .background(
-                    (isUser ? DS.Colour.bubbleUser : DS.Colour.bubbleBot),
-                    in: RoundedRectangle(cornerRadius: DS.Radius.xl)
-                )
-                .frame(maxWidth: 620, alignment: isUser ? .trailing : .leading)
-            if !isUser { Spacer(minLength: 60) }
+                .padding(.horizontal, DS.Space.lg + 1)
+                .padding(.vertical, DS.Space.lg - 2)
+                .background(isUser ? DS.Colour.bubbleUser : DS.Colour.bubbleBot,
+                            in: RoundedRectangle(cornerRadius: DS.Radius.xl))
+                .frame(maxWidth: DS.Size.bubbleMax, alignment: isUser ? .trailing : .leading)
+            if !isUser { Spacer(minLength: DS.Space.xxxl + DS.Space.xl) }
         }
     }
 
-    /// Markdown is parsed for inline emphasis and code. Full block markdown (lists, tables)
-    /// is deliberately deferred: bots here are instructed to write prose, and rendering a
-    /// full markdown engine before that is a problem would be building for a bot we have
-    /// asked not to exist.
+    /// Inline markdown only. Bots here are instructed to write prose, so rendering a full
+    /// block engine before that is a problem would be building for a bot we asked not to exist.
     private var attributed: AttributedString {
         (try? AttributedString(
             markdown: text,
@@ -80,119 +73,120 @@ private struct TextBubble: View {
     }
 }
 
+// MARK: - Tool activity
+
 /// A tool call, collapsed to one line until you want the detail.
 private struct ToolCard: View {
     let activity: ToolActivity
     @State private var expanded = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 8) {
-                Image(systemName: icon)
-                    .font(.system(size: 11))
-                    .foregroundStyle(DS.Colour.inkSecondary)
-                Text(activity.summary)
-                    .font(.system(size: 12.5))
-                    .foregroundStyle(DS.Colour.ink)
-                Spacer()
-                StatusPill(activity.status.pillState, activity.status.label)
-            }
-            if expanded {
-                Text(activity.detail.isEmpty ? "(no arguments)" : activity.detail)
-                    .font(.system(size: 11.5, design: .monospaced))
-                    .foregroundStyle(DS.Colour.inkSecondary)
-                    .textSelection(.enabled)
-                if !activity.output.isEmpty {
-                    Text(activity.output)
-                        .font(.system(size: 11.5, design: .monospaced))
-                        .foregroundStyle(DS.Colour.inkTertiary)
-                        .textSelection(.enabled)
+        Surface(padding: DS.Space.lg - 1) {
+            VStack(alignment: .leading, spacing: DS.Space.md) {
+                HStack(spacing: DS.Space.md) {
+                    Image(systemName: icon)
+                        .font(DS.Text.glyphSmall)
+                        .foregroundStyle(DS.Colour.inkSecondary)
+                    Text(activity.summary)
+                        .font(DS.Text.secondary)
+                        .foregroundStyle(DS.Colour.ink)
+                        .lineLimit(expanded ? nil : 2)
+                    Spacer(minLength: DS.Space.md)
+                    StatusPill(activity.status.pillState, activity.status.label)
+                }
+
+                if expanded {
+                    detailBlock("arguments", activity.detail.isEmpty ? "(none)" : activity.detail)
+                    if !activity.output.isEmpty {
+                        detailBlock("result", activity.output)
+                    }
                 }
             }
         }
-        .padding(11)
-        .frame(maxWidth: 620, alignment: .leading)
-        .background(DS.Colour.raised, in: RoundedRectangle(cornerRadius: DS.Radius.lg))
-        .overlay(
-            RoundedRectangle(cornerRadius: DS.Radius.lg)
-                .stroke(DS.Colour.line, lineWidth: 1)
-        )
+        .frame(maxWidth: DS.Size.cardMax, alignment: .leading)
         .contentShape(Rectangle())
-        .onTapGesture { withAnimation(DS.Motion.instant) { expanded.toggle() } }
+        .onTapGesture { withAnimation(DS.Motion.surface) { expanded.toggle() } }
+    }
+
+    private func detailBlock(_ label: String, _ text: String) -> some View {
+        VStack(alignment: .leading, spacing: DS.Space.xs) {
+            Text(label)
+                .font(DS.Text.micro)
+                .foregroundStyle(DS.Colour.inkTertiary)
+            Text(text)
+                .font(DS.Text.mono())
+                .foregroundStyle(DS.Colour.inkSecondary)
+                .textSelection(.enabled)
+                .padding(DS.Space.md)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(DS.Colour.ground, in: RoundedRectangle(cornerRadius: DS.Radius.sm))
+        }
     }
 
     private var icon: String {
         switch activity.tool {
-        case let t where t.hasPrefix("shell"):   return "terminal"
-        case let t where t.hasPrefix("files"):   return "doc.text"
-        case let t where t.hasPrefix("browser"): return "globe"
-        case let t where t.hasPrefix("git"):     return "arrow.triangle.branch"
-        default:                                  return "wrench.and.screwdriver"
+        case let t where t.hasPrefix("shell"):      return "terminal"
+        case let t where t.hasPrefix("files"):      return "doc.text"
+        case let t where t.hasPrefix("browser"):    return "globe"
+        case let t where t.hasPrefix("git"):        return "arrow.triangle.branch"
+        case let t where t.hasPrefix("computer"):   return "display"
+        case let t where t.hasPrefix("capability"): return "puzzlepiece.extension"
+        case let t where t.hasPrefix("memory"):     return "brain"
+        default:                                     return "wrench.and.screwdriver"
         }
     }
 }
 
+// MARK: - Computer
+
 /// The Computer card.
 ///
-/// Grok Bot's best interface idea, and the one worth copying most exactly: a single element
-/// that is at once the progress indicator, the plain-language explanation of what the machine
-/// is being asked to do, and the door through which the human takes over.
+/// Grok Bot's best interface idea, and worth copying exactly: one element that is at once the
+/// progress indicator, the plain-language explanation of what the machine was asked to do, and
+/// the door through which a human takes over.
 private struct ComputerCard: View {
     @Environment(UIState.self) private var ui
     let activity: ComputerActivity
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 9) {
-            HStack {
-                Text("Computer")
-                    .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(DS.Colour.ink)
-                Spacer()
-                StatusPill(activity.status.pillState, activity.status.label)
-            }
-
-            Text(activity.task)
-                .font(.system(size: 12.5))
-                .foregroundStyle(DS.Colour.inkSecondary)
-                .fixedSize(horizontal: false, vertical: true)
-
-            if activity.awaitingHuman {
-                Text("Waiting for you — this needs a person.")
-                    .font(.system(size: 11.5))
-                    .foregroundStyle(DS.Colour.waiting)
-            }
-
-            Button {
-                ui.openComputer()
-            } label: {
-                HStack(spacing: 6) {
-                    Image(systemName: "display")
-                        .font(.system(size: 11))
-                    Text("Open computer")
-                        .font(.system(size: 12))
+        Surface {
+            VStack(alignment: .leading, spacing: DS.Space.md + 1) {
+                HStack {
+                    Text("Computer")
+                        .font(DS.Text.secondary.weight(.semibold))
+                        .foregroundStyle(DS.Colour.ink)
+                    Spacer()
+                    StatusPill(activity.status.pillState, activity.status.label)
                 }
-                .foregroundStyle(DS.Colour.ink)
-                .padding(.horizontal, 11)
-                .padding(.vertical, 6)
-                .background(Color.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 7))
+
+                Text(activity.task)
+                    .font(DS.Text.secondary)
+                    .foregroundStyle(DS.Colour.inkSecondary)
+                    .lineSpacing(DS.Text.bodyLineSpacing)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                if activity.awaitingHuman {
+                    Text("Waiting for you — this needs a person.")
+                        .font(DS.Text.caption)
+                        .foregroundStyle(DS.Colour.waiting)
+                }
+
+                SecondaryButton("Open computer", systemImage: "display") {
+                    ui.openComputer()
+                }
             }
-            .buttonStyle(PressableStyle())
         }
-        .padding(12)
         .frame(maxWidth: 400, alignment: .leading)
-        .background(DS.Colour.raised, in: RoundedRectangle(cornerRadius: DS.Radius.lg))
-        .overlay(
-            RoundedRectangle(cornerRadius: DS.Radius.lg)
-                .stroke(DS.Colour.line, lineWidth: 1)
-        )
     }
 }
 
+// MARK: - Approval
+
 /// A permission prompt, shown in the timeline rather than as a modal.
 ///
-/// Modals are wrong here for two reasons: the record of what was approved belongs beside the
-/// work it approved, and a bot running unattended will hit approvals when nobody is looking —
-/// a modal blocking the whole window would make every other conversation unusable.
+/// Modals are wrong here twice over: the record of what was approved belongs beside the work
+/// it approved, and a bot running unattended hits approvals when nobody is looking — a modal
+/// blocking the window would make every other conversation unusable.
 private struct ApprovalCard: View {
     @Environment(Store.self) private var store
     @Environment(BotRunner.self) private var runner
@@ -200,70 +194,59 @@ private struct ApprovalCard: View {
     let messageID: UUID
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack(spacing: 7) {
-                Image(systemName: "hand.raised.fill")
-                    .font(.system(size: 11))
-                    .foregroundStyle(DS.Colour.waiting)
-                Text("Needs your approval")
-                    .font(.system(size: 12, weight: .semibold))
+        Surface(borderTint: DS.Colour.waiting.opacity(0.35)) {
+            VStack(alignment: .leading, spacing: DS.Space.lg - 2) {
+                HStack(spacing: DS.Space.sm + 1) {
+                    Image(systemName: "hand.raised.fill")
+                        .font(DS.Text.glyphSmall)
+                        .foregroundStyle(DS.Colour.waiting)
+                    Text("Needs your approval")
+                        .font(DS.Text.secondary.weight(.semibold))
+                        .foregroundStyle(DS.Colour.ink)
+                    Spacer()
+                }
+
+                Text(request.summary)
+                    .font(DS.Text.body)
                     .foregroundStyle(DS.Colour.ink)
-                Spacer()
-            }
 
-            Text(request.summary)
-                .font(.system(size: 13))
-                .foregroundStyle(DS.Colour.ink)
+                // Users approve what they can see. A summary alone is not consent, and an
+                // elided confirmation dialog is a disclosed vulnerability in a comparable tool.
+                Text(request.detail)
+                    .font(DS.Text.mono())
+                    .foregroundStyle(DS.Colour.inkSecondary)
+                    .textSelection(.enabled)
+                    .padding(DS.Space.md + 1)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(DS.Colour.ground, in: RoundedRectangle(cornerRadius: DS.Radius.sm))
 
-            // Users approve what they can see. The summary alone is not consent.
-            Text(request.detail)
-                .font(.system(size: 11.5, design: .monospaced))
-                .foregroundStyle(DS.Colour.inkSecondary)
-                .textSelection(.enabled)
-                .padding(9)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .background(Color.black.opacity(0.3), in: RoundedRectangle(cornerRadius: 6))
+                Text(request.reason)
+                    .font(DS.Text.caption)
+                    .foregroundStyle(DS.Colour.inkTertiary)
 
-            Text(request.reason)
-                .font(.system(size: 11.5))
-                .foregroundStyle(DS.Colour.inkTertiary)
-
-            if let answer = request.answer {
-                Text(label(for: answer))
-                    .font(.system(size: 12, weight: .medium))
-                    .foregroundStyle(answer == .denied || answer == .deniedAlways ? DS.Colour.failed : DS.Colour.done)
-            } else {
-                HStack(spacing: 8) {
-                    approvalButton("Allow once", tint: DS.Colour.done) { answer(.allowedOnce) }
-                    approvalButton("Always allow this", tint: DS.Colour.done.opacity(0.7)) { answer(.allowedAlways) }
-                    approvalButton("Deny", tint: DS.Colour.failed) { answer(.denied) }
+                if let answer = request.answer {
+                    Text(label(for: answer))
+                        .font(DS.Text.secondary.weight(.medium))
+                        .foregroundStyle(answered(answer) ? DS.Colour.done : DS.Colour.failed)
+                } else {
+                    HStack(spacing: DS.Space.md) {
+                        SecondaryButton("Allow once") { answer(.allowedOnce) }
+                        SecondaryButton("Always allow this") { answer(.allowedAlways) }
+                        SecondaryButton("Deny", role: .destructive) { answer(.denied) }
+                    }
                 }
             }
         }
-        .padding(13)
-        .frame(maxWidth: 620, alignment: .leading)
-        .background(DS.Colour.raised, in: RoundedRectangle(cornerRadius: DS.Radius.lg))
-        .overlay(
-            RoundedRectangle(cornerRadius: DS.Radius.lg)
-                .stroke(DS.Colour.waiting.opacity(0.35), lineWidth: 1)
-        )
+        .frame(maxWidth: DS.Size.cardMax, alignment: .leading)
+    }
+
+    private func answered(_ a: ApprovalRequest.Answer) -> Bool {
+        a == .allowedOnce || a == .allowedAlways
     }
 
     private func answer(_ a: ApprovalRequest.Answer) {
         guard let conversation = store.selection else { return }
         runner.answer(a, for: messageID, in: conversation)
-    }
-
-    private func approvalButton(_ title: String, tint: Color, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            Text(title)
-                .font(.system(size: 12, weight: .medium))
-                .foregroundStyle(tint)
-                .padding(.horizontal, 11)
-                .padding(.vertical, 6)
-                .background(tint.opacity(0.12), in: RoundedRectangle(cornerRadius: 7))
-        }
-        .buttonStyle(.plain)
     }
 
     private func label(for answer: ApprovalRequest.Answer) -> String {
@@ -276,14 +259,15 @@ private struct ApprovalCard: View {
     }
 }
 
+// MARK: - Screenshot
+
 /// What the bot saw.
 ///
-/// The single most reassuring element in the product: watching an agent work is far easier to
-/// trust than reading its account of having worked. Grok Bot posts these inline after each
-/// action and it is the right call.
+/// The most reassuring element in the product: watching an agent work is far easier to trust
+/// than reading its account of having worked.
 ///
 /// The image is loaded from disk on demand and never held in the conversation document, so a
-/// long run does not bloat the file that gets rewritten on every message.
+/// long run does not bloat the file that is rewritten on every message.
 struct ScreenshotCard: View {
     let shot: Screenshot
     @State private var image: NSImage?
@@ -312,7 +296,7 @@ struct ScreenshotCard: View {
                             .foregroundStyle(DS.Colour.inkTertiary)
                     }
                 } else {
-                    // Sized like the image it is standing in for, so nothing jumps when it lands.
+                    // Sized like the image it stands in for, so nothing jumps when it lands.
                     Skeleton(height: 220, radius: DS.Radius.md)
                 }
             }
@@ -323,26 +307,29 @@ struct ScreenshotCard: View {
                 .foregroundStyle(DS.Colour.inkTertiary)
         }
         .task(id: shot.path) { await load() }
-        .sheet(isPresented: $zoomed) {
-            if let image {
-                VStack(spacing: 0) {
-                    Image(nsImage: image).resizable().aspectRatio(contentMode: .fit)
-                    HStack {
-                        Text(shot.caption).font(DS.Text.caption)
-                            .foregroundStyle(DS.Colour.inkSecondary)
-                        Spacer()
-                        SecondaryButton("Done") { zoomed = false }
-                    }
-                    .padding(DS.Space.lg)
+        .sheet(isPresented: $zoomed) { zoomedView }
+    }
+
+    @ViewBuilder private var zoomedView: some View {
+        if let image {
+            VStack(spacing: 0) {
+                Image(nsImage: image).resizable().aspectRatio(contentMode: .fit)
+                HStack {
+                    Text(shot.caption)
+                        .font(DS.Text.caption)
+                        .foregroundStyle(DS.Colour.inkSecondary)
+                    Spacer()
+                    SecondaryButton("Done") { zoomed = false }
                 }
-                .frame(minWidth: 720, minHeight: 480)
-                .background(DS.Colour.ground)
+                .padding(DS.Space.lg)
             }
+            .frame(minWidth: 720, minHeight: 480)
+            .background(DS.Colour.ground)
         }
     }
 
-    /// Decoding happens off the main actor: a Retina PNG is several megabytes and decoding it
-    /// on the main thread drops frames in the message list while a run is streaming.
+    /// Decoding runs off the main actor: a Retina PNG is several megabytes, and decoding it on
+    /// the main thread drops frames in the message list while a run is streaming.
     private func load() async {
         let path = shot.path
         let loaded: NSImage? = await Task.detached(priority: .userInitiated) {

@@ -1,13 +1,12 @@
-import SwiftUI
-import Observation
 import BotHarnessCore
+import Observation
+import SwiftUI
 
 /// Connections, Skills and Computers.
 ///
-/// Everything a bot can reach, in one place, stated honestly. Where something is not built
-/// yet the row says so rather than pretending — a control that looks live and does nothing is
-/// worse than one that admits it is coming, because the first teaches people not to trust the
-/// interface.
+/// Everything a bot can reach, in one place, stated honestly. Where something is not built yet
+/// the row says so — a control that looks live and does nothing is worse than one admitting it
+/// is coming, because the first teaches people not to trust the interface.
 struct LibrarySheet: View {
     enum Tab: String, CaseIterable, Identifiable {
         case connections, skills, computers
@@ -34,7 +33,7 @@ struct LibrarySheet: View {
     var body: some View {
         VStack(spacing: 0) {
             header
-            Divider().overlay(DS.Colour.line)
+            Hairline()
             ScrollView {
                 switch tab {
                 case .connections: ConnectionsList()
@@ -48,30 +47,28 @@ struct LibrarySheet: View {
     }
 
     private var header: some View {
-        HStack(spacing: 4) {
-            ForEach(Tab.allCases) { t in
+        HStack(spacing: DS.Space.xs) {
+            ForEach(Tab.allCases) { item in
                 Button {
-                    withAnimation(DS.Motion.instant) { tab = t }
+                    withAnimation(DS.Motion.instant) { tab = item }
                 } label: {
-                    HStack(spacing: 6) {
-                        Image(systemName: t.icon).font(.system(size: 11))
-                        Text(t.title).font(.system(size: 12, weight: .medium))
+                    HStack(spacing: DS.Space.sm) {
+                        Image(systemName: item.icon).font(DS.Text.glyphSmall)
+                        Text(item.title).font(DS.Text.secondary.weight(.medium))
                     }
-                    .foregroundStyle(tab == t ? DS.Colour.ink : DS.Colour.inkSecondary)
-                    .padding(.horizontal, 11)
-                    .padding(.vertical, 6)
-                    .background(tab == t ? Color.white.opacity(0.08) : .clear,
-                                in: RoundedRectangle(cornerRadius: 7))
+                    .foregroundStyle(tab == item ? DS.Colour.ink : DS.Colour.inkSecondary)
+                    .padding(.horizontal, DS.Space.lg - 1)
+                    .padding(.vertical, DS.Space.sm)
+                    .background(tab == item ? DS.Colour.fillSelected : .clear,
+                                in: RoundedRectangle(cornerRadius: DS.Radius.sm))
                 }
                 .buttonStyle(PressableStyle())
             }
             Spacer()
-            Button("Done") { dismiss() }
-                .buttonStyle(PressableStyle())
-                .font(.system(size: 12))
+            SecondaryButton("Done") { dismiss() }
         }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 11)
+        .padding(.horizontal, DS.Space.lg + 2)
+        .padding(.vertical, DS.Space.lg - 1)
     }
 }
 
@@ -80,9 +77,9 @@ struct LibrarySheet: View {
 /// What your bots can reach, and the true state of each.
 ///
 /// Driven by the capability registry connecting to real servers, not by a hardcoded list. A
-/// connector that needs a key, or whose app is not running, stays visible and says so with an
-/// action next to it — removing it would make the system look like it never supported the
-/// thing, which is both untrue and unfixable from here.
+/// connector that needs a key, or whose app is closed, stays visible and says so with an action
+/// next to it — removing it would make the system look like it never supported the thing,
+/// which is untrue and unfixable from here.
 @MainActor
 @Observable
 final class ConnectionsModel {
@@ -108,9 +105,8 @@ final class ConnectionsModel {
         let report = await registry.discoverAll()
         let all = await registry.all()
         rows = report.map { entry in
-            let summary = all.first { $0.provider == entry.provider }?.summary
-                ?? entry.health.detail
-            return Row(id: entry.provider, name: entry.name, health: entry.health, summary: summary)
+            Row(id: entry.provider, name: entry.name, health: entry.health,
+                summary: all.first { $0.provider == entry.provider }?.summary ?? entry.health.detail)
         }
     }
 }
@@ -119,97 +115,104 @@ private struct ConnectionsList: View {
     @State private var model = ConnectionsModel()
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
+        VStack(alignment: .leading, spacing: DS.Space.xl) {
             HStack {
                 Text("What your bots can reach. Model keys are in Settings (⌘,).")
-                    .font(.system(size: 11.5)).foregroundStyle(DS.Colour.inkSecondary)
+                    .font(DS.Text.caption)
+                    .foregroundStyle(DS.Colour.inkSecondary)
                 Spacer()
                 if model.isRefreshing {
-                    ProgressView().controlSize(.mini).scaleEffect(0.7)
+                    Spinner()
                 } else {
-                    Button("Refresh") { Task { await model.refresh() } }
-                        .buttonStyle(PressableStyle())
-                        .font(.system(size: 11))
+                    SecondaryButton("Refresh") { Task { await model.refresh() } }
                 }
             }
 
-            section("Always available")
+            SectionLabel("Always available")
             ForEach(model.builtIn) { capability in
-                row(name: capability.id.replacingOccurrences(of: "computer.", with: "")
-                        .replacingOccurrences(of: "development.", with: "")
-                        .replacingOccurrences(of: "research.", with: "").capitalized,
-                    detail: capability.summary,
-                    status: .healthy, action: nil)
+                ConnectionRow(name: displayName(capability),
+                              detail: capability.summary,
+                              status: .healthy, toolCount: 0)
             }
 
-            section("Connectors")
-            if model.rows.isEmpty && !model.isRefreshing {
-                Text("No connectors configured yet.")
-                    .font(.system(size: 11.5)).foregroundStyle(DS.Colour.inkTertiary)
+            SectionLabel("Connectors")
+            if model.isRefreshing && model.rows.isEmpty {
+                // Shaped like the rows that are coming, so nothing jumps when they land.
+                VStack(spacing: DS.Space.md) {
+                    ForEach(0..<3, id: \.self) { _ in
+                        Skeleton(height: 46, radius: DS.Radius.md)
+                    }
+                }
+            } else if model.rows.isEmpty {
+                EmptyState(systemImage: "app.connected.to.app.below.fill",
+                           title: "No connectors yet",
+                           message: "Connectors you configure for other tools on this Mac appear here automatically.")
             }
             ForEach(model.rows) { entry in
-                row(name: entry.name,
-                    detail: entry.health.status.isUsable
-                        ? entry.summary
-                        : entry.health.detail,
-                    status: entry.health.status,
-                    action: entry.health.status.action,
-                    toolCount: entry.health.toolCount)
+                ConnectionRow(name: entry.name,
+                              detail: entry.health.status.isUsable ? entry.summary : entry.health.detail,
+                              status: entry.health.status,
+                              toolCount: entry.health.toolCount)
             }
         }
-        .padding(18)
+        .padding(DS.Space.xxl - 4)
         .task { await model.refresh() }
     }
 
-    private func section(_ title: String) -> some View {
-        Text(title.uppercased())
-            .font(.system(size: 10, weight: .semibold))
-            .foregroundStyle(DS.Colour.inkTertiary)
-            .padding(.top, 4)
+    private func displayName(_ capability: Capability) -> String {
+        capability.id
+            .replacingOccurrences(of: "computer.", with: "")
+            .replacingOccurrences(of: "development.", with: "")
+            .replacingOccurrences(of: "research.", with: "")
+            .capitalized
     }
+}
 
-    private func row(name: String, detail: String, status: ProviderHealth.Status,
-                     action: String?, toolCount: Int = 0) -> some View {
-        HStack(spacing: 11) {
+private struct ConnectionRow: View {
+    let name: String
+    let detail: String
+    let status: ProviderHealth.Status
+    let toolCount: Int
+
+    var body: some View {
+        HStack(spacing: DS.Space.lg - 1) {
             Circle()
-                .fill(colour(status))
-                .frame(width: 7, height: 7)
-            VStack(alignment: .leading, spacing: 2) {
-                HStack(spacing: 6) {
-                    Text(name).font(.system(size: 12.5, weight: .medium))
-                        .foregroundStyle(DS.Colour.ink)
+                .fill(colour)
+                .frame(width: DS.Size.statusDot, height: DS.Size.statusDot)
+            VStack(alignment: .leading, spacing: DS.Space.hair) {
+                HStack(spacing: DS.Space.sm) {
+                    Text(name).font(DS.Text.secondary.weight(.medium)).foregroundStyle(DS.Colour.ink)
                     if toolCount > 0 {
                         Text("\(toolCount) tools")
-                            .font(.system(size: 10)).foregroundStyle(DS.Colour.inkTertiary)
+                            .font(DS.Text.micro)
+                            .foregroundStyle(DS.Colour.inkTertiary)
                     }
                 }
-                Text(detail).font(.system(size: 11)).foregroundStyle(DS.Colour.inkTertiary)
+                Text(detail)
+                    .font(DS.Text.caption)
+                    .foregroundStyle(DS.Colour.inkTertiary)
                     .lineLimit(2)
             }
-            Spacer(minLength: 8)
-            if let action {
-                Button(action) {
+            Spacer(minLength: DS.Space.md)
+            if let action = status.action {
+                SecondaryButton(action) {
                     NSWorkspace.shared.open(URL(fileURLWithPath: NSHomeDirectory() + "/.claude.json"))
                 }
-                .buttonStyle(PressableStyle())
-                .font(.system(size: 11))
             } else {
-                Text(status.displayName)
-                    .font(.system(size: 10.5)).foregroundStyle(DS.Colour.inkTertiary)
+                Text(status.displayName).font(DS.Text.micro).foregroundStyle(DS.Colour.inkTertiary)
             }
         }
-        .padding(11)
-        .background(Color.white.opacity(0.035), in: RoundedRectangle(cornerRadius: 9))
+        .padding(DS.Space.lg - 1)
+        .background(DS.Colour.fill, in: RoundedRectangle(cornerRadius: DS.Radius.md))
     }
 
-    private func colour(_ status: ProviderHealth.Status) -> Color {
+    private var colour: Color {
         switch status {
-        case .healthy:      return DS.Colour.done
-        case .degraded:     return DS.Colour.running
-        case .needsAuth:    return DS.Colour.waiting
-        case .initializing: return DS.Colour.inkTertiary
-        case .offline:      return DS.Colour.inkTertiary
-        case .error:        return DS.Colour.failed
+        case .healthy:                  return DS.Colour.done
+        case .degraded:                 return DS.Colour.running
+        case .needsAuth:                return DS.Colour.waiting
+        case .initializing, .offline:   return DS.Colour.inkTertiary
+        case .error:                    return DS.Colour.failed
         }
     }
 }
@@ -218,25 +221,18 @@ private struct ConnectionsList: View {
 
 private struct SkillsList: View {
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: DS.Space.lg) {
             Text("Skills are short written procedures a bot loads only when they are relevant — how to work in a particular repository, how to deploy a particular app.")
-                .font(.system(size: 11.5)).foregroundStyle(DS.Colour.inkSecondary)
+                .font(DS.Text.caption)
+                .foregroundStyle(DS.Colour.inkSecondary)
+                .lineSpacing(DS.Text.bodyLineSpacing)
                 .fixedSize(horizontal: false, vertical: true)
 
-            VStack(spacing: 10) {
-                Image(systemName: "sparkles")
-                    .font(.system(size: 22)).foregroundStyle(DS.Colour.inkTertiary)
-                Text("No skills yet").font(.system(size: 13, weight: .medium))
-                    .foregroundStyle(DS.Colour.ink)
-                Text("When a bot does something well more than once, you will be able to save it here and ask for it by name.")
-                    .font(.system(size: 11.5)).foregroundStyle(DS.Colour.inkTertiary)
-                    .multilineTextAlignment(.center)
-                    .frame(maxWidth: 340)
-            }
-            .frame(maxWidth: .infinity)
-            .padding(.vertical, 60)
+            EmptyState(systemImage: "sparkles",
+                       title: "No skills yet",
+                       message: "When a bot does something well more than once, you will be able to save it here and ask for it by name.")
         }
-        .padding(18)
+        .padding(DS.Space.xxl - 4)
     }
 }
 
@@ -246,72 +242,77 @@ private struct ComputersList: View {
     @State private var permissions = ComputerExecutor.permissions
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
+        VStack(alignment: .leading, spacing: DS.Space.xl) {
             Text("Where your bots do their work.")
-                .font(.system(size: 11.5)).foregroundStyle(DS.Colour.inkSecondary)
+                .font(DS.Text.caption)
+                .foregroundStyle(DS.Colour.inkSecondary)
 
-            VStack(alignment: .leading, spacing: 10) {
-                HStack(spacing: 10) {
-                    Image(systemName: "desktopcomputer").font(.system(size: 15))
-                        .foregroundStyle(DS.Colour.ink)
+            Surface(fill: DS.Colour.fill, bordered: false) {
+                VStack(alignment: .leading, spacing: DS.Space.lg - 2) {
+                    HStack(spacing: DS.Space.lg - 2) {
+                        Image(systemName: "desktopcomputer")
+                            .font(DS.Text.glyphLarge)
+                            .foregroundStyle(DS.Colour.ink)
+                        VStack(alignment: .leading, spacing: 1) {
+                            Text("This Mac").font(DS.Text.body.weight(.semibold))
+                                .foregroundStyle(DS.Colour.ink)
+                            Text("Your real files, browser sessions and apps")
+                                .font(DS.Text.caption).foregroundStyle(DS.Colour.inkTertiary)
+                        }
+                        Spacer()
+                        Circle().fill(DS.Colour.done)
+                            .frame(width: DS.Size.statusDot, height: DS.Size.statusDot)
+                    }
+
+                    Hairline()
+
+                    permissionRow("Screen Recording", "so a bot can see the screen",
+                                  granted: permissions.screenRecording, pane: "Privacy_ScreenCapture")
+                    permissionRow("Accessibility", "so a bot can use the keyboard and mouse",
+                                  granted: permissions.accessibility, pane: "Privacy_Accessibility")
+                }
+            }
+
+            Surface(fill: DS.Colour.fill.opacity(0.5), bordered: false) {
+                HStack(spacing: DS.Space.lg - 2) {
+                    Image(systemName: "cube")
+                        .font(DS.Text.glyphLarge)
+                        .foregroundStyle(DS.Colour.inkTertiary)
                     VStack(alignment: .leading, spacing: 1) {
-                        Text("This Mac").font(.system(size: 13, weight: .semibold))
-                        Text("Your real files, browser sessions and apps")
-                            .font(.system(size: 11)).foregroundStyle(DS.Colour.inkTertiary)
+                        Text("Container").font(DS.Text.body.weight(.medium))
+                            .foregroundStyle(DS.Colour.inkSecondary)
+                        Text("A throwaway machine that cannot touch your Mac")
+                            .font(DS.Text.caption).foregroundStyle(DS.Colour.inkTertiary)
                     }
                     Spacer()
-                    Circle().fill(DS.Colour.done).frame(width: 7, height: 7)
+                    Text("Soon").font(DS.Text.micro).foregroundStyle(DS.Colour.inkTertiary)
+                        .padding(.horizontal, DS.Space.sm + 1)
+                        .padding(.vertical, DS.Space.hair)
+                        .background(DS.Colour.fill, in: Capsule())
                 }
-
-                Divider().overlay(DS.Colour.line)
-
-                permissionRow("Screen Recording", "so a bot can see the screen",
-                              granted: permissions.screenRecording, pane: "Privacy_ScreenCapture")
-                permissionRow("Accessibility", "so a bot can use the keyboard and mouse",
-                              granted: permissions.accessibility, pane: "Privacy_Accessibility")
             }
-            .padding(13)
-            .background(Color.white.opacity(0.035), in: RoundedRectangle(cornerRadius: 9))
-
-            HStack(spacing: 10) {
-                Image(systemName: "cube").font(.system(size: 15)).foregroundStyle(DS.Colour.inkTertiary)
-                VStack(alignment: .leading, spacing: 1) {
-                    Text("Container").font(.system(size: 13, weight: .medium))
-                        .foregroundStyle(DS.Colour.inkSecondary)
-                    Text("A throwaway machine that cannot touch your Mac")
-                        .font(.system(size: 11)).foregroundStyle(DS.Colour.inkTertiary)
-                }
-                Spacer()
-                Text("Soon").font(.system(size: 10.5)).foregroundStyle(DS.Colour.inkTertiary)
-                    .padding(.horizontal, 7).padding(.vertical, 2)
-                    .background(Color.white.opacity(0.05), in: Capsule())
-            }
-            .padding(13)
-            .background(Color.white.opacity(0.02), in: RoundedRectangle(cornerRadius: 9))
 
             Spacer()
         }
-        .padding(18)
+        .padding(DS.Space.xxl - 4)
         .onAppear { permissions = ComputerExecutor.permissions }
     }
 
     private func permissionRow(_ title: String, _ why: String, granted: Bool, pane: String) -> some View {
-        HStack(spacing: 9) {
+        HStack(spacing: DS.Space.md + 1) {
             Image(systemName: granted ? "checkmark.circle.fill" : "exclamationmark.circle")
-                .font(.system(size: 12))
+                .font(DS.Text.glyph)
                 .foregroundStyle(granted ? DS.Colour.done : DS.Colour.running)
             VStack(alignment: .leading, spacing: 1) {
-                Text(title).font(.system(size: 12))
-                Text(why).font(.system(size: 10.5)).foregroundStyle(DS.Colour.inkTertiary)
+                Text(title).font(DS.Text.secondary).foregroundStyle(DS.Colour.ink)
+                Text(why).font(DS.Text.micro).foregroundStyle(DS.Colour.inkTertiary)
             }
             Spacer()
             if !granted {
-                Button("Grant") {
+                SecondaryButton("Grant") {
                     ComputerExecutor.requestAccess()
                     ComputerExecutor.openPrivacySettings(pane)
                 }
-                .buttonStyle(PressableStyle())
-                .font(.system(size: 11))
             }
         }
     }

@@ -1,15 +1,15 @@
-import SwiftUI
 import BotHarnessCore
+import SwiftUI
 
 /// The composer.
 ///
-/// This control had three separate dead ends in its first version, and together they made the
-/// whole app inert: a `TextField` with `axis: .vertical` swallows Return as a newline so
-/// `.onSubmit` never fires, there was no send button to fall back on, and nothing ever took
-/// focus. You could type and there was no way to send.
+/// This control had three separate dead ends in its first version and together they made the
+/// whole app inert: a vertical-axis `TextField` swallows Return so `.onSubmit` never fired,
+/// there was no send button to fall back on, and nothing ever took focus. You could type and
+/// there was no way to send.
 ///
 /// Now: Return sends, Shift-Return makes a newline, the send button appears when there is
-/// something to send, and the field takes focus when the conversation opens.
+/// something to send, and the field takes focus when a conversation opens.
 struct Composer: View {
     @Environment(Store.self) private var store
     @Environment(BotRunner.self) private var runner
@@ -19,58 +19,61 @@ struct Composer: View {
     @FocusState.Binding var focused: Bool
 
     var body: some View {
-        VStack(spacing: 8) {
-            HStack(alignment: .bottom, spacing: 10) {
-                attachButton
-
-                TextField(placeholder, text: $draft, axis: .vertical)
-                    .textFieldStyle(.plain)
-                    .font(.system(size: 13.5))
-                    .foregroundStyle(DS.Colour.ink)
-                    .lineLimit(1...10)
-                    .focused($focused)
-                    // A vertical-axis field consumes Return itself, so the key has to be
-                    // caught before it reaches the editor. Shift-Return falls through and
-                    // inserts a newline, which is what people expect from a chat box.
-                    .onKeyPress(.return, phases: .down) { key in
-                        if key.modifiers.contains(.shift) { return .ignored }
-                        send()
-                        return .handled
-                    }
-                    // Redundant on purpose. A vertical-axis field usually swallows Return so
-                    // this never fires — but when it does, losing the message because the
-                    // other path missed it would be unforgivable, and a double send is
-                    // prevented by draft being cleared synchronously.
-                    .onSubmit(send)
-
-                if isRunning {
-                    stopButton
-                } else {
-                    sendButton
-                }
-            }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 9)
-            .background(Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 20))
-            .overlay(
-                RoundedRectangle(cornerRadius: 20)
-                    .stroke(focused ? Color.white.opacity(0.14) : Color.clear, lineWidth: 1)
-            )
-            .animation(DS.Motion.instant, value: focused)
-
+        VStack(spacing: DS.Space.md) {
+            field
             controls
         }
-        .padding(.horizontal, 22)
-        .padding(.bottom, 14)
+        .padding(.horizontal, DS.Space.xxl - 2)
+        .padding(.bottom, DS.Space.lg + 2)
     }
 
-    private var isRunning: Bool { runner.isRunning(conversationID) }
-    private var bot: Bot? { store.bot(store.conversation(conversationID)?.participants.first) }
+    // MARK: Field
+
+    private var field: some View {
+        HStack(alignment: .bottom, spacing: DS.Space.lg - 2) {
+            IconButton("plus", help: "Attach a file", action: attach)
+
+            TextField(placeholder, text: $draft, axis: .vertical)
+                .textFieldStyle(.plain)
+                .font(DS.Text.body)
+                .foregroundStyle(DS.Colour.ink)
+                .lineLimit(1...10)
+                .focused($focused)
+                // A vertical-axis field consumes Return itself, so the key has to be caught
+                // before it reaches the editor. Shift-Return falls through and inserts a
+                // newline, which is what people expect from a chat box.
+                .onKeyPress(.return, phases: .down) { key in
+                    if key.modifiers.contains(.shift) { return .ignored }
+                    send()
+                    return .handled
+                }
+                // Redundant on purpose: if the field ever does emit a submit, losing the
+                // message because the other path missed it would be unforgivable. Clearing
+                // the draft synchronously prevents a double send.
+                .onSubmit(send)
+
+            if runner.isRunning(conversationID) {
+                stopButton
+            } else {
+                sendButton
+            }
+        }
+        .padding(.horizontal, DS.Space.lg)
+        .padding(.vertical, DS.Space.md + 1)
+        .background(DS.Colour.fill, in: RoundedRectangle(cornerRadius: DS.Radius.pill))
+        .overlay(
+            RoundedRectangle(cornerRadius: DS.Radius.pill)
+                .stroke(focused ? DS.Colour.lineStrong : .clear, lineWidth: DS.Size.hairline)
+        )
+        .dsAnimation(DS.Motion.instant, value: focused)
+    }
 
     private var placeholder: String {
         guard let name = bot?.name else { return "Ask anything" }
         return "Message \(name)"
     }
+
+    private var bot: Bot? { store.bot(store.conversation(conversationID)?.participants.first) }
 
     private var canSend: Bool {
         !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
@@ -78,71 +81,45 @@ struct Composer: View {
 
     // MARK: Buttons
 
-    private var attachButton: some View {
-        Button {
-            attach()
-        } label: {
-            Image(systemName: "plus")
-                .font(.system(size: 13, weight: .medium))
-                .foregroundStyle(DS.Colour.inkSecondary)
-                .frame(width: 24, height: 24)
-                .background(Color.white.opacity(0.07), in: Circle())
-        }
-        .buttonStyle(PressableStyle())
-        .help("Attach a file")
-    }
-
     private var sendButton: some View {
         Button(action: send) {
             Image(systemName: "arrow.up")
-                .font(.system(size: 12, weight: .bold))
-                .foregroundStyle(canSend ? DS.Colour.ground : DS.Colour.inkTertiary)
-                .frame(width: 24, height: 24)
-                .background(canSend ? DS.Colour.ink : Color.white.opacity(0.08), in: Circle())
+                .font(DS.Text.glyphBold)
+                .foregroundStyle(canSend ? DS.Colour.onAccent : DS.Colour.inkDisabled)
+                .frame(width: DS.Size.iconButton, height: DS.Size.iconButton)
+                .background(canSend ? DS.Colour.accent : DS.Colour.fill, in: Circle())
         }
         .buttonStyle(PressableStyle())
         .disabled(!canSend)
-        // Enter/exit rather than a hard swap, so the control does not pop.
-        .animation(DS.Motion.instant, value: canSend)
+        .dsAnimation(DS.Motion.instant, value: canSend)
         .help("Send (Return)")
     }
 
     private var stopButton: some View {
-        Button {
-            runner.stop(conversationID)
-        } label: {
-            RoundedRectangle(cornerRadius: 3)
-                .fill(DS.Colour.ground)
-                .frame(width: 9, height: 9)
-                .frame(width: 24, height: 24)
-                .background(DS.Colour.ink, in: Circle())
+        Button { runner.stop(conversationID) } label: {
+            RoundedRectangle(cornerRadius: DS.Radius.xs - 1)
+                .fill(DS.Colour.onAccent)
+                .frame(width: DS.Space.md + 1, height: DS.Space.md + 1)
+                .frame(width: DS.Size.iconButton, height: DS.Size.iconButton)
+                .background(DS.Colour.accent, in: Circle())
         }
         .buttonStyle(PressableStyle())
         .help("Stop")
     }
 
-    // MARK: Controls under the box
+    // MARK: Controls
+    //
+    // Two chips, not fifteen modes: which brain answers, and how much it may decide alone.
 
-    /// Two chips, not fifteen modes: which brain answers, and how much it may decide alone.
     private var controls: some View {
-        HStack(spacing: 8) {
+        HStack(spacing: DS.Space.md) {
             if let bot {
                 BrainChip(bot: bot)
                 AutonomyChip(bot: bot)
             }
             Spacer()
-            if isRunning {
-                HStack(spacing: 6) {
-                    ProgressView().controlSize(.mini).scaleEffect(0.7)
-                    Text("Working")
-                        .font(.system(size: 11))
-                        .foregroundStyle(DS.Colour.inkSecondary)
-                }
-                .transition(.opacity)
-            }
         }
-        .padding(.horizontal, 4)
-        .animation(DS.Motion.instant, value: isRunning)
+        .padding(.horizontal, DS.Space.xs)
     }
 
     // MARK: Actions
@@ -160,8 +137,7 @@ struct Composer: View {
         panel.canChooseDirectories = true
         panel.prompt = "Attach"
         guard panel.runModal() == .OK, !panel.urls.isEmpty else { return }
-        let paths = panel.urls.map(\.path).joined(separator: "\n")
-        draft += (draft.isEmpty ? "" : "\n") + paths
+        draft += (draft.isEmpty ? "" : "\n") + panel.urls.map(\.path).joined(separator: "\n")
         focused = true
     }
 }
@@ -188,22 +164,34 @@ struct BrainChip: View {
                 option(.openAI(model: "gpt-5"), "GPT-5", "Adapter not written")
             }
             Divider()
-            Button("Set up keys…") { NSApp.sendAction(Selector(("showSettingsWindow:")), to: nil, from: nil) }
+            Button("Set up keys…") {
+                NSApp.sendAction(Selector(("showSettingsWindow:")), to: nil, from: nil)
+            }
         } label: {
-            chip(icon: "brain",
-                 text: BotRunner.isFallingBack(bot) ? "\(bot.brain.shortName) → Gemini" : bot.brain.shortName,
-                 warn: !isReady || BotRunner.isFallingBack(bot))
+            Chip(label, systemImage: warns ? "exclamationmark.triangle.fill" : "brain",
+                 tint: warns ? DS.Colour.running : DS.Colour.inkTertiary,
+                 showsChevron: true)
         }
         .menuStyle(.borderlessButton)
         .menuIndicator(.hidden)
         .fixedSize()
-        .help(BotRunner.isFallingBack(bot)
-              ? "No adapter for this model yet — Gemini answers instead"
-              : (isReady ? "Model" : "This model has no key yet"))
+        .help(helpText)
     }
 
-    /// Whether the brain that will actually answer has what it needs.
-    private var isReady: Bool { Keychain.has("gemini") }
+    private var fallingBack: Bool { BotRunner.isFallingBack(bot) }
+    private var hasKey: Bool { Keychain.has("gemini") }
+    private var warns: Bool { fallingBack || !hasKey }
+
+    /// Says what will actually answer, not what is selected. A control that reports a state
+    /// the system is not in is worse than one that admits the gap.
+    private var label: String {
+        fallingBack ? "\(bot.brain.shortName) → Gemini" : bot.brain.shortName
+    }
+
+    private var helpText: String {
+        if fallingBack { return "No adapter for this model yet — Gemini answers instead" }
+        return hasKey ? "Model" : "This model has no key yet"
+    }
 
     private func option(_ brain: BrainSpec, _ title: String, _ detail: String) -> some View {
         Button {
@@ -218,28 +206,10 @@ struct BrainChip: View {
             }
         }
     }
-
-    private func chip(icon: String, text: String, warn: Bool) -> some View {
-        HStack(spacing: 5) {
-            Image(systemName: warn ? "exclamationmark.triangle.fill" : icon)
-                .font(.system(size: 9))
-                .foregroundStyle(warn ? DS.Colour.running : DS.Colour.inkTertiary)
-            Text(text)
-                .font(.system(size: 11))
-                .foregroundStyle(DS.Colour.inkSecondary)
-            Image(systemName: "chevron.down")
-                .font(.system(size: 7, weight: .semibold))
-                .foregroundStyle(DS.Colour.inkTertiary)
-        }
-        .padding(.horizontal, 8)
-        .padding(.vertical, 4)
-        .background(Color.white.opacity(0.05), in: Capsule())
-        .contentShape(Capsule())
-    }
 }
 
 /// How much the bot may decide for itself. Three names, not six rungs — the ladder underneath
-/// has six, but nobody should have to think in those terms to send a message.
+/// keeps its full resolution, but nobody should have to think in those terms to send a message.
 struct AutonomyChip: View {
     @Environment(Store.self) private var store
     let bot: Bot
@@ -250,21 +220,7 @@ struct AutonomyChip: View {
             mode(.autonomousWorkspace, "Work", "Works in its folder. Asks before anything consequential.")
             mode(.autonomousOperational, "Autopilot", "Acts across what you authorised. Asks rarely.")
         } label: {
-            HStack(spacing: 5) {
-                Image(systemName: icon)
-                    .font(.system(size: 9))
-                    .foregroundStyle(DS.Colour.inkTertiary)
-                Text(label)
-                    .font(.system(size: 11))
-                    .foregroundStyle(DS.Colour.inkSecondary)
-                Image(systemName: "chevron.down")
-                    .font(.system(size: 7, weight: .semibold))
-                    .foregroundStyle(DS.Colour.inkTertiary)
-            }
-            .padding(.horizontal, 8)
-            .padding(.vertical, 4)
-            .background(Color.white.opacity(0.05), in: Capsule())
-            .contentShape(Capsule())
+            Chip(label, systemImage: icon, showsChevron: true)
         }
         .menuStyle(.borderlessButton)
         .menuIndicator(.hidden)
@@ -275,7 +231,7 @@ struct AutonomyChip: View {
     private var label: String {
         switch bot.defaultAutonomy {
         case .autonomousOperational, .delegatedOperator: return "Autopilot"
-        case .autonomousWorkspace:                       return "Work"
+        case .autonomousWorkspace:                        return "Work"
         default:                                          return "Ask"
         }
     }
@@ -300,18 +256,5 @@ struct AutonomyChip: View {
                 Text("\(title) — \(detail)")
             }
         }
-    }
-}
-
-// MARK: - Press feedback
-
-/// Every pressable thing should acknowledge the press. Subtle scale, fast ease-out — the
-/// point is that the interface is visibly listening, not that anything is animated.
-struct PressableButtonStyle: ButtonStyle {
-    func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .scaleEffect(configuration.isPressed ? 0.94 : 1)
-            .opacity(configuration.isPressed ? 0.85 : 1)
-            .animation(.easeOut(duration: 0.12), value: configuration.isPressed)
     }
 }
