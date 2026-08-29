@@ -1,0 +1,17 @@
+.build/
+build/
+.DS_Store
+var/traces/*
+var/artifacts/*
+var/logs/*
+!var/**/.gitkeep
+node_modules/
+.venv/
+__pycache__/
+*.pyc
+.env
+.env.*
+!.env.example
+*.app/
+evals/results/*
+!evals/results/.gitkeep
