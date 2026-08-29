@@ -196,6 +196,7 @@ final class BotRunner {
             awaiting[message.id] = id
 
         case .finished(let closure, let closingNote):
+            if closure == .succeeded { Task { await self.maybeSelfDescribe(bot: bot, in: id) } }
             note(closure == .succeeded ? .finished : .failed,
                  closure == .succeeded ? "Done" : closure.rawValue,
                  detail: closingNote.isEmpty ? nil : String(closingNote.prefix(200)), in: id)
@@ -218,6 +219,62 @@ final class BotRunner {
             note(.failed, "Failed", detail: message, in: id)
             store.append(Message(author: bot.id, body: .failure(message)), to: id)
         }
+    }
+
+    // MARK: - The bot writing itself
+
+    /// After a successful run, let the bot bring its own name and description up to date.
+    ///
+    /// This is the behaviour the user noticed in Grok Bot: the description is not something you
+    /// type, it is what the bot has learned it does. Runs quietly in the background — a failure
+    /// here must never surface, because nobody asked for it and it is not what they were doing.
+    private func maybeSelfDescribe(bot: Bot, in conversationID: UUID) async {
+        guard let conversation = store.conversation(conversationID),
+              SelfDescription.shouldRegenerate(bot: bot, conversation: conversation),
+              let current = store.bot(bot.id)
+        else { return }
+
+        let history = SelfDescription.history(of: conversation)
+        guard !history.isEmpty else { return }
+
+        let brain = Self.brain(for: current)
+        guard await brain.isConfigured() else { return }
+
+        var updated = current
+
+        // Name first, and only while it is still the placeholder — renaming a bot the user has
+        // been talking to for a week would be disorienting even if the new name were better.
+        if updated.nameIsAuto, Self.isPlaceholderName(updated.name) {
+            if let reply = try? await brain.step(BrainRequest(
+                system: "You name things well. Answer with the name only.",
+                turns: [.init(role: .user, text: SelfDescription.namePrompt(history: history))],
+                tools: [])),
+               let text = reply.text,
+               let name = SelfDescription.tidy(text, maxLength: 28) {
+                updated.name = name
+            }
+        }
+
+        if let reply = try? await brain.step(BrainRequest(
+            system: "You write short, concrete descriptions of what someone does. Answer with the description only.",
+            turns: [.init(role: .user, text: SelfDescription.describePrompt(
+                bot: updated, history: history,
+                existing: updated.persona.isEmpty ? nil : updated.persona))],
+            tools: [])),
+           let text = reply.text,
+           let persona = SelfDescription.tidy(text, maxLength: 600) {
+            updated.persona = persona
+            updated.describedAtTurn = conversation.messages.filter { $0.author == nil }.count
+        }
+
+        guard updated.name != current.name || updated.persona != current.persona else { return }
+        store.update(updated)
+        note(.finished, "Updated its own description", detail: updated.persona, in: conversationID)
+    }
+
+    private static func isPlaceholderName(_ name: String) -> Bool {
+        let lowered = name.lowercased()
+        return lowered == "new bot" || lowered == "harness" || lowered.isEmpty
     }
 
     // MARK: - Contract construction

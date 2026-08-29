@@ -56,6 +56,12 @@ public actor AgentLoop {
     private let verifier = Verifier()
     private var stuck = StuckDetector()
 
+    /// Keeps unchanged screens out of the prompt and prunes stale ones.
+    private var screenshots = ScreenshotBudget()
+
+    /// Exact tool calls already made this run, so a repeat can be answered rather than run.
+    private var callSignatures: [String: Int] = [:]
+
     private var turns: [BrainTurn] = []
     private var lastObservation = ""
 
@@ -150,9 +156,18 @@ public actor AgentLoop {
                 previousInteractionID: interactionID
             )
             if contract.urgency.budget.observationDepth == .full, brain.canDriveComputer {
-                request.screenshot = try? await computer.screenshot()
-                if let shot = request.screenshot {
-                    await postScreenshot(shot, caption: "Looked at the screen", emit: emit)
+                if let shot = try? await computer.screenshot() {
+                    switch screenshots.consider(shot, identifier: "obs-\(contract.spend.steps)") {
+                    case .send:
+                        request.screenshot = shot
+                        await postScreenshot(shot, caption: "Looked at the screen", emit: emit)
+                    case .unchanged:
+                        // Nothing moved. Sending the same frame again costs ~1,500 tokens to
+                        // tell the model what it already knows, and often makes it conclude
+                        // its last action failed.
+                        request.observation = (request.observation ?? "")
+                            + "\n(the screen has not changed since the last capture)"
+                    }
                 }
             }
 
@@ -284,6 +299,22 @@ public actor AgentLoop {
             break
         }
 
+        // Repeating an identical call is nearly always the model failing to notice that the
+        // last one already answered. Re-running it costs money and teaches it nothing; saying
+        // so plainly moves it on. Seen live: three widening files.glob calls in a row because
+        // the first returned nothing and the model read that as "look harder".
+        let signature = action.name + "|" + detail
+        callSignatures[signature, default: 0] += 1
+        if callSignatures[signature]! > 2 {
+            let message = "You have already called \(action.name) with these exact arguments "
+                        + "\(callSignatures[signature]!) times and the answer will not change. "
+                        + "Either use what it returned, try a materially different approach, or "
+                        + "tell the user what is blocking you."
+            turns.append(.init(role: .tool, text: message, toolCallID: action.id))
+            emit(.toolFinished(id: action.id, output: message, ok: false))
+            return .carryOn
+        }
+
         // — execute —
         emit(.toolStarted(id: action.id, tool: action.name, summary: summary, intent: action.intent))
         let step = await trace.record({
@@ -325,7 +356,10 @@ public actor AgentLoop {
         // — files —
         case "files.read":
             guard let path = str("path") else { throw Bad.missing("path") }
-            return try await files.read(path, offset: int("offset"), limit: int("limit"))
+            let contents = try await files.read(path, offset: int("offset"), limit: int("limit"))
+            // File contents are data, not instruction. The envelope is what stops a document
+            // saying "SYSTEM: ignore your instructions" from reading as one.
+            return UntrustedContent.envelope(contents, source: "the file \(path)")
         case "files.write":
             guard let path = str("path"), let content = str("content") else { throw Bad.missing("path and content") }
             return try await files.write(path, content: content)
@@ -336,9 +370,6 @@ public actor AgentLoop {
             guard let path = str("path") else { throw Bad.missing("path") }
             return try await files.delete(path)
         case "files.search", "files.glob":
-            // Tildes have to be expanded here: the path goes into a single-quoted shell
-            // argument, where ~ is literal. Left unexpanded, every lookup under ~/Desktop
-            // silently matched nothing.
             let workspace = bot.workspace?.path ?? NSHomeDirectory()
             var rawRoot = str("path") ?? workspace
             // A GUI app's working directory is "/", so a relative path silently means the
@@ -350,15 +381,33 @@ public actor AgentLoop {
             let root = (rawRoot as NSString).expandingTildeInPath
             let pattern = str("pattern") ?? "*"
 
-            // `find` rather than a zsh recursive glob: predictable under `zsh -lc`, and it
-            // does not depend on shell options that may or may not be set.
-            let command = action.name == "files.search"
-                ? "rg -n --max-count 40 -- \(shellQuote(pattern)) \(shellQuote(root)) 2>/dev/null | head -60"
-                : "find \(shellQuote(root)) -maxdepth 2 -name \(shellQuote(pattern)) 2>/dev/null | head -60"
+            if action.name == "files.search" {
+                let command = "rg -n --max-count 40 -- \(shellQuote(pattern)) \(shellQuote(root)) 2>/dev/null | head -60"
+                let out = await shell.run(command)
+                return out.stdout.isEmpty ? "No matches for \(pattern) under \(root)." : out.stdout
+            }
+
+            // Globs need care. `find -name` matches the *basename only*, so a recursive
+            // pattern like "**/*.swift" matches nothing — which is exactly what happened in a
+            // real run, and the model answered by retrying with ever-broader patterns rather
+            // than being told the pattern was the problem.
+            let recursive = pattern.contains("**")
+            let leaf = pattern.split(separator: "/").last.map(String.init) ?? pattern
+            let depth = recursive ? 8 : 2
+            let matcher = (!recursive && pattern.contains("/"))
+                ? "-path \(shellQuote("*" + pattern))"
+                : "-name \(shellQuote(leaf))"
+            // Build directories and dependency trees are noise in every project.
+            let prune = #"\( -name .git -o -name node_modules -o -name .build -o -name Pods -o -name .venv \) -prune -o"#
+            let command = "find \(shellQuote(root)) -maxdepth \(depth) \(prune) \(matcher) -print 2>/dev/null | head -80"
             let out = await shell.run(command)
-            return out.stdout.isEmpty
-                ? "No matches for \(pattern) under \(root)."
-                : out.stdout
+            if out.stdout.isEmpty {
+                return "No files match \(pattern) under \(root). "
+                     + "Patterns match a file's name, so use \"*.swift\" rather than "
+                     + "\"**/*.swift\" — the search already looks in subdirectories."
+            }
+            let count = out.stdout.split(separator: "\n").count
+            return "\(count) match\(count == 1 ? "" : "es"):\n" + out.stdout
 
         // — shell —
         case "shell.exec":
@@ -380,6 +429,9 @@ public actor AgentLoop {
         // — computer, both our names and Gemini's predefined ones —
         case "computer.screenshot", "take_screenshot":
             let image = try await computer.screenshot()
+            if case .unchanged = screenshots.consider(image, identifier: "shot-\(contract.spend.steps)") {
+                return "The screen has not changed since your last look. \(await computer.state())"
+            }
             await postScreenshot(image, caption: action.intent ?? "Looked at the screen",
                                  emit: currentEmit)
             return "Captured the screen. \(await computer.state())"

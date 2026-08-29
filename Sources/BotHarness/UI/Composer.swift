@@ -37,6 +37,11 @@ struct Composer: View {
                         send()
                         return .handled
                     }
+                    // Redundant on purpose. A vertical-axis field usually swallows Return so
+                    // this never fires — but when it does, losing the message because the
+                    // other path missed it would be unforgivable, and a double send is
+                    // prevented by draft being cleared synchronously.
+                    .onSubmit(send)
 
                 if isRunning {
                     stopButton

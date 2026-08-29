@@ -111,7 +111,7 @@ private struct SettingsPane: View {
 
                 field("Name", text: Binding(
                     get: { working.name },
-                    set: { v in mutate { $0.name = v } }))
+                    set: { v in mutate { $0.name = v; $0.nameIsAuto = false } }))
 
                 field("Label (optional)", text: Binding(
                     get: { working.label },

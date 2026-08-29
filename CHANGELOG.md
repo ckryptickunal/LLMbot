@@ -21,6 +21,30 @@ Versioning follows [Semantic Versioning 2.0.0](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+### Added — design system, live activity, screenshots in the conversation
+- **A complete design system.** Space, radius, type scale, colour, size, motion and duration as
+  one namespace, with a component layer covering every state including loading, empty and
+  error. Documented in `docs/DESIGN-SYSTEM.md`. The old `Theme` is gone and all ten view files
+  are migrated: no view contains a raw number or a raw colour any more.
+- **Live activity behind a chevron.** What the bot is doing, streaming, collapsed by default and
+  remembered. Shows the model's stated intent for each action, what it looked at, and what came
+  back. Honest about its limit: Gemini returns no readable reasoning, only an opaque signature,
+  so what is shown is intent plus everything the harness itself did.
+- **Screenshots posted into the conversation**, like Grok Bot. Loaded from disk on demand and
+  decoded off the main thread; the conversation document stores a path, never image bytes.
+  Click to see full size.
+- **From the rakazo teardown** (`docs/research/rakazo-teardown.md`, 37 patterns extracted from
+  reading their source): screenshot deduplication by content fingerprint plus keep-last-N
+  pruning, structural untrusted-content envelopes with the label placed *before* the content,
+  and a repeated-identical-call guard that answers instead of re-running.
+
+### Fixed
+- **`files.glob` could not do recursive patterns.** `find -name` matches basenames only, so
+  `**/*.swift` matched nothing — seen live, where the model responded by retrying with
+  ever-broader patterns until it was listing the whole Desktop. Recursive patterns now work,
+  build and dependency directories are pruned, and an empty result explains the pattern rule
+  rather than just saying nothing was found.
+
 ### Added — capabilities, and a way to see what happened
 - **A working MCP client**, written against the wire format with no dependencies. stdio and
   HTTP transports, both verified against real servers. This is the piece that turns a list of

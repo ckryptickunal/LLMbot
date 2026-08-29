@@ -47,6 +47,19 @@ public struct Bot: Identifiable, Codable, Hashable {
     /// Deterministic visual identity, derived from `id` so it is stable across renames.
     public var avatar: Avatar = Avatar()
 
+    /// Whether the description is the bot's own or the user's.
+    ///
+    /// Set to false the instant someone edits it by hand, and never set back. A bot that
+    /// rewrites words you typed is not helpful; the user always wins.
+    public var personaIsAuto: Bool = true
+
+    /// Same for the name.
+    public var nameIsAuto: Bool = true
+
+    /// How many user turns had happened when the description was last written, so it can
+    /// settle instead of churning on every message.
+    public var describedAtTurn: Int = 0
+
     // MARK: Capability — what it can do
 
     /// Which model runs this bot. Per bot, never global: a routine that watches an inbox
