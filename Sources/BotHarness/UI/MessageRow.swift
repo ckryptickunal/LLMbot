@@ -29,7 +29,7 @@ struct MessageRow: View {
         case .notice(let text):
             Text(text)
                 .font(DS.Text.caption)
-                .foregroundStyle(DS.Colour.inkTertiary)
+                .foregroundStyle(DS.Ink.tertiary)
                 .frame(maxWidth: .infinity, alignment: .center)
                 .padding(.vertical, DS.Space.sm)
 
@@ -51,12 +51,12 @@ private struct TextBubble: View {
             if isUser { Spacer(minLength: DS.Space.xxxl + DS.Space.xl) }
             Text(attributed)
                 .font(DS.Text.body)
-                .foregroundStyle(DS.Colour.ink)
+                .foregroundStyle(DS.Ink.primary)
                 .lineSpacing(DS.Text.bodyLineSpacing)
                 .textSelection(.enabled)
                 .padding(.horizontal, DS.Space.lg + 1)
                 .padding(.vertical, DS.Space.lg - 2)
-                .background(isUser ? DS.Colour.bubbleUser : DS.Colour.bubbleBot,
+                .background(isUser ? DS.Surface.active : DS.Surface.raised,
                             in: RoundedRectangle(cornerRadius: DS.Radius.xl))
                 .frame(maxWidth: DS.Size.bubbleMax, alignment: isUser ? .trailing : .leading)
             if !isUser { Spacer(minLength: DS.Space.xxxl + DS.Space.xl) }
@@ -86,10 +86,10 @@ private struct ToolCard: View {
                 HStack(spacing: DS.Space.md) {
                     Image(systemName: icon)
                         .font(DS.Text.glyphSmall)
-                        .foregroundStyle(DS.Colour.inkSecondary)
+                        .foregroundStyle(DS.Ink.secondary)
                     Text(activity.summary)
-                        .font(DS.Text.secondary)
-                        .foregroundStyle(DS.Colour.ink)
+                        .font(DS.Text.callout)
+                        .foregroundStyle(DS.Ink.primary)
                         .lineLimit(expanded ? nil : 2)
                     Spacer(minLength: DS.Space.md)
                     StatusPill(activity.status.pillState, activity.status.label)
@@ -105,21 +105,21 @@ private struct ToolCard: View {
         }
         .frame(maxWidth: DS.Size.cardMax, alignment: .leading)
         .contentShape(Rectangle())
-        .onTapGesture { withAnimation(DS.Motion.surface) { expanded.toggle() } }
+        .onTapGesture { withAnimation(DS.Motion.panel) { expanded.toggle() } }
     }
 
     private func detailBlock(_ label: String, _ text: String) -> some View {
         VStack(alignment: .leading, spacing: DS.Space.xs) {
             Text(label)
                 .font(DS.Text.micro)
-                .foregroundStyle(DS.Colour.inkTertiary)
+                .foregroundStyle(DS.Ink.tertiary)
             Text(text)
-                .font(DS.Text.mono())
-                .foregroundStyle(DS.Colour.inkSecondary)
+                .font(DS.Text.mono)
+                .foregroundStyle(DS.Ink.secondary)
                 .textSelection(.enabled)
                 .padding(DS.Space.md)
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .background(DS.Colour.ground, in: RoundedRectangle(cornerRadius: DS.Radius.sm))
+                .background(DS.Surface.ground, in: RoundedRectangle(cornerRadius: DS.Radius.sm))
         }
     }
 
@@ -153,22 +153,22 @@ private struct ComputerCard: View {
             VStack(alignment: .leading, spacing: DS.Space.md + 1) {
                 HStack {
                     Text("Computer")
-                        .font(DS.Text.secondary.weight(.semibold))
-                        .foregroundStyle(DS.Colour.ink)
+                        .font(DS.Text.callout.weight(.semibold))
+                        .foregroundStyle(DS.Ink.primary)
                     Spacer()
                     StatusPill(activity.status.pillState, activity.status.label)
                 }
 
                 Text(activity.task)
-                    .font(DS.Text.secondary)
-                    .foregroundStyle(DS.Colour.inkSecondary)
+                    .font(DS.Text.callout)
+                    .foregroundStyle(DS.Ink.secondary)
                     .lineSpacing(DS.Text.bodyLineSpacing)
                     .fixedSize(horizontal: false, vertical: true)
 
                 if activity.awaitingHuman {
                     Text("Waiting for you — this needs a person.")
                         .font(DS.Text.caption)
-                        .foregroundStyle(DS.Colour.waiting)
+                        .foregroundStyle(DS.Status.waiting.mark)
                 }
 
                 SecondaryButton("Open computer", systemImage: "display") {
@@ -194,40 +194,40 @@ private struct ApprovalCard: View {
     let messageID: UUID
 
     var body: some View {
-        Surface(borderTint: DS.Colour.waiting.opacity(0.35)) {
+        Surface(borderTint: DS.Status.waiting.mark.opacity(0.35)) {
             VStack(alignment: .leading, spacing: DS.Space.lg - 2) {
                 HStack(spacing: DS.Space.sm + 1) {
                     Image(systemName: "hand.raised.fill")
                         .font(DS.Text.glyphSmall)
-                        .foregroundStyle(DS.Colour.waiting)
+                        .foregroundStyle(DS.Status.waiting.mark)
                     Text("Needs your approval")
-                        .font(DS.Text.secondary.weight(.semibold))
-                        .foregroundStyle(DS.Colour.ink)
+                        .font(DS.Text.callout.weight(.semibold))
+                        .foregroundStyle(DS.Ink.primary)
                     Spacer()
                 }
 
                 Text(request.summary)
                     .font(DS.Text.body)
-                    .foregroundStyle(DS.Colour.ink)
+                    .foregroundStyle(DS.Ink.primary)
 
                 // Users approve what they can see. A summary alone is not consent, and an
                 // elided confirmation dialog is a disclosed vulnerability in a comparable tool.
                 Text(request.detail)
-                    .font(DS.Text.mono())
-                    .foregroundStyle(DS.Colour.inkSecondary)
+                    .font(DS.Text.mono)
+                    .foregroundStyle(DS.Ink.secondary)
                     .textSelection(.enabled)
                     .padding(DS.Space.md + 1)
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(DS.Colour.ground, in: RoundedRectangle(cornerRadius: DS.Radius.sm))
+                    .background(DS.Surface.ground, in: RoundedRectangle(cornerRadius: DS.Radius.sm))
 
                 Text(request.reason)
                     .font(DS.Text.caption)
-                    .foregroundStyle(DS.Colour.inkTertiary)
+                    .foregroundStyle(DS.Ink.tertiary)
 
                 if let answer = request.answer {
                     Text(label(for: answer))
-                        .font(DS.Text.secondary.weight(.medium))
-                        .foregroundStyle(answered(answer) ? DS.Colour.done : DS.Colour.failed)
+                        .font(DS.Text.callout.weight(.medium))
+                        .foregroundStyle(answered(answer) ? DS.Status.done.mark : DS.Status.failed.mark)
                 } else {
                     HStack(spacing: DS.Space.md) {
                         SecondaryButton("Allow once") { answer(.allowedOnce) }
@@ -284,16 +284,16 @@ struct ScreenshotCard: View {
                         .clipShape(RoundedRectangle(cornerRadius: DS.Radius.md))
                         .overlay(
                             RoundedRectangle(cornerRadius: DS.Radius.md)
-                                .stroke(DS.Colour.line, lineWidth: DS.Size.hairline)
+                                .stroke(DS.Tint.t6, lineWidth: DS.Size.hairline)
                         )
                         .onTapGesture { zoomed = true }
                         .help("Click to see it full size")
                 } else if failed {
                     // The artifact was cleaned up or moved. Say so rather than showing a void.
-                    Surface(fill: DS.Colour.fill, bordered: false) {
+                    Surface(fill: DS.Tint.t3, bordered: false) {
                         Text("That screenshot is no longer on disk.")
                             .font(DS.Text.caption)
-                            .foregroundStyle(DS.Colour.inkTertiary)
+                            .foregroundStyle(DS.Ink.tertiary)
                     }
                 } else {
                     // Sized like the image it stands in for, so nothing jumps when it lands.
@@ -304,7 +304,7 @@ struct ScreenshotCard: View {
 
             Text(shot.caption)
                 .font(DS.Text.caption)
-                .foregroundStyle(DS.Colour.inkTertiary)
+                .foregroundStyle(DS.Ink.tertiary)
         }
         .task(id: shot.path) { await load() }
         .sheet(isPresented: $zoomed) { zoomedView }
@@ -317,14 +317,14 @@ struct ScreenshotCard: View {
                 HStack {
                     Text(shot.caption)
                         .font(DS.Text.caption)
-                        .foregroundStyle(DS.Colour.inkSecondary)
+                        .foregroundStyle(DS.Ink.secondary)
                     Spacer()
                     SecondaryButton("Done") { zoomed = false }
                 }
                 .padding(DS.Space.lg)
             }
             .frame(minWidth: 720, minHeight: 480)
-            .background(DS.Colour.ground)
+            .background(DS.Surface.ground)
         }
     }
 

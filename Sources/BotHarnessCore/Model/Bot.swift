@@ -8,7 +8,7 @@ import Foundation
 public struct Bot: Identifiable, Codable, Hashable {
 
     /// Memberwise initialiser, public so the app and tests can build one.
-    public init(id: UUID = UUID(), name: String, label: String = "", persona: String = "", avatar: Avatar = Avatar(), brain: BrainSpec = .claudeCode, environment: EnvironmentKind = .thisMac, workspace: URL? = nil, enabledPlugins: Set<String> = [], rules: [PermissionRule] = [], notifies: Bool = true, memory: [MemoryNote] = [], createdAt: Date = Date(), templateSource: String? = nil) {
+    public init(id: UUID = UUID(), name: String, label: String = "", persona: String = "", avatar: Avatar = Avatar(), brain: BrainSpec = .gemini(model: "gemini-3.7-flash"), environment: EnvironmentKind = .thisMac, workspace: URL? = nil, enabledPlugins: Set<String> = [], rules: [PermissionRule] = [], notifies: Bool = true, memory: [MemoryNote] = [], createdAt: Date = Date(), templateSource: String? = nil) {
         self.id = id
         self.name = name
         self.label = label

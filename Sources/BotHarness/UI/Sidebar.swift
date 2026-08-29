@@ -8,6 +8,7 @@ import SwiftUI
 /// makes a list of agents feel like a list of colleagues rather than a list of jobs.
 struct Sidebar: View {
     @Environment(Store.self) private var store
+    @Environment(UIState.self) private var ui
     @Environment(\.openWindow) private var openWindow
 
     @State private var query = ""
@@ -45,7 +46,8 @@ struct Sidebar: View {
 
             footer
         }
-        .background(DS.Colour.panel)
+        // No background: the roster is the functional layer and inherits the window's
+        // material, which is what makes it read as a native sidebar.
         .sheet(item: $library) { LibrarySheet(tab: $0) }
     }
 
@@ -74,27 +76,27 @@ struct Sidebar: View {
             Spacer()
             IconButton("plus", filled: false, help: "New bot (⌘N)") {
                 store.createBot(name: "New Bot")
+                ui.focusComposer()
             }
         }
         .padding(.horizontal, DS.Space.lg)
-        // Leaves room for the traffic lights, since the title bar is hidden.
-        .padding(.top, DS.Space.md)
-        .frame(height: DS.Size.rowHeight)
+
+        .frame(height: DS.Size.rosterRow)
     }
 
     private var search: some View {
         HStack(spacing: DS.Space.sm + 1) {
             Image(systemName: "magnifyingglass")
-                .font(DS.Text.glyphTiny)
-                .foregroundStyle(DS.Colour.inkTertiary)
+                .font(DS.Text.glyphSmall)
+                .foregroundStyle(DS.Ink.tertiary)
             TextField("Search", text: $query)
                 .textFieldStyle(.plain)
-                .font(DS.Text.secondary)
-                .foregroundStyle(DS.Colour.ink)
+                .font(DS.Text.callout)
+                .foregroundStyle(DS.Ink.primary)
         }
         .padding(.horizontal, DS.Space.md + 1)
         .padding(.vertical, DS.Space.sm + 1)
-        .background(DS.Colour.fill, in: RoundedRectangle(cornerRadius: DS.Radius.sm))
+        .background(DS.Tint.t3, in: RoundedRectangle(cornerRadius: DS.Radius.sm))
         .padding(.horizontal, DS.Space.lg)
         .padding(.bottom, DS.Space.sm)
     }
@@ -137,11 +139,11 @@ struct Sidebar: View {
         HStack(spacing: DS.Space.md + 1) {
             Image(systemName: icon)
                 .font(DS.Text.glyph)
-                .foregroundStyle(DS.Colour.inkSecondary)
+                .foregroundStyle(DS.Ink.secondary)
                 .frame(width: DS.Space.xl + 2)
             Text(label)
-                .font(DS.Text.secondary)
-                .foregroundStyle(DS.Colour.ink)
+                .font(DS.Text.callout)
+                .foregroundStyle(DS.Ink.primary)
             Spacer()
         }
         .padding(.horizontal, DS.Space.lg + 2)
@@ -164,17 +166,17 @@ private struct SidebarRow: View {
                 HStack(spacing: DS.Space.sm) {
                     Text(title)
                         .font(DS.Text.body.weight(.semibold))
-                        .foregroundStyle(DS.Colour.ink)
+                        .foregroundStyle(DS.Ink.primary)
                         .lineLimit(1)
                     Spacer(minLength: DS.Space.xs)
                     Text(relativeTime)
                         .font(DS.Text.micro)
-                        .foregroundStyle(DS.Colour.inkTertiary)
+                        .foregroundStyle(DS.Ink.tertiary)
                         .fixedSize()
                 }
                 Text(preview)
-                    .font(DS.Text.secondary)
-                    .foregroundStyle(DS.Colour.inkSecondary)
+                    .font(DS.Text.callout)
+                    .foregroundStyle(DS.Ink.secondary)
                     .lineLimit(1)
             }
         }
@@ -187,8 +189,8 @@ private struct SidebarRow: View {
     }
 
     private var background: Color {
-        if isSelected { return DS.Colour.fillSelected }
-        return hovering ? DS.Colour.fill : .clear
+        if isSelected { return DS.Tint.t5 }
+        return hovering ? DS.Tint.t3 : .clear
     }
 
     private var isSelected: Bool { store.selection == conversation.id }
@@ -203,17 +205,17 @@ private struct SidebarRow: View {
             ZStack(alignment: .leading) {
                 ForEach(Array(conversation.participants.prefix(3).enumerated()), id: \.offset) { index, id in
                     Circle()
-                        .fill(store.bot(id)?.tint ?? DS.Colour.inkTertiary)
-                        .frame(width: DS.Size.avatar - 10, height: DS.Size.avatar - 10)
-                        .overlay(Circle().stroke(DS.Colour.panel, lineWidth: 1.5))
+                        .fill(store.bot(id)?.tint ?? DS.Ink.tertiary)
+                        .frame(width: DS.Size.avatarRoster - 10, height: DS.Size.avatarRoster - 10)
+                        .overlay(Circle().stroke(DS.Surface.panel, lineWidth: 1.5))
                         .offset(x: CGFloat(index) * (DS.Space.md + 1))
                 }
             }
-            .frame(width: DS.Size.avatar + 2, height: DS.Size.avatar, alignment: .leading)
+            .frame(width: DS.Size.avatarRoster + 2, height: DS.Size.avatarRoster, alignment: .leading)
         } else {
             Circle()
-                .fill(store.bot(conversation.participants.first)?.tint ?? DS.Colour.inkTertiary)
-                .frame(width: DS.Size.avatar, height: DS.Size.avatar)
+                .fill(store.bot(conversation.participants.first)?.tint ?? DS.Ink.tertiary)
+                .frame(width: DS.Size.avatarRoster, height: DS.Size.avatarRoster)
         }
     }
 

@@ -29,14 +29,14 @@ struct ActivityInspector: View {
                     stream
                 }
             }
-            .background(DS.Colour.raised, in: RoundedRectangle(cornerRadius: DS.Radius.lg))
+            .background(DS.Surface.raised, in: RoundedRectangle(cornerRadius: DS.Radius.lg))
             .overlay(
                 RoundedRectangle(cornerRadius: DS.Radius.lg)
-                    .stroke(DS.Colour.line, lineWidth: DS.Size.hairline)
+                    .stroke(DS.Tint.t6, lineWidth: DS.Size.hairline)
             )
             .padding(.horizontal, DS.Space.xxl - 2)
             .padding(.bottom, DS.Space.sm)
-            .dsAnimation(DS.Motion.surface, value: expanded)
+            .dsAnimation(DS.Motion.panel, value: expanded)
             .dsAnimation(DS.Motion.instant, value: steps.count)
         }
     }
@@ -47,8 +47,8 @@ struct ActivityInspector: View {
         Button { expanded.toggle() } label: {
             HStack(spacing: DS.Space.md) {
                 Image(systemName: "chevron.right")
-                    .font(DS.Text.glyphTiny)
-                    .foregroundStyle(DS.Colour.inkTertiary)
+                    .font(DS.Text.glyphSmall)
+                    .foregroundStyle(DS.Ink.tertiary)
                     .rotationEffect(.degrees(expanded ? 90 : 0))
 
                 if isRunning {
@@ -57,21 +57,21 @@ struct ActivityInspector: View {
 
                 Text(isRunning ? "Working" : "Activity")
                     .font(DS.Text.caption.weight(.medium))
-                    .foregroundStyle(isRunning ? DS.Colour.ink : DS.Colour.inkSecondary)
+                    .foregroundStyle(isRunning ? DS.Ink.primary : DS.Ink.secondary)
 
                 // Collapsed and running, the latest line is the one thing worth surfacing.
                 if let latest = steps.last, !expanded, isRunning {
                     Text("· \(latest.text)")
                         .font(DS.Text.caption)
-                        .foregroundStyle(DS.Colour.inkTertiary)
+                        .foregroundStyle(DS.Ink.tertiary)
                         .lineLimit(1)
                 }
 
                 Spacer(minLength: DS.Space.sm)
 
                 Text("\(steps.count)")
-                    .font(DS.Text.mono(DS.Text.Scale.micro))
-                    .foregroundStyle(DS.Colour.inkTertiary)
+                    .font(DS.Text.monoSmall)
+                    .foregroundStyle(DS.Ink.tertiary)
             }
             .padding(.horizontal, DS.Space.lg - 1)
             .padding(.vertical, DS.Space.md)
@@ -105,18 +105,18 @@ struct ActivityInspector: View {
     private func row(_ step: BotRunner.LiveStep) -> some View {
         HStack(alignment: .top, spacing: DS.Space.md) {
             Image(systemName: step.kind.icon)
-                .font(DS.Text.glyphTiny)
+                .font(DS.Text.glyphSmall)
                 .foregroundStyle(tint(step.kind))
                 .frame(width: DS.Space.lg + 1, height: DS.Space.xl - 2)
 
             VStack(alignment: .leading, spacing: 1) {
                 Text(step.text)
                     .font(DS.Text.caption)
-                    .foregroundStyle(DS.Colour.ink)
+                    .foregroundStyle(DS.Ink.primary)
                 if let detail = step.detail, !detail.isEmpty {
                     Text(detail)
-                        .font(DS.Text.mono(DS.Text.Scale.micro))
-                        .foregroundStyle(DS.Colour.inkTertiary)
+                        .font(DS.Text.monoSmall)
+                        .foregroundStyle(DS.Ink.tertiary)
                         .lineLimit(3)
                         .textSelection(.enabled)
                 }
@@ -125,21 +125,21 @@ struct ActivityInspector: View {
             Spacer(minLength: DS.Space.xs)
 
             Text(step.at, format: .dateTime.hour().minute().second())
-                .font(DS.Text.mono(DS.Text.Scale.nano))
-                .foregroundStyle(DS.Colour.inkTertiary.opacity(0.7))
+                .font(DS.Text.monoSmall)
+                .foregroundStyle(DS.Ink.tertiary.opacity(0.7))
         }
     }
 
     private func tint(_ kind: BotRunner.LiveStep.Kind) -> Color {
         switch kind {
-        case .thinking:  return DS.Colour.waiting
-        case .observing: return DS.Colour.inkTertiary
-        case .tool:      return DS.Colour.running
-        case .result:    return DS.Colour.done
-        case .verifying: return DS.Colour.waiting
-        case .approval:  return DS.Colour.running
-        case .finished:  return DS.Colour.done
-        case .failed:    return DS.Colour.failed
+        case .thinking:  return DS.Status.waiting.mark
+        case .observing: return DS.Ink.tertiary
+        case .tool:      return DS.Status.running.mark
+        case .result:    return DS.Status.done.mark
+        case .verifying: return DS.Status.waiting.mark
+        case .approval:  return DS.Status.running.mark
+        case .finished:  return DS.Status.done.mark
+        case .failed:    return DS.Status.failed.mark
         }
     }
 }

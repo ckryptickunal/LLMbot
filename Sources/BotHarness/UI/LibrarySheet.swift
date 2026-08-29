@@ -43,7 +43,7 @@ struct LibrarySheet: View {
             }
         }
         .frame(width: 560, height: 480)
-        .background(DS.Colour.panel)
+        .background(DS.Surface.panel)
     }
 
     private var header: some View {
@@ -54,12 +54,12 @@ struct LibrarySheet: View {
                 } label: {
                     HStack(spacing: DS.Space.sm) {
                         Image(systemName: item.icon).font(DS.Text.glyphSmall)
-                        Text(item.title).font(DS.Text.secondary.weight(.medium))
+                        Text(item.title).font(DS.Text.callout.weight(.medium))
                     }
-                    .foregroundStyle(tab == item ? DS.Colour.ink : DS.Colour.inkSecondary)
+                    .foregroundStyle(tab == item ? DS.Ink.primary : DS.Ink.secondary)
                     .padding(.horizontal, DS.Space.lg - 1)
                     .padding(.vertical, DS.Space.sm)
-                    .background(tab == item ? DS.Colour.fillSelected : .clear,
+                    .background(tab == item ? DS.Tint.t5 : .clear,
                                 in: RoundedRectangle(cornerRadius: DS.Radius.sm))
                 }
                 .buttonStyle(PressableStyle())
@@ -119,7 +119,7 @@ private struct ConnectionsList: View {
             HStack {
                 Text("What your bots can reach. Model keys are in Settings (⌘,).")
                     .font(DS.Text.caption)
-                    .foregroundStyle(DS.Colour.inkSecondary)
+                    .foregroundStyle(DS.Ink.secondary)
                 Spacer()
                 if model.isRefreshing {
                     Spinner()
@@ -181,16 +181,16 @@ private struct ConnectionRow: View {
                 .frame(width: DS.Size.statusDot, height: DS.Size.statusDot)
             VStack(alignment: .leading, spacing: DS.Space.hair) {
                 HStack(spacing: DS.Space.sm) {
-                    Text(name).font(DS.Text.secondary.weight(.medium)).foregroundStyle(DS.Colour.ink)
+                    Text(name).font(DS.Text.callout.weight(.medium)).foregroundStyle(DS.Ink.primary)
                     if toolCount > 0 {
                         Text("\(toolCount) tools")
                             .font(DS.Text.micro)
-                            .foregroundStyle(DS.Colour.inkTertiary)
+                            .foregroundStyle(DS.Ink.tertiary)
                     }
                 }
                 Text(detail)
                     .font(DS.Text.caption)
-                    .foregroundStyle(DS.Colour.inkTertiary)
+                    .foregroundStyle(DS.Ink.tertiary)
                     .lineLimit(2)
             }
             Spacer(minLength: DS.Space.md)
@@ -199,20 +199,20 @@ private struct ConnectionRow: View {
                     NSWorkspace.shared.open(URL(fileURLWithPath: NSHomeDirectory() + "/.claude.json"))
                 }
             } else {
-                Text(status.displayName).font(DS.Text.micro).foregroundStyle(DS.Colour.inkTertiary)
+                Text(status.displayName).font(DS.Text.micro).foregroundStyle(DS.Ink.tertiary)
             }
         }
         .padding(DS.Space.lg - 1)
-        .background(DS.Colour.fill, in: RoundedRectangle(cornerRadius: DS.Radius.md))
+        .background(DS.Tint.t3, in: RoundedRectangle(cornerRadius: DS.Radius.md))
     }
 
     private var colour: Color {
         switch status {
-        case .healthy:                  return DS.Colour.done
-        case .degraded:                 return DS.Colour.running
-        case .needsAuth:                return DS.Colour.waiting
-        case .initializing, .offline:   return DS.Colour.inkTertiary
-        case .error:                    return DS.Colour.failed
+        case .healthy:                  return DS.Status.done.mark
+        case .degraded:                 return DS.Status.running.mark
+        case .needsAuth:                return DS.Status.waiting.mark
+        case .initializing, .offline:   return DS.Ink.tertiary
+        case .error:                    return DS.Status.failed.mark
         }
     }
 }
@@ -224,7 +224,7 @@ private struct SkillsList: View {
         VStack(alignment: .leading, spacing: DS.Space.lg) {
             Text("Skills are short written procedures a bot loads only when they are relevant — how to work in a particular repository, how to deploy a particular app.")
                 .font(DS.Text.caption)
-                .foregroundStyle(DS.Colour.inkSecondary)
+                .foregroundStyle(DS.Ink.secondary)
                 .lineSpacing(DS.Text.bodyLineSpacing)
                 .fixedSize(horizontal: false, vertical: true)
 
@@ -245,22 +245,22 @@ private struct ComputersList: View {
         VStack(alignment: .leading, spacing: DS.Space.xl) {
             Text("Where your bots do their work.")
                 .font(DS.Text.caption)
-                .foregroundStyle(DS.Colour.inkSecondary)
+                .foregroundStyle(DS.Ink.secondary)
 
-            Surface(fill: DS.Colour.fill, bordered: false) {
+            Surface(fill: DS.Tint.t3, bordered: false) {
                 VStack(alignment: .leading, spacing: DS.Space.lg - 2) {
                     HStack(spacing: DS.Space.lg - 2) {
                         Image(systemName: "desktopcomputer")
-                            .font(DS.Text.glyphLarge)
-                            .foregroundStyle(DS.Colour.ink)
+                            .font(DS.Text.glyph)
+                            .foregroundStyle(DS.Ink.primary)
                         VStack(alignment: .leading, spacing: 1) {
                             Text("This Mac").font(DS.Text.body.weight(.semibold))
-                                .foregroundStyle(DS.Colour.ink)
+                                .foregroundStyle(DS.Ink.primary)
                             Text("Your real files, browser sessions and apps")
-                                .font(DS.Text.caption).foregroundStyle(DS.Colour.inkTertiary)
+                                .font(DS.Text.caption).foregroundStyle(DS.Ink.tertiary)
                         }
                         Spacer()
-                        Circle().fill(DS.Colour.done)
+                        Circle().fill(DS.Status.done.mark)
                             .frame(width: DS.Size.statusDot, height: DS.Size.statusDot)
                     }
 
@@ -273,22 +273,22 @@ private struct ComputersList: View {
                 }
             }
 
-            Surface(fill: DS.Colour.fill.opacity(0.5), bordered: false) {
+            Surface(fill: DS.Tint.t3.opacity(0.5), bordered: false) {
                 HStack(spacing: DS.Space.lg - 2) {
                     Image(systemName: "cube")
-                        .font(DS.Text.glyphLarge)
-                        .foregroundStyle(DS.Colour.inkTertiary)
+                        .font(DS.Text.glyph)
+                        .foregroundStyle(DS.Ink.tertiary)
                     VStack(alignment: .leading, spacing: 1) {
                         Text("Container").font(DS.Text.body.weight(.medium))
-                            .foregroundStyle(DS.Colour.inkSecondary)
+                            .foregroundStyle(DS.Ink.secondary)
                         Text("A throwaway machine that cannot touch your Mac")
-                            .font(DS.Text.caption).foregroundStyle(DS.Colour.inkTertiary)
+                            .font(DS.Text.caption).foregroundStyle(DS.Ink.tertiary)
                     }
                     Spacer()
-                    Text("Soon").font(DS.Text.micro).foregroundStyle(DS.Colour.inkTertiary)
+                    Text("Soon").font(DS.Text.micro).foregroundStyle(DS.Ink.tertiary)
                         .padding(.horizontal, DS.Space.sm + 1)
                         .padding(.vertical, DS.Space.hair)
-                        .background(DS.Colour.fill, in: Capsule())
+                        .background(DS.Tint.t3, in: Capsule())
                 }
             }
 
@@ -302,10 +302,10 @@ private struct ComputersList: View {
         HStack(spacing: DS.Space.md + 1) {
             Image(systemName: granted ? "checkmark.circle.fill" : "exclamationmark.circle")
                 .font(DS.Text.glyph)
-                .foregroundStyle(granted ? DS.Colour.done : DS.Colour.running)
+                .foregroundStyle(granted ? DS.Status.done.mark : DS.Status.running.mark)
             VStack(alignment: .leading, spacing: 1) {
-                Text(title).font(DS.Text.secondary).foregroundStyle(DS.Colour.ink)
-                Text(why).font(DS.Text.micro).foregroundStyle(DS.Colour.inkTertiary)
+                Text(title).font(DS.Text.callout).foregroundStyle(DS.Ink.primary)
+                Text(why).font(DS.Text.micro).foregroundStyle(DS.Ink.tertiary)
             }
             Spacer()
             if !granted {

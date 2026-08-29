@@ -18,19 +18,27 @@ struct ConversationView: View {
     var body: some View {
         VStack(spacing: 0) {
             header
-            Rectangle().fill(DS.Colour.line).frame(height: DS.Size.hairline)
-            timeline
-            if let id = store.selection {
-                ActivityInspector(conversationID: id)
+            Rectangle().fill(DS.Tint.t6).frame(height: DS.Size.hairline)
+            if let conversation {
+                timeline
+                ActivityInspector(conversationID: conversation.id)
+                Composer(conversationID: conversation.id,
+                         draft: $draft,
+                         focused: $composerFocused)
+            } else {
+                nothingSelected
             }
-            Composer(conversationID: store.selection ?? UUID(),
-                     draft: $draft,
-                     focused: $composerFocused)
         }
-        .background(DS.Colour.ground)
+        .background(DS.Surface.ground)
         // Focus has to wait for the window to become key. Setting @FocusState in onAppear runs
         // before that happens and is silently dropped, which leaves the app looking usable
         // while typing does nothing.
+        .onChange(of: ui.focusRequests) {
+            Task {
+                try? await Task.sleep(for: .milliseconds(60))
+                composerFocused = true
+            }
+        }
         .task(id: store.selection) {
             try? await Task.sleep(for: .milliseconds(120))
             composerFocused = true
@@ -46,11 +54,11 @@ struct ConversationView: View {
         HStack(spacing: DS.Space.md + 1) {
             if let conversation {
                 Circle()
-                    .fill(bot?.tint ?? DS.Colour.inkTertiary)
+                    .fill(bot?.tint ?? DS.Ink.tertiary)
                     .frame(width: DS.Size.glyph + 6, height: DS.Size.glyph + 6)
                 Text(conversation.title ?? bot?.name ?? "Untitled")
                     .font(DS.Text.title)
-                    .foregroundStyle(DS.Colour.ink)
+                    .foregroundStyle(DS.Ink.primary)
             }
             Spacer()
 
@@ -64,7 +72,7 @@ struct ConversationView: View {
             }
         }
         .padding(.horizontal, DS.Space.xl)
-        .frame(height: DS.Size.rowHeight)
+        .frame(height: DS.Size.rosterRow)
         // Room for the traffic lights, since the title bar is hidden.
         .padding(.top, DS.Space.md)
     }
@@ -95,6 +103,37 @@ struct ConversationView: View {
         }
     }
 
+    /// What the column says before there is a bot to talk to.
+    ///
+    /// The one surface in this app allowed to be charming. The design system's rule is that
+    /// how often a surface appears decides how much motion it earns, and this one appears on
+    /// first launch and then never again — so it gets the mascot, and nothing else does.
+    ///
+    /// There is no composer under it on purpose: with nothing selected there is nowhere for
+    /// typing to go, and a text field that silently discards what you type is worse than no
+    /// text field.
+    private var nothingSelected: some View {
+        VStack(spacing: DS.Space.xl) {
+            Spacer()
+            WalkingMascot()
+            VStack(spacing: DS.Space.xs + 1) {
+                Text("No bot yet")
+                    .font(DS.Text.title)
+                    .foregroundStyle(DS.Ink.primary)
+                Text("Make one, and tell it what you want done on this Mac.")
+                    .font(DS.Text.caption)
+                    .foregroundStyle(DS.Ink.tertiary)
+            }
+            SecondaryButton("New bot") {
+                store.createBot(name: "New Bot")
+                ui.focusComposer()
+            }
+            Spacer()
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .padding(.horizontal, DS.Space.xxxl)
+    }
+
     /// What a bot with no history says for itself.
     ///
     /// The persona, not a generic greeting. An empty list teaches nobody what the app is for;
@@ -104,15 +143,15 @@ struct ConversationView: View {
             VStack(spacing: DS.Space.lg) {
                 Circle()
                     .fill(bot.tint)
-                    .frame(width: DS.Size.avatarLarge - 12, height: DS.Size.avatarLarge - 12)
+                    .frame(width: DS.Size.avatarInspector - 12, height: DS.Size.avatarInspector - 12)
                 Text(bot.name)
-                    .font(DS.Text.display)
-                    .foregroundStyle(DS.Colour.ink)
+                    .font(DS.Text.title)
+                    .foregroundStyle(DS.Ink.primary)
                 Text(bot.persona.isEmpty
                      ? "Give this bot a description in Settings, then tell it what to do."
                      : bot.persona)
-                    .font(DS.Text.secondary)
-                    .foregroundStyle(bot.persona.isEmpty ? DS.Colour.inkTertiary : DS.Colour.inkSecondary)
+                    .font(DS.Text.callout)
+                    .foregroundStyle(bot.persona.isEmpty ? DS.Ink.tertiary : DS.Ink.secondary)
                     .multilineTextAlignment(.center)
                     .lineSpacing(DS.Text.bodyLineSpacing)
                     .frame(maxWidth: 420)

@@ -68,7 +68,7 @@ struct ProviderSettings: View {
             VStack(alignment: .leading, spacing: DS.Space.xl + 2) {
                 Text("Bot-Harness runs on your own accounts. Keys are stored in the macOS Keychain and are never written to a file, put in a prompt, or recorded in a trace.")
                     .font(DS.Text.caption)
-                    .foregroundStyle(DS.Colour.inkSecondary)
+                    .foregroundStyle(DS.Ink.secondary)
                     .lineSpacing(DS.Text.bodyLineSpacing)
                     .fixedSize(horizontal: false, vertical: true)
 
@@ -93,7 +93,7 @@ struct ProviderSettings: View {
                 if let justSaved {
                     Label("Saved \(justSaved) to your Keychain.", systemImage: "checkmark.circle.fill")
                         .font(DS.Text.caption)
-                        .foregroundStyle(DS.Colour.done)
+                        .foregroundStyle(DS.Status.done.mark)
                         .transition(.opacity)
                 }
             }
@@ -105,23 +105,23 @@ struct ProviderSettings: View {
     private var claudeCodeRow: some View {
         HStack(alignment: .top, spacing: DS.Space.lg - 1) {
             Image(systemName: claudeCLIPath == nil ? "xmark.circle" : "checkmark.circle.fill")
-                .foregroundStyle(claudeCLIPath == nil ? DS.Colour.inkSecondary : DS.Colour.done)
-                .font(DS.Text.glyphMedium)
+                .foregroundStyle(claudeCLIPath == nil ? DS.Ink.secondary : DS.Status.done.mark)
+                .font(DS.Text.glyph)
             VStack(alignment: .leading, spacing: DS.Space.xs - 1) {
                 Text("Claude Code")
                     .font(DS.Text.body.weight(.semibold))
-                    .foregroundStyle(DS.Colour.ink)
+                    .foregroundStyle(DS.Ink.primary)
                 if let path = claudeCLIPath {
                     Text("Signed in and ready — no API key needed. Billed to your subscription.")
                         .font(DS.Text.caption)
-                        .foregroundStyle(DS.Colour.inkSecondary)
+                        .foregroundStyle(DS.Ink.secondary)
                     Text(path)
-                        .font(DS.Text.mono(DS.Text.Scale.micro))
-                        .foregroundStyle(DS.Colour.inkTertiary)
+                        .font(DS.Text.monoSmall)
+                        .foregroundStyle(DS.Ink.tertiary)
                 } else {
                     Text("Not found. Install the Claude Code CLI to use your subscription as a brain.")
                         .font(DS.Text.caption)
-                        .foregroundStyle(DS.Colour.inkSecondary)
+                        .foregroundStyle(DS.Ink.secondary)
                 }
             }
             Spacer()
@@ -140,7 +140,7 @@ struct ProviderSettings: View {
         present[provider] = Keychain.has(provider)
         withAnimation(DS.Motion.instant) { justSaved = provider }
         Task {
-            try? await Task.sleep(for: .seconds(DS.Duration.toast))
+            try? await Task.sleep(for: .seconds(DS.Motion.confirmationDwell))
             withAnimation(DS.Motion.instant) { justSaved = nil }
         }
     }
@@ -178,7 +178,7 @@ private struct KeyField: View {
     var body: some View {
         VStack(alignment: .leading, spacing: DS.Space.sm + 1) {
             HStack(spacing: DS.Space.md) {
-                Text(title).font(DS.Text.body.weight(.semibold)).foregroundStyle(DS.Colour.ink)
+                Text(title).font(DS.Text.body.weight(.semibold)).foregroundStyle(DS.Ink.primary)
                 if isPresent && !replacing {
                     StatusPill(.done, "saved")
                 }
@@ -187,15 +187,15 @@ private struct KeyField: View {
 
             Text(detail)
                 .font(DS.Text.caption)
-                .foregroundStyle(DS.Colour.inkSecondary)
+                .foregroundStyle(DS.Ink.secondary)
                 .lineSpacing(DS.Text.bodyLineSpacing)
                 .fixedSize(horizontal: false, vertical: true)
 
             if isPresent && !replacing {
                 HStack(spacing: DS.Space.md) {
                     Text("••••••••••••••••••••••••")
-                        .font(DS.Text.mono(DS.Text.Scale.secondary))
-                        .foregroundStyle(DS.Colour.inkTertiary)
+                        .font(DS.Text.monoSmall)
+                        .foregroundStyle(DS.Ink.tertiary)
                     Spacer()
                     SecondaryButton("Replace") { replacing = true; entry = "" }
                     SecondaryButton("Remove", role: .destructive, action: onRemove)
@@ -206,11 +206,11 @@ private struct KeyField: View {
                     // captured in a screenshot of this window.
                     SecureField(placeholder, text: $entry)
                         .textFieldStyle(.plain)
-                        .font(DS.Text.mono(DS.Text.Scale.secondary))
-                        .foregroundStyle(DS.Colour.ink)
+                        .font(DS.Text.monoSmall)
+                        .foregroundStyle(DS.Ink.primary)
                         .padding(.horizontal, DS.Space.md + 1)
                         .padding(.vertical, DS.Space.sm + 1)
-                        .background(DS.Colour.fill, in: RoundedRectangle(cornerRadius: DS.Radius.sm))
+                        .background(DS.Tint.t3, in: RoundedRectangle(cornerRadius: DS.Radius.sm))
                         .onSubmit(commit)
                     PrimaryButton("Save", isEnabled: !entry.trimmingCharacters(in: .whitespaces).isEmpty,
                                   action: commit)
@@ -239,7 +239,7 @@ struct PermissionSettings: View {
             VStack(alignment: .leading, spacing: DS.Space.xl) {
                 Text("Rules that apply to every bot. Write one short rule per action, in plain language. Ask first always wins when two rules could both apply.")
                     .font(DS.Text.caption)
-                    .foregroundStyle(DS.Colour.inkSecondary)
+                    .foregroundStyle(DS.Ink.secondary)
                     .lineSpacing(DS.Text.bodyLineSpacing)
                     .fixedSize(horizontal: false, vertical: true)
 
@@ -251,7 +251,7 @@ struct PermissionSettings: View {
                     SectionLabel("Always asked, and not editable")
                     Text("These are built in. No rule you write can switch them off.")
                         .font(DS.Text.caption)
-                        .foregroundStyle(DS.Colour.inkSecondary)
+                        .foregroundStyle(DS.Ink.secondary)
                 }
 
                 VStack(alignment: .leading, spacing: DS.Space.md) {
@@ -260,15 +260,15 @@ struct PermissionSettings: View {
                             Image(systemName: floor.floorBehaviour == .neverAllow ? "nosign" : "hand.raised.fill")
                                 .font(DS.Text.glyphSmall)
                                 .foregroundStyle(floor.floorBehaviour == .neverAllow
-                                                 ? DS.Colour.failed : DS.Colour.running)
+                                                 ? DS.Status.failed.mark : DS.Status.running.mark)
                                 .frame(width: DS.Space.lg + 2)
                             Text("Anything that \(floor.explanation)")
                                 .font(DS.Text.caption)
-                                .foregroundStyle(DS.Colour.ink)
+                                .foregroundStyle(DS.Ink.primary)
                             Spacer()
                             Text(floor.floorBehaviour == .neverAllow ? "never" : "asks")
                                 .font(DS.Text.micro)
-                                .foregroundStyle(DS.Colour.inkTertiary)
+                                .foregroundStyle(DS.Ink.tertiary)
                         }
                     }
                 }
@@ -289,16 +289,16 @@ private struct RuleRow: View {
                 .frame(width: DS.Space.xl)
             VStack(alignment: .leading, spacing: DS.Space.hair) {
                 Text("When a bot wants to " + rule.whenBotWantsTo)
-                    .font(DS.Text.secondary)
-                    .foregroundStyle(DS.Colour.ink)
+                    .font(DS.Text.callout)
+                    .foregroundStyle(DS.Ink.primary)
                 Text(rule.behaviour.displayName)
                     .font(DS.Text.caption)
-                    .foregroundStyle(DS.Colour.inkSecondary)
+                    .foregroundStyle(DS.Ink.secondary)
             }
             Spacer()
         }
         .padding(DS.Space.lg - 1)
-        .background(DS.Colour.fill, in: RoundedRectangle(cornerRadius: DS.Radius.sm))
+        .background(DS.Tint.t3, in: RoundedRectangle(cornerRadius: DS.Radius.sm))
     }
 
     private var icon: String {
@@ -311,9 +311,9 @@ private struct RuleRow: View {
 
     private var colour: Color {
         switch rule.behaviour {
-        case .allowAutomatically: return DS.Colour.done
-        case .askFirst:           return DS.Colour.running
-        case .neverAllow:         return DS.Colour.failed
+        case .allowAutomatically: return DS.Status.done.mark
+        case .askFirst:           return DS.Status.running.mark
+        case .neverAllow:         return DS.Status.failed.mark
         }
     }
 }
@@ -323,10 +323,10 @@ private struct RuleRow: View {
 struct AboutSettings: View {
     var body: some View {
         VStack(alignment: .leading, spacing: DS.Space.lg) {
-            Text("Bot-Harness").font(DS.Text.display).foregroundStyle(DS.Colour.ink)
+            Text("Bot-Harness").font(DS.Text.title).foregroundStyle(DS.Ink.primary)
             Text("An open-source, local-first agent cockpit. Your bots, your Mac, your API keys.")
-                .font(DS.Text.secondary)
-                .foregroundStyle(DS.Colour.inkSecondary)
+                .font(DS.Text.callout)
+                .foregroundStyle(DS.Ink.secondary)
 
             Hairline()
 
@@ -338,7 +338,7 @@ struct AboutSettings: View {
 
             Text("Everything this app records is written where you can read it without this app: JSON for state, JSONL for traces, PNG for screenshots.")
                 .font(DS.Text.caption)
-                .foregroundStyle(DS.Colour.inkTertiary)
+                .foregroundStyle(DS.Ink.tertiary)
                 .lineSpacing(DS.Text.bodyLineSpacing)
                 .fixedSize(horizontal: false, vertical: true)
         }
@@ -348,10 +348,10 @@ struct AboutSettings: View {
 
     private func path(_ title: String, _ value: String) -> some View {
         VStack(alignment: .leading, spacing: DS.Space.hair) {
-            Text(title).font(DS.Text.caption).foregroundStyle(DS.Colour.inkSecondary)
+            Text(title).font(DS.Text.caption).foregroundStyle(DS.Ink.secondary)
             Text(value)
-                .font(DS.Text.mono(DS.Text.Scale.caption))
-                .foregroundStyle(DS.Colour.ink)
+                .font(DS.Text.monoSmall)
+                .foregroundStyle(DS.Ink.primary)
                 .textSelection(.enabled)
         }
     }

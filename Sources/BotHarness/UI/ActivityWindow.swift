@@ -20,7 +20,7 @@ struct ActivityWindow: View {
             detail.frame(minWidth: 460)
         }
         .frame(minWidth: 820, minHeight: 520)
-        .background(DS.Colour.ground)
+        .background(DS.Surface.ground)
         .task { await reload() }
     }
 
@@ -47,7 +47,7 @@ struct ActivityWindow: View {
     private var runList: some View {
         VStack(spacing: 0) {
             HStack {
-                Text("Runs").font(DS.Text.secondary.weight(.semibold)).foregroundStyle(DS.Colour.ink)
+                Text("Runs").font(DS.Text.callout.weight(.semibold)).foregroundStyle(DS.Ink.primary)
                 Spacer()
                 IconButton("arrow.clockwise", filled: false, help: "Reload") {
                     Task { await reload() }
@@ -74,7 +74,7 @@ struct ActivityWindow: View {
                     LazyVStack(spacing: DS.Space.hair) {
                         ForEach(runs) { run in
                             runRow(run)
-                                .background(selected?.id == run.id ? DS.Colour.fillSelected : .clear,
+                                .background(selected?.id == run.id ? DS.Tint.t5 : .clear,
                                             in: RoundedRectangle(cornerRadius: DS.Radius.sm))
                                 .contentShape(Rectangle())
                                 .onTapGesture { Task { await select(run) } }
@@ -84,7 +84,7 @@ struct ActivityWindow: View {
                 }
             }
         }
-        .background(DS.Colour.panel)
+        .background(DS.Surface.panel)
     }
 
     private func runRow(_ run: TraceReader.Run) -> some View {
@@ -93,22 +93,22 @@ struct ActivityWindow: View {
                 Circle().fill(colour(for: run))
                     .frame(width: DS.Size.statusDot - 0.5, height: DS.Size.statusDot - 0.5)
                 Text(run.manifest?.goal ?? run.id)
-                    .font(DS.Text.secondary.weight(.medium))
-                    .foregroundStyle(DS.Colour.ink)
+                    .font(DS.Text.callout.weight(.medium))
+                    .foregroundStyle(DS.Ink.primary)
                     .lineLimit(1)
             }
             HStack(spacing: DS.Space.md) {
                 Text(run.startedAt, style: .relative)
-                    .font(DS.Text.micro).foregroundStyle(DS.Colour.inkTertiary)
+                    .font(DS.Text.micro).foregroundStyle(DS.Ink.tertiary)
                 Text("\(run.stepCount) steps")
-                    .font(DS.Text.micro).foregroundStyle(DS.Colour.inkTertiary)
+                    .font(DS.Text.micro).foregroundStyle(DS.Ink.tertiary)
                 if let cost = run.manifest?.totalCostUSD, cost > 0 {
                     Text(String(format: "$%.4f", cost))
-                        .font(DS.Text.micro).foregroundStyle(DS.Colour.inkTertiary)
+                        .font(DS.Text.micro).foregroundStyle(DS.Ink.tertiary)
                 }
             }
             if let failure = run.failureSummary {
-                Text(failure).font(DS.Text.micro).foregroundStyle(DS.Colour.failed).lineLimit(1)
+                Text(failure).font(DS.Text.micro).foregroundStyle(DS.Status.failed.mark).lineLimit(1)
             }
         }
         .padding(.horizontal, DS.Space.md + 1)
@@ -118,11 +118,11 @@ struct ActivityWindow: View {
 
     private func colour(for run: TraceReader.Run) -> Color {
         switch run.manifest?.outcome {
-        case .succeeded:          return DS.Colour.done
-        case .failed, .timedOut:  return DS.Colour.failed
-        case .refused:            return DS.Colour.running
-        case .cancelled:          return DS.Colour.inkTertiary
-        case .none:               return run.failureSummary == nil ? DS.Colour.inkTertiary : DS.Colour.failed
+        case .succeeded:          return DS.Status.done.mark
+        case .failed, .timedOut:  return DS.Status.failed.mark
+        case .refused:            return DS.Status.running.mark
+        case .cancelled:          return DS.Ink.tertiary
+        case .none:               return run.failureSummary == nil ? DS.Ink.tertiary : DS.Status.failed.mark
         }
     }
 
@@ -150,7 +150,7 @@ struct ActivityWindow: View {
     private func header(_ run: TraceReader.Run) -> some View {
         VStack(alignment: .leading, spacing: DS.Space.sm) {
             Text(run.manifest?.goal ?? run.id)
-                .font(DS.Text.title).foregroundStyle(DS.Colour.ink)
+                .font(DS.Text.title).foregroundStyle(DS.Ink.primary)
             HStack(spacing: DS.Space.lg) {
                 if let manifest = run.manifest {
                     metadata("bot", manifest.botName)
@@ -169,7 +169,7 @@ struct ActivityWindow: View {
             if let note = run.manifest?.closingNote, !note.isEmpty {
                 Text(note)
                     .font(DS.Text.caption)
-                    .foregroundStyle(DS.Colour.inkSecondary)
+                    .foregroundStyle(DS.Ink.secondary)
                     .lineSpacing(DS.Text.bodyLineSpacing)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -180,8 +180,8 @@ struct ActivityWindow: View {
 
     private func metadata(_ name: String, _ value: String) -> some View {
         HStack(spacing: DS.Space.xs) {
-            Text(name).font(DS.Text.micro).foregroundStyle(DS.Colour.inkTertiary)
-            Text(value).font(DS.Text.micro).foregroundStyle(DS.Colour.inkSecondary)
+            Text(name).font(DS.Text.micro).foregroundStyle(DS.Ink.tertiary)
+            Text(value).font(DS.Text.micro).foregroundStyle(DS.Ink.secondary)
         }
     }
 
@@ -190,18 +190,18 @@ struct ActivityWindow: View {
         switch status {
         case .intact(let records):
             HStack(spacing: DS.Space.xs) {
-                Image(systemName: "lock.fill").font(DS.Text.glyphTiny)
+                Image(systemName: "lock.fill").font(DS.Text.glyphSmall)
                 Text("\(records) records intact").font(DS.Text.micro)
             }
-            .foregroundStyle(DS.Colour.done)
+            .foregroundStyle(DS.Status.done.mark)
         case .brokenAt(let line, let reason):
             HStack(spacing: DS.Space.xs) {
-                Image(systemName: "lock.open.trianglebadge.exclamationmark").font(DS.Text.glyphTiny)
+                Image(systemName: "lock.open.trianglebadge.exclamationmark").font(DS.Text.glyphSmall)
                 Text("altered at line \(line) — \(reason)").font(DS.Text.micro)
             }
-            .foregroundStyle(DS.Colour.failed)
+            .foregroundStyle(DS.Status.failed.mark)
         case .unreadable:
-            Text("record unreadable").font(DS.Text.micro).foregroundStyle(DS.Colour.failed)
+            Text("record unreadable").font(DS.Text.micro).foregroundStyle(DS.Status.failed.mark)
         }
     }
 }
@@ -216,8 +216,8 @@ private struct StepRow: View {
         VStack(alignment: .leading, spacing: DS.Space.sm) {
             HStack(alignment: .top, spacing: DS.Space.md) {
                 Text("\(entry.seq)")
-                    .font(DS.Text.mono(DS.Text.Scale.micro))
-                    .foregroundStyle(DS.Colour.inkTertiary)
+                    .font(DS.Text.monoSmall)
+                    .foregroundStyle(DS.Ink.tertiary)
                     .frame(width: DS.Space.xxl - 2, alignment: .trailing)
 
                 Image(systemName: icon)
@@ -227,33 +227,33 @@ private struct StepRow: View {
 
                 VStack(alignment: .leading, spacing: DS.Space.xs - 1) {
                     Text(entry.summary)
-                        .font(DS.Text.secondary)
-                        .foregroundStyle(DS.Colour.ink)
+                        .font(DS.Text.callout)
+                        .foregroundStyle(DS.Ink.primary)
                         .lineLimit(expanded ? nil : 2)
 
                     // The model's stated reason for this step — the "decision" in decision trace.
                     if let intent = entry.intent, intent != entry.summary {
                         Text(intent)
                             .font(DS.Text.caption)
-                            .foregroundStyle(DS.Colour.inkSecondary)
+                            .foregroundStyle(DS.Ink.secondary)
                             .lineLimit(expanded ? nil : 1)
                     }
 
                     if let permission = entry.permission {
                         HStack(spacing: DS.Space.xs + 1) {
                             Image(systemName: permissionIcon(permission.outcome))
-                                .font(DS.Text.glyphTiny)
+                                .font(DS.Text.glyphSmall)
                             Text("\(permission.outcome) — \(permission.reason)")
                                 .font(DS.Text.micro)
                         }
                         .foregroundStyle(permission.outcome == "refused"
-                                         ? DS.Colour.failed : DS.Colour.inkTertiary)
+                                         ? DS.Status.failed.mark : DS.Ink.tertiary)
                     }
 
                     if let error = entry.error, !error.isEmpty {
                         Text(error)
-                            .font(DS.Text.mono(DS.Text.Scale.caption))
-                            .foregroundStyle(DS.Colour.failed)
+                            .font(DS.Text.monoSmall)
+                            .foregroundStyle(DS.Status.failed.mark)
                             .lineLimit(expanded ? nil : 2)
                     }
                 }
@@ -261,10 +261,10 @@ private struct StepRow: View {
 
                 if entry.tokens > 0 {
                     Text("\(entry.tokens) tok")
-                        .font(DS.Text.micro).foregroundStyle(DS.Colour.inkTertiary)
+                        .font(DS.Text.micro).foregroundStyle(DS.Ink.tertiary)
                 }
                 Text(entry.at, format: .dateTime.hour().minute().second())
-                    .font(DS.Text.micro).foregroundStyle(DS.Colour.inkTertiary)
+                    .font(DS.Text.micro).foregroundStyle(DS.Ink.tertiary)
             }
 
             if expanded {
@@ -277,21 +277,21 @@ private struct StepRow: View {
             }
         }
         .padding(DS.Space.lg - 2)
-        .background(DS.Colour.raised, in: RoundedRectangle(cornerRadius: DS.Radius.md))
+        .background(DS.Surface.raised, in: RoundedRectangle(cornerRadius: DS.Radius.md))
         .contentShape(Rectangle())
-        .onTapGesture { withAnimation(DS.Motion.surface) { expanded.toggle() } }
+        .onTapGesture { withAnimation(DS.Motion.panel) { expanded.toggle() } }
     }
 
     private func block(_ title: String, _ text: String) -> some View {
         VStack(alignment: .leading, spacing: DS.Space.xs - 1) {
-            Text(title).font(DS.Text.micro).foregroundStyle(DS.Colour.inkTertiary)
+            Text(title).font(DS.Text.micro).foregroundStyle(DS.Ink.tertiary)
             Text(text)
-                .font(DS.Text.mono())
-                .foregroundStyle(DS.Colour.inkSecondary)
+                .font(DS.Text.mono)
+                .foregroundStyle(DS.Ink.secondary)
                 .textSelection(.enabled)
                 .padding(DS.Space.md)
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .background(DS.Colour.ground, in: RoundedRectangle(cornerRadius: DS.Radius.sm))
+                .background(DS.Surface.ground, in: RoundedRectangle(cornerRadius: DS.Radius.sm))
         }
         .padding(.leading, DS.Space.xxl + DS.Space.xl + 2)
     }
@@ -321,10 +321,10 @@ private struct StepRow: View {
     }
 
     private var tint: Color {
-        if entry.error != nil { return DS.Colour.failed }
-        if entry.permission?.outcome == "refused" { return DS.Colour.failed }
-        if entry.kind == .stuckDetected { return DS.Colour.running }
-        if entry.outcome == .succeeded { return DS.Colour.done }
-        return DS.Colour.inkTertiary
+        if entry.error != nil { return DS.Status.failed.mark }
+        if entry.permission?.outcome == "refused" { return DS.Status.failed.mark }
+        if entry.kind == .stuckDetected { return DS.Status.running.mark }
+        if entry.outcome == .succeeded { return DS.Status.done.mark }
+        return DS.Ink.tertiary
     }
 }

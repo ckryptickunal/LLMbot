@@ -1,43 +1,44 @@
 import BotHarnessCore
 import SwiftUI
 
-/// The three-column cockpit.
+/// The cockpit.
 ///
-/// Left: the roster. Centre: the conversation. Right: the bot's screen or its settings. This
-/// is Grok Bot's arrangement, and it is right for the same reason theirs is — the product is
-/// a messaging app whose contacts happen to be agents, so the conversation gets the middle and
-/// everything else gets out of its way.
+/// Built on `NavigationSplitView` plus `.inspector` rather than three fixed-width columns in an
+/// `HStack`. That was the source of most of what felt cheap: at 900 points the panes squeezed
+/// the conversation into a gutter, and at 2000 they stretched prose across the whole display.
+/// The native containers bring the behaviour people already expect from a Mac app — a
+/// draggable divider, a width the system remembers, a sidebar that collapses when the window
+/// gets narrow, and an inspector that gets out of the way.
+///
+/// The widths come from `DS.Size`, which had defined `rosterMin`, `rosterIdeal`, `rosterMax`
+/// and `inspectorMin` all along. They were simply never wired to anything.
 struct RootView: View {
     @Environment(Store.self) private var store
     @State private var ui = UIState()
+    @State private var columns: NavigationSplitViewVisibility = .all
 
     var body: some View {
-        HStack(spacing: 0) {
+        NavigationSplitView(columnVisibility: $columns) {
             Sidebar()
-                .frame(width: DS.Size.sidebar)
-
-            verticalHairline
-
+                .navigationSplitViewColumnWidth(
+                    min: DS.Size.rosterMin,
+                    ideal: DS.Size.rosterIdeal,
+                    max: DS.Size.rosterMax
+                )
+                .toolbar(removing: .sidebarToggle)
+        } detail: {
             ConversationView()
-                .frame(maxWidth: .infinity)
-
-            if ui.showPanel {
-                verticalHairline
-                ContextPanelView()
-                    .frame(width: DS.Size.inspector)
-                    // Slides from its own edge, so the panel appears to come from where it
-                    // lives rather than fading in from nowhere.
-                    .transition(.move(edge: .trailing).combined(with: .opacity))
-            }
+                .inspector(isPresented: $ui.showPanel) {
+                    ContextPanelView()
+                        .inspectorColumnWidth(
+                            min: DS.Size.inspectorMin,
+                            ideal: DS.Size.inspectorIdeal,
+                            max: DS.Size.inspectorMax
+                        )
+                }
         }
-        .background(DS.Colour.ground)
+        .navigationSplitViewStyle(.balanced)
         .environment(ui)
-        .dsAnimation(DS.Motion.surface, value: ui.showPanel)
-    }
-
-    private var verticalHairline: some View {
-        Rectangle()
-            .fill(DS.Colour.line)
-            .frame(width: DS.Size.hairline)
+        .background(DS.Surface.ground)
     }
 }

@@ -164,7 +164,11 @@ public actor AgentLoop {
                 previousInteractionID: interactionID
             )
             if contract.urgency.budget.observationDepth == .full, brain.canDriveComputer {
-                if let shot = try? await computer.screenshot() {
+                // Ask whether anything changed rather than paying ~1,500 tokens to be told
+                // "still the same" — which is what most looks in a GUI loop return.
+                if let seen = try? await computer.observe(), !seen.changed {
+                    request.observation = (request.observation ?? "") + "\n" + seen.unchangedNote
+                } else if let shot = try? await computer.screenshot() {
                     switch screenshots.consider(shot, identifier: "obs-\(contract.spend.steps)") {
                     case .send:
                         request.screenshot = shot

@@ -32,7 +32,7 @@ public struct IconButton: View {
     var size: CGFloat = DS.Size.iconButton
     var glyph: CGFloat = DS.Size.glyph
     var filled = true
-    var tint: Color = DS.Colour.inkSecondary
+    var tint: Color = DS.Ink.secondary
     var help: String?
     var isLoading = false
     let action: () -> Void
@@ -41,7 +41,7 @@ public struct IconButton: View {
 
     public init(_ systemName: String, size: CGFloat = DS.Size.iconButton,
                 glyph: CGFloat = DS.Size.glyph, filled: Bool = true,
-                tint: Color = DS.Colour.inkSecondary, help: String? = nil,
+                tint: Color = DS.Ink.secondary, help: String? = nil,
                 isLoading: Bool = false, action: @escaping () -> Void) {
         self.systemName = systemName; self.size = size; self.glyph = glyph
         self.filled = filled; self.tint = tint; self.help = help
@@ -52,7 +52,7 @@ public struct IconButton: View {
         Button(action: action) {
             ZStack {
                 if filled {
-                    Circle().fill(hovering ? DS.Colour.fillHover : DS.Colour.fill)
+                    Circle().fill(hovering ? DS.Tint.t4 : DS.Tint.t3)
                 }
                 if isLoading {
                     Spinner(size: glyph)
@@ -91,16 +91,16 @@ public struct PrimaryButton: View {
         Button(action: action) {
             HStack(spacing: DS.Space.sm) {
                 if isLoading {
-                    Spinner(size: 10, tint: DS.Colour.onAccent)
+                    Spinner(size: 10, tint: Color.white)
                 } else if let systemImage {
                     Image(systemName: systemImage).font(.system(size: DS.Size.glyphSmall, weight: .semibold))
                 }
                 Text(isLoading ? "Working" : title).font(DS.Text.caption.weight(.medium))
             }
-            .foregroundStyle(isEnabled ? DS.Colour.onAccent : DS.Colour.inkDisabled)
+            .foregroundStyle(isEnabled ? Color.white : DS.Ink.quaternary)
             .padding(.horizontal, DS.Space.lg)
             .padding(.vertical, DS.Space.md - 1)
-            .background(isEnabled ? DS.Colour.accent : DS.Colour.fill,
+            .background(isEnabled ? DS.Accent.live : DS.Tint.t3,
                         in: RoundedRectangle(cornerRadius: DS.Radius.md))
             // Content changes size when it swaps to a spinner; blur bridges the two states so
             // the eye reads one control changing rather than two controls swapping.
@@ -133,10 +133,10 @@ public struct SecondaryButton: View {
                 }
                 Text(title).font(DS.Text.caption)
             }
-            .foregroundStyle(role == .destructive ? DS.Colour.failed : DS.Colour.ink)
+            .foregroundStyle(role == .destructive ? DS.Status.failed.mark : DS.Ink.primary)
             .padding(.horizontal, DS.Space.lg - 1)
             .padding(.vertical, DS.Space.sm)
-            .background(hovering ? DS.Colour.fillHover : DS.Colour.fill,
+            .background(hovering ? DS.Tint.t4 : DS.Tint.t3,
                         in: RoundedRectangle(cornerRadius: DS.Radius.sm))
         }
         .buttonStyle(PressableStyle())
@@ -151,14 +151,14 @@ public struct SecondaryButton: View {
 public struct Surface<Content: View>: View {
     var padding: CGFloat = DS.Space.lg
     var radius: CGFloat = DS.Radius.lg
-    var fill: Color = DS.Colour.raised
+    var fill: Color = DS.Surface.raised
     var bordered = true
-    var borderTint: Color = DS.Colour.line
+    var borderTint: Color = DS.Tint.t6
     @ViewBuilder let content: Content
 
     public init(padding: CGFloat = DS.Space.lg, radius: CGFloat = DS.Radius.lg,
-                fill: Color = DS.Colour.raised, bordered: Bool = true,
-                borderTint: Color = DS.Colour.line, @ViewBuilder content: () -> Content) {
+                fill: Color = DS.Surface.raised, bordered: Bool = true,
+                borderTint: Color = DS.Tint.t6, @ViewBuilder content: () -> Content) {
         self.padding = padding; self.radius = radius; self.fill = fill
         self.bordered = bordered; self.borderTint = borderTint; self.content = content()
     }
@@ -178,11 +178,11 @@ public struct Surface<Content: View>: View {
 public struct Chip: View {
     let text: String
     var systemImage: String?
-    var tint: Color = DS.Colour.inkSecondary
+    var tint: Color = DS.Ink.secondary
     var showsChevron = false
 
     public init(_ text: String, systemImage: String? = nil,
-                tint: Color = DS.Colour.inkSecondary, showsChevron: Bool = false) {
+                tint: Color = DS.Ink.secondary, showsChevron: Bool = false) {
         self.text = text; self.systemImage = systemImage
         self.tint = tint; self.showsChevron = showsChevron
     }
@@ -192,16 +192,16 @@ public struct Chip: View {
             if let systemImage {
                 Image(systemName: systemImage).font(.system(size: 9)).foregroundStyle(tint)
             }
-            Text(text).font(DS.Text.caption).foregroundStyle(DS.Colour.inkSecondary)
+            Text(text).font(DS.Text.caption).foregroundStyle(DS.Ink.secondary)
             if showsChevron {
                 Image(systemName: "chevron.down")
                     .font(.system(size: 7, weight: .semibold))
-                    .foregroundStyle(DS.Colour.inkTertiary)
+                    .foregroundStyle(DS.Ink.tertiary)
             }
         }
         .padding(.horizontal, DS.Space.md)
         .padding(.vertical, DS.Space.xs)
-        .background(DS.Colour.fill, in: Capsule())
+        .background(DS.Tint.t3, in: Capsule())
         .contentShape(Capsule())
     }
 }
@@ -213,11 +213,11 @@ public struct StatusPill: View {
 
         var tint: Color {
             switch self {
-            case .running: return DS.Colour.running
-            case .done:    return DS.Colour.done
-            case .failed:  return DS.Colour.failed
-            case .waiting: return DS.Colour.waiting
-            case .idle:    return DS.Colour.inkTertiary
+            case .running: return DS.Status.running.mark
+            case .done:    return DS.Status.done.mark
+            case .failed:  return DS.Status.failed.mark
+            case .waiting: return DS.Status.waiting.mark
+            case .idle:    return DS.Ink.tertiary
             }
         }
     }
@@ -229,11 +229,11 @@ public struct StatusPill: View {
     public var body: some View {
         HStack(spacing: DS.Space.xs + 1) {
             Circle().fill(state.tint).frame(width: DS.Size.statusDot, height: DS.Size.statusDot)
-            Text(label).font(DS.Text.micro.weight(.medium)).foregroundStyle(DS.Colour.inkSecondary)
+            Text(label).font(DS.Text.micro.weight(.medium)).foregroundStyle(DS.Ink.secondary)
         }
         .padding(.horizontal, DS.Space.md)
         .padding(.vertical, DS.Space.hair + 1)
-        .background(DS.Colour.fill, in: Capsule())
+        .background(DS.Tint.t3, in: Capsule())
     }
 }
 
@@ -245,10 +245,10 @@ public struct StatusPill: View {
 /// shorter, and this one appears inside buttons where the wait is usually brief anyway.
 public struct Spinner: View {
     var size: CGFloat = 12
-    var tint: Color = DS.Colour.inkSecondary
+    var tint: Color = DS.Ink.secondary
     @State private var spinning = false
 
-    public init(size: CGFloat = 12, tint: Color = DS.Colour.inkSecondary) {
+    public init(size: CGFloat = 12, tint: Color = DS.Ink.secondary) {
         self.size = size; self.tint = tint
     }
 
@@ -280,7 +280,7 @@ public struct Skeleton: View {
 
     public var body: some View {
         RoundedRectangle(cornerRadius: radius)
-            .fill(DS.Colour.fill)
+            .fill(DS.Tint.t3)
             .frame(width: width, height: height)
             .overlay(
                 GeometryReader { geo in
@@ -341,12 +341,12 @@ public struct EmptyState: View {
         VStack(spacing: DS.Space.lg) {
             Image(systemName: systemImage)
                 .font(.system(size: 22, weight: .light))
-                .foregroundStyle(DS.Colour.inkTertiary)
+                .foregroundStyle(DS.Ink.tertiary)
             VStack(spacing: DS.Space.xs + 1) {
-                Text(title).font(DS.Text.title).foregroundStyle(DS.Colour.ink)
+                Text(title).font(DS.Text.title).foregroundStyle(DS.Ink.primary)
                 Text(message)
                     .font(DS.Text.caption)
-                    .foregroundStyle(DS.Colour.inkTertiary)
+                    .foregroundStyle(DS.Ink.tertiary)
                     .multilineTextAlignment(.center)
                     .frame(maxWidth: 340)
                     .fixedSize(horizontal: false, vertical: true)
@@ -371,14 +371,14 @@ public struct ErrorState: View {
     }
 
     public var body: some View {
-        Surface(fill: DS.Colour.failed.opacity(0.09), borderTint: DS.Colour.failed.opacity(0.25)) {
+        Surface(fill: DS.Status.failed.mark.opacity(0.09), borderTint: DS.Status.failed.mark.opacity(0.25)) {
             HStack(alignment: .top, spacing: DS.Space.md) {
                 Image(systemName: "exclamationmark.triangle.fill")
                     .font(.system(size: DS.Size.glyphSmall))
-                    .foregroundStyle(DS.Colour.failed)
+                    .foregroundStyle(DS.Status.failed.mark)
                 Text(message)
-                    .font(DS.Text.secondary)
-                    .foregroundStyle(DS.Colour.ink)
+                    .font(DS.Text.callout)
+                    .foregroundStyle(DS.Ink.primary)
                     .fixedSize(horizontal: false, vertical: true)
                 Spacer(minLength: DS.Space.md)
                 if let retry { SecondaryButton("Try again", action: retry) }
@@ -397,7 +397,7 @@ public struct SectionLabel: View {
         Text(text.uppercased())
             .font(.system(size: 10, weight: .semibold))
             .kerning(0.4)
-            .foregroundStyle(DS.Colour.inkTertiary)
+            .foregroundStyle(DS.Ink.tertiary)
     }
 }
 
@@ -405,7 +405,7 @@ public struct SectionLabel: View {
 public struct Hairline: View {
     public init() {}
     public var body: some View {
-        Rectangle().fill(DS.Colour.line).frame(height: DS.Size.hairline)
+        Rectangle().fill(DS.Tint.t6).frame(height: DS.Size.hairline)
     }
 }
 
@@ -426,7 +426,7 @@ public struct Disclosure<Header: View, Content: View>: View {
                 HStack(spacing: DS.Space.md) {
                     Image(systemName: "chevron.right")
                         .font(.system(size: 9, weight: .semibold))
-                        .foregroundStyle(DS.Colour.inkTertiary)
+                        .foregroundStyle(DS.Ink.tertiary)
                         .rotationEffect(.degrees(expanded ? 90 : 0))
                     header
                 }
@@ -436,6 +436,42 @@ public struct Disclosure<Header: View, Content: View>: View {
 
             if expanded { content }
         }
-        .dsAnimation(DS.Motion.surface, value: expanded)
+        .dsAnimation(DS.Motion.panel, value: expanded)
+    }
+}
+
+
+// MARK: - Inset helper
+
+public extension View {
+    /// Apply a named component inset.
+    func dsInset(_ insets: EdgeInsets) -> some View { padding(insets) }
+}
+
+// MARK: - Reading column
+
+/// Centres content and stops it widening past a comfortable measure.
+///
+/// The single most effective thing a chat layout can do on a large display. Without it, prose
+/// stretches to whatever width the window happens to be, which is the clearest sign a layout
+/// was only ever looked at in one window size.
+public struct ReadingColumn<Content: View>: View {
+    var maxWidth: CGFloat = DS.Size.readingMax
+    var alignment: HorizontalAlignment = .leading
+    @ViewBuilder let content: Content
+
+    public init(maxWidth: CGFloat = DS.Size.readingMax,
+                alignment: HorizontalAlignment = .leading,
+                @ViewBuilder content: () -> Content) {
+        self.maxWidth = maxWidth; self.alignment = alignment; self.content = content()
+    }
+
+    public var body: some View {
+        HStack(spacing: 0) {
+            Spacer(minLength: 0)
+            VStack(alignment: alignment, spacing: 0) { content }
+                .frame(maxWidth: maxWidth, alignment: Alignment(horizontal: alignment, vertical: .center))
+            Spacer(minLength: 0)
+        }
     }
 }

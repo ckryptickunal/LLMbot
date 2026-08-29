@@ -119,6 +119,21 @@ public enum DS {
         public static let fixed = Color(p3: 0.247, 0.556, 0.969)
     }
 
+    // MARK: - Brand
+    //
+    // The mascot's own colours. Deliberately outside the palette above and not derived from
+    // it: #DD775B is the character the way a logo's red is, and pulling it toward the system
+    // greys would leave the same shape wearing a different identity.
+
+    public enum Brand {
+        /// The mascot's clay, taken from the source SVG rather than sampled from a screenshot.
+        public static let mascot = Color(hex: 0xDD775B)
+
+        /// Flat black in every frame of the original, including over dark grounds. It reads
+        /// because it sits on the clay, never on the app's background.
+        public static let mascotEye = Color.black
+    }
+
     // MARK: - Status
     //
     // Radix step 9 for the dot, step 11 for the word beside it. **Never colour alone**: every
@@ -222,6 +237,17 @@ public enum DS {
 
         /// Multi-line prose only. Single-line labels must not carry it.
         public static let bodyLineSpacing: CGFloat = 2.5
+
+        // Glyph sizes, as fonts. SF Symbols are text, so they take a font rather than a frame;
+        // `DS.Size.glyph` is the matching frame length for when one is needed to reserve space.
+        public static let glyph = Font.system(size: 12)
+        public static let glyphSmall = Font.system(size: 10)
+        public static let glyphBold = Font.system(size: 10, weight: .semibold)
+
+        /// The old nested scale, kept only so the compiler names any straggler that still
+        /// reaches for a half-point size. Delete once the sweep is provably complete.
+        @available(*, deprecated, message: "Use one of the five steps: body, title, callout, caption, micro.")
+        public enum Scale {}
     }
 
     // MARK: - Space
@@ -275,6 +301,12 @@ public enum DS {
         public static let glyphSmall: CGFloat = 10
         public static let statusDot: CGFloat = 6
 
+        /// The mascot. Its source viewBox is 107 wide, so drawing it at 107 points is 1:1 and
+        /// every rectangle lands on a whole pixel — which is what keeps a pixel-art character
+        /// from going soft at the edges. Its height is not here: the walk needs headroom for
+        /// the jump, so ask `Mascot.stageHeight(width:)`.
+        public static let mascot: CGFloat = 107
+
         public static let denseRow: CGFloat = 24        // activity and trace rows
         public static let rosterRow: CGFloat = 28       // avatar plus two lines
         public static let connectionRow: CGFloat = 32
@@ -292,6 +324,26 @@ public enum DS {
         public static let inspectorMin: CGFloat = 260
         public static let inspectorIdeal: CGFloat = 300
         public static let inspectorMax: CGFloat = 380
+    }
+
+    // MARK: - Inset
+    //
+    // Component padding, named rather than assembled from scale steps at the call site.
+    // "DS.Space.lg - 1" is a literal wearing a token's clothes, and it is how a layout ends up
+    // with eleven slightly different bubble paddings.
+
+    public enum Inset {
+        /// Message bubbles. Wider than tall, so a single line reads as a lozenge rather than
+        /// a box, which is what makes a transcript feel like a conversation.
+        public static let bubble = EdgeInsets(top: 11, leading: 15, bottom: 11, trailing: 15)
+        /// Tool cards, approval cards, connection rows.
+        public static let card = EdgeInsets(top: 12, leading: 13, bottom: 12, trailing: 13)
+        /// Roster rows and list rows.
+        public static let row = EdgeInsets(top: 8, leading: 10, bottom: 8, trailing: 10)
+        /// The composer field.
+        public static let composer = EdgeInsets(top: 9, leading: 12, bottom: 9, trailing: 9)
+        /// A pane's own outer margin.
+        public static let pane = EdgeInsets(top: 16, leading: 18, bottom: 16, trailing: 18)
     }
 
     // MARK: - Motion
@@ -344,6 +396,9 @@ public enum DS {
         public static let caretPeriod: Double = 0.530
         /// No spinner may appear before this. Anything faster reads as a flicker, not progress.
         public static let spinnerDelay: Double = 0.400
+        /// How long a transient confirmation stays before fading. Long enough to notice,
+        /// short enough not to become furniture.
+        public static let confirmationDwell: Double = 3.0
 
         /// The single chokepoint for reduced motion.
         ///

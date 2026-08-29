@@ -40,3 +40,5 @@ in `CHANGELOG.md` instead.
 | [0006](0006-two-brains-gemini-and-claude-cli.md) | Two brains — Gemini for computer use, the local claude CLI for coding | accepted | 2026-08-29 |
 | [0007](0007-cheapest-execution-surface-first.md) | Always take the cheapest execution surface that will work | accepted | 2026-08-29 |
 | [0008](0008-the-verifier-decides-when-a-run-is-over.md) | The verifier decides when a run is over, not the model | accepted | 2026-08-29 |
+| [0009](0009-port-the-mascot-rather-than-run-it.md) | Port the mascot's animation rather than embed its runtime | accepted | 2026-08-30 |
+| [0010](0010-radix-colour-over-a-macos-override-layer.md) | Radix Colors for surfaces, macOS semantics for everything the OS owns | accepted | 2026-08-30 |

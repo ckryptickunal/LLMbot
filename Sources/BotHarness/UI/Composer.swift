@@ -36,7 +36,7 @@ struct Composer: View {
             TextField(placeholder, text: $draft, axis: .vertical)
                 .textFieldStyle(.plain)
                 .font(DS.Text.body)
-                .foregroundStyle(DS.Colour.ink)
+                .foregroundStyle(DS.Ink.primary)
                 .lineLimit(1...10)
                 .focused($focused)
                 // A vertical-axis field consumes Return itself, so the key has to be caught
@@ -60,10 +60,10 @@ struct Composer: View {
         }
         .padding(.horizontal, DS.Space.lg)
         .padding(.vertical, DS.Space.md + 1)
-        .background(DS.Colour.fill, in: RoundedRectangle(cornerRadius: DS.Radius.pill))
+        .background(DS.Tint.t3, in: RoundedRectangle(cornerRadius: DS.Radius.pill))
         .overlay(
             RoundedRectangle(cornerRadius: DS.Radius.pill)
-                .stroke(focused ? DS.Colour.lineStrong : .clear, lineWidth: DS.Size.hairline)
+                .stroke(focused ? DS.Surface.borderStrong : .clear, lineWidth: DS.Size.hairline)
         )
         .dsAnimation(DS.Motion.instant, value: focused)
     }
@@ -85,9 +85,9 @@ struct Composer: View {
         Button(action: send) {
             Image(systemName: "arrow.up")
                 .font(DS.Text.glyphBold)
-                .foregroundStyle(canSend ? DS.Colour.onAccent : DS.Colour.inkDisabled)
+                .foregroundStyle(canSend ? Color.white : DS.Ink.quaternary)
                 .frame(width: DS.Size.iconButton, height: DS.Size.iconButton)
-                .background(canSend ? DS.Colour.accent : DS.Colour.fill, in: Circle())
+                .background(canSend ? DS.Accent.live : DS.Tint.t3, in: Circle())
         }
         .buttonStyle(PressableStyle())
         .disabled(!canSend)
@@ -98,10 +98,10 @@ struct Composer: View {
     private var stopButton: some View {
         Button { runner.stop(conversationID) } label: {
             RoundedRectangle(cornerRadius: DS.Radius.xs - 1)
-                .fill(DS.Colour.onAccent)
+                .fill(Color.white)
                 .frame(width: DS.Space.md + 1, height: DS.Space.md + 1)
                 .frame(width: DS.Size.iconButton, height: DS.Size.iconButton)
-                .background(DS.Colour.accent, in: Circle())
+                .background(DS.Accent.live, in: Circle())
         }
         .buttonStyle(PressableStyle())
         .help("Stop")
@@ -169,7 +169,7 @@ struct BrainChip: View {
             }
         } label: {
             Chip(label, systemImage: warns ? "exclamationmark.triangle.fill" : "brain",
-                 tint: warns ? DS.Colour.running : DS.Colour.inkTertiary,
+                 tint: warns ? DS.Status.running.mark : DS.Ink.tertiary,
                  showsChevron: true)
         }
         .menuStyle(.borderlessButton)

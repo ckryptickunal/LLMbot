@@ -20,7 +20,7 @@ struct ContextPanelView: View {
                 }
             }
         }
-        .background(DS.Colour.panel)
+        // No background — see RootView. The inspector inherits the system material.
     }
 
     private var currentBot: Bot? {
@@ -36,8 +36,8 @@ struct ContextPanelView: View {
             }
             Spacer()
             Text(ui.panel == .settings ? "Settings" : "Screen")
-                .font(DS.Text.secondary.weight(.semibold))
-                .foregroundStyle(DS.Colour.ink)
+                .font(DS.Text.callout.weight(.semibold))
+                .foregroundStyle(DS.Ink.primary)
             Spacer()
             // Balances the leading control so the title stays optically centred.
             if ui.panel == .settings {
@@ -45,7 +45,7 @@ struct ContextPanelView: View {
             }
         }
         .padding(.horizontal, DS.Space.lg + 2)
-        .frame(height: DS.Size.rowHeight)
+        .frame(height: DS.Size.rosterRow)
         .padding(.top, DS.Space.md)
     }
 }
@@ -64,7 +64,7 @@ private struct ScreenPane: View {
     var body: some View {
         VStack(spacing: DS.Space.lg - 2) {
             RoundedRectangle(cornerRadius: DS.Radius.md)
-                .fill(DS.Colour.ground)
+                .fill(DS.Surface.ground)
                 .aspectRatio(16.0 / 10.0, contentMode: .fit)
                 .overlay {
                     EmptyState(
@@ -77,7 +77,7 @@ private struct ScreenPane: View {
             if let bot {
                 Text("\(bot.name)'s screen · \(bot.environment.displayName)")
                     .font(DS.Text.caption)
-                    .foregroundStyle(DS.Colour.inkTertiary)
+                    .foregroundStyle(DS.Ink.tertiary)
             }
         }
         .padding(DS.Space.lg + 2)
@@ -102,7 +102,7 @@ private struct BotSettingsPane: View {
             VStack(alignment: .leading, spacing: DS.Space.xl) {
                 Circle()
                     .fill(working.tint)
-                    .frame(width: DS.Size.avatarLarge, height: DS.Size.avatarLarge)
+                    .frame(width: DS.Size.avatarInspector, height: DS.Size.avatarInspector)
                     .frame(maxWidth: .infinity)
                     .padding(.top, DS.Space.md)
 
@@ -111,15 +111,48 @@ private struct BotSettingsPane: View {
                       placeholder: "Research, marketing, admin")
 
                 VStack(alignment: .leading, spacing: DS.Space.sm) {
-                    Text("Description")
-                        .font(DS.Text.caption)
-                        .foregroundStyle(DS.Colour.inkSecondary)
-                    TextEditor(text: binding(\.persona, on: working))
-                        .font(DS.Text.secondary)
+                    HStack(spacing: DS.Space.sm) {
+                        Text("Description")
+                            .font(DS.Text.caption)
+                            .foregroundStyle(DS.Ink.secondary)
+                        if working.personaIsAuto && !working.persona.isEmpty {
+                            Text("written by this bot")
+                                .font(DS.Text.micro)
+                                .foregroundStyle(DS.Ink.tertiary)
+                                .padding(.horizontal, DS.Space.sm)
+                                .padding(.vertical, DS.Space.hair)
+                                .background(DS.Tint.t3, in: Capsule())
+                                .help("Kept up to date from what you ask it to do. Editing it makes it yours.")
+                        }
+                        Spacer()
+                        if !working.personaIsAuto {
+                            Button("Let the bot write it") {
+                                var updated = working
+                                updated.personaIsAuto = true
+                                updated.describedAtTurn = 0
+                                draft = updated
+                                store.update(updated)
+                            }
+                            .buttonStyle(.plain)
+                            .font(DS.Text.micro)
+                            .foregroundStyle(DS.Ink.secondary)
+                        }
+                    }
+                    // Typing here takes ownership: the bot never overwrites the user's words.
+                    TextEditor(text: Binding(
+                        get: { working.persona },
+                        set: { newValue in
+                            var updated = working
+                            updated.persona = newValue
+                            updated.personaIsAuto = false
+                            draft = updated
+                            store.update(updated)
+                        }))
+                        .font(DS.Text.callout)
                         .scrollContentBackground(.hidden)
                         .frame(height: 130)
                         .padding(DS.Space.sm + 1)
-                        .background(DS.Colour.fill, in: RoundedRectangle(cornerRadius: DS.Radius.sm))
+                        .background(DS.Tint.t3, in: RoundedRectangle(cornerRadius: DS.Radius.sm))
                 }
 
                 readOnly("Brain", working.brain.displayName, nil)
@@ -184,40 +217,40 @@ private struct BotSettingsPane: View {
 
     private func field(_ title: String, text: Binding<String>, placeholder: String = "") -> some View {
         VStack(alignment: .leading, spacing: DS.Space.sm) {
-            Text(title).font(DS.Text.caption).foregroundStyle(DS.Colour.inkSecondary)
+            Text(title).font(DS.Text.caption).foregroundStyle(DS.Ink.secondary)
             TextField(placeholder, text: text)
                 .textFieldStyle(.plain)
-                .font(DS.Text.secondary)
-                .foregroundStyle(DS.Colour.ink)
+                .font(DS.Text.callout)
+                .foregroundStyle(DS.Ink.primary)
                 .padding(.horizontal, DS.Space.md + 1)
                 .padding(.vertical, DS.Space.sm + 1)
-                .background(DS.Colour.fill, in: RoundedRectangle(cornerRadius: DS.Radius.sm))
+                .background(DS.Tint.t3, in: RoundedRectangle(cornerRadius: DS.Radius.sm))
         }
     }
 
     private func readOnly(_ title: String, _ value: String, _ detail: String?) -> some View {
         VStack(alignment: .leading, spacing: DS.Space.sm) {
-            Text(title).font(DS.Text.caption).foregroundStyle(DS.Colour.inkSecondary)
+            Text(title).font(DS.Text.caption).foregroundStyle(DS.Ink.secondary)
             VStack(alignment: .leading, spacing: DS.Space.hair) {
-                Text(value).font(DS.Text.secondary).foregroundStyle(DS.Colour.ink)
+                Text(value).font(DS.Text.callout).foregroundStyle(DS.Ink.primary)
                 if let detail {
-                    Text(detail).font(DS.Text.micro).foregroundStyle(DS.Colour.inkTertiary)
+                    Text(detail).font(DS.Text.micro).foregroundStyle(DS.Ink.tertiary)
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.horizontal, DS.Space.md + 1)
             .padding(.vertical, DS.Space.sm + 1)
-            .background(DS.Colour.fill, in: RoundedRectangle(cornerRadius: DS.Radius.sm))
+            .background(DS.Tint.t3, in: RoundedRectangle(cornerRadius: DS.Radius.sm))
         }
     }
 
     private func toggle(_ title: String, _ detail: String, _ isOn: Binding<Bool>) -> some View {
         HStack(alignment: .top, spacing: DS.Space.lg - 2) {
             VStack(alignment: .leading, spacing: DS.Space.hair) {
-                Text(title).font(DS.Text.secondary).foregroundStyle(DS.Colour.ink)
+                Text(title).font(DS.Text.callout).foregroundStyle(DS.Ink.primary)
                 Text(detail)
                     .font(DS.Text.micro)
-                    .foregroundStyle(DS.Colour.inkTertiary)
+                    .foregroundStyle(DS.Ink.tertiary)
                     .fixedSize(horizontal: false, vertical: true)
             }
             Spacer()
@@ -227,6 +260,6 @@ private struct BotSettingsPane: View {
                 .controlSize(.mini)
         }
         .padding(DS.Space.lg - 1)
-        .background(DS.Colour.fill, in: RoundedRectangle(cornerRadius: DS.Radius.md))
+        .background(DS.Tint.t3, in: RoundedRectangle(cornerRadius: DS.Radius.md))
     }
 }

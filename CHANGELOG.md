@@ -21,6 +21,16 @@ Versioning follows [Semantic Versioning 2.0.0](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+### Added — the mascot
+- **Claude's mascot walks across the empty conversation column.** Before there is a bot to talk
+  to, the middle of the window is no longer blank: the four-legged character leans, looks
+  around, walks the width of the column, then crouches and jumps the rest of the way. Ported
+  from the public SVG-and-GSAP original rather than embedded — no browser and no animation
+  library were added, and it stands still when the Mac is set to Reduce Motion
+  (see docs/decisions/0009-port-the-mascot-rather-than-run-it.md).
+- **The composer is hidden when no bot is selected.** It used to render against a throwaway
+  conversation id, so anything typed there went nowhere.
+
 ### Changed — the design system is now actually implemented
 - Every view is rebuilt on the token layer. An audit before this change found **157 raw font
   sizes, 215 raw spacings, 23 raw corner radii and 26 raw colours** still inline, with most
@@ -61,6 +71,25 @@ Versioning follows [Semantic Versioning 2.0.0](https://semver.org/spec/v2.0.0.ht
   ever-broader patterns until it was listing the whole Desktop. Recursive patterns now work,
   build and dependency directories are pruned, and an empty result explains the pattern rule
   rather than just saying nothing was found.
+
+### Changed — a real design system
+- **Radix Colors for surfaces, macOS semantics for everything the OS owns**
+  (`docs/decisions/0010-…`). The interface was thirty hand-picked hex greys, six half-point
+  font sizes, and `Color.white.opacity(…)` scattered everywhere. Three measurements taken on
+  this machine reframed it: macOS label colours are not greys but white at fixed alphas; the
+  system palette shifted in macOS 26 (`systemRed` is now `#FF383C`); and macOS publishes no
+  numeric surface ramp at all, while a three-pane cockpit needs five depths.
+- **The functional layer is no longer painted.** The roster and inspector inherit the system
+  material, the app uses a real `NavigationSplitView` with resizable columns, and the
+  conversation pane is filled *darker* than the window — the native relationship. This is the
+  single change that decides whether the app reads as Mac-native or as a web page in a window.
+- **Five type steps, each bound to a system text style**, replacing six half-point sizes that
+  matched nothing the OS draws and never optically lined up with the toolbar.
+- **Motion is frequency-gated through one chokepoint.** Nothing triggered by a keyboard
+  shortcut animates. 300ms ceiling. Reduced motion handled once rather than at ninety call
+  sites.
+- `docs/DESIGN-SYSTEM.md` — the full specification, and the record of where the research
+  contradicted itself.
 
 ### Added — bots that describe themselves, and four patterns from rakazo
 - **Bots write their own name and description.** After a successful run a bot updates its
