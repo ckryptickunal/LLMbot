@@ -121,6 +121,10 @@ Versioning follows [Semantic Versioning 2.0.0](https://semver.org/spec/v2.0.0.ht
   later, and nothing on screen said so. An allow is now scoped to the bot that asked; a "never"
   stays global, because refusing an action is a statement about the action rather than about who
   asked. Both buttons now say which they mean.
+- **You can see and take back what a bot is allowed to do without asking.** Per-bot permissions
+  had no list anywhere, so a rule created by clicking "Always" was invisible and permanent. Each
+  bot's settings pane now shows them with a way to remove one, and answering the same prompt
+  twice no longer leaves two identical rules to hunt down.
 - **Channels can be renamed**, like bots.
 - **Repeated side effects are prevented across runs** (see docs/decisions/0016). If a run is
   stopped or crashes after sending something, asking again does not send it twice — and an action

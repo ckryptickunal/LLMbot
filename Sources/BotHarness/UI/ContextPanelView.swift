@@ -232,6 +232,8 @@ private struct BotSettingsPane: View {
                  + "something else",
                    binding(\.notifies))
 
+            standingPermissions
+
             Spacer(minLength: DS.Space.lg)
 
             VStack(spacing: DS.Space.md) {
@@ -253,6 +255,46 @@ private struct BotSettingsPane: View {
         } message: {
             Text("This removes the bot and its conversation. The trace of its past runs stays "
                + "on disk. This cannot be undone.")
+        }
+    }
+
+    /// What this bot has been allowed to do without asking again.
+    ///
+    /// Answering "Always, for this bot" on an approval card writes one of these. Until this
+    /// existed there was no way to see that it had happened, and no way to take it back — so a
+    /// single mis-click granted something for the life of the install, invisibly. Global rules
+    /// have had a list in Settings for a while; these did not, which made the per-bot half of the
+    /// permission model the half you could only ever loosen.
+    @ViewBuilder private var standingPermissions: some View {
+        let rules = live.rules
+        VStack(alignment: .leading, spacing: DS.Space.md) {
+            SectionLabel("Allowed without asking")
+            if rules.isEmpty {
+                Text("Nothing yet. Choosing \"Always, for this bot\" on an approval adds it here, "
+                   + "and you can take it back from here too.")
+                    .font(DS.Text.caption)
+                    .foregroundStyle(DS.Ink.secondary)
+                    .lineSpacing(DS.Text.bodyLineSpacing)
+                    .fixedSize(horizontal: false, vertical: true)
+            } else {
+                ForEach(rules) { rule in
+                    HStack(alignment: .top, spacing: DS.Space.md) {
+                        Image(systemName: rule.behaviour == .neverAllow ? "nosign" : "checkmark.circle.fill")
+                            .font(DS.Text.glyphSmall)
+                            .foregroundStyle(rule.behaviour == .neverAllow
+                                             ? DS.Status.failed.mark : DS.Status.done.mark)
+                            .accessibilityHidden(true)
+                        Text(rule.whenBotWantsTo)
+                            .font(DS.Text.caption)
+                            .foregroundStyle(DS.Ink.primary)
+                            .fixedSize(horizontal: false, vertical: true)
+                        Spacer(minLength: DS.Space.sm)
+                        IconButton("xmark", help: "Remove this permission") {
+                            store.deleteRule(rule.id, from: live.id)
+                        }
+                    }
+                }
+            }
         }
     }
 

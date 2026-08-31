@@ -376,4 +376,46 @@ final class RosterActionsTests: XCTestCase {
 
         XCTAssertEqual(store.conversation(room.id)?.leadBot, other.id)
     }
+
+    // MARK: Standing permissions, per bot
+
+    func testAPerBotRuleCanBeWrittenAndTakenBack() {
+        let store = fresh()
+        let bot = store.createBot(name: "Worker")
+        let rule = PermissionRule(whenBotWantsTo: "move files on the desktop",
+                                  behaviour: .allowAutomatically, createdFromPrompt: true)
+        store.addRule(rule, to: bot.id)
+        XCTAssertEqual(store.bot(bot.id)?.rules.count, 1)
+
+        // The half that did not exist. Without a delete, one mis-click on "Always" granted
+        // something for the life of the install with nothing on screen admitting it.
+        store.deleteRule(rule.id, from: bot.id)
+        XCTAssertEqual(store.bot(bot.id)?.rules.count, 0)
+    }
+
+    func testTheSamePermissionTwiceDoesNotLeaveTwoRules() {
+        let store = fresh()
+        let bot = store.createBot(name: "Worker")
+        store.addRule(PermissionRule(whenBotWantsTo: "push to a remote",
+                                     behaviour: .allowAutomatically), to: bot.id)
+        store.addRule(PermissionRule(whenBotWantsTo: "Push to a Remote",
+                                     behaviour: .allowAutomatically), to: bot.id)
+        XCTAssertEqual(store.bot(bot.id)?.rules.count, 1,
+                       "answering the same prompt twice must not leave two rules to hunt down")
+    }
+
+    func testAPerBotRuleDoesNotReachAnotherBot() {
+        let store = fresh()
+        let first = store.createBot(name: "First")
+        let second = store.createBot(name: "Second")
+        store.addRule(PermissionRule(whenBotWantsTo: "delete files",
+                                     behaviour: .allowAutomatically), to: first.id)
+        // The defect this replaced: "Always allow" called addGlobalRule, so allowing one action
+        // in one conversation granted it to every bot in the roster, including later ones.
+        XCTAssertTrue(store.bot(second.id)?.rules.isEmpty ?? false)
+        // A fresh store seeds its own global rules, so the claim is not "there are none" — it is
+        // that this grant did not become one of them.
+        XCTAssertFalse(store.globalRules.contains { $0.whenBotWantsTo == "delete files" },
+                       "a grant given to one bot must not become a rule for the whole roster")
+    }
 }

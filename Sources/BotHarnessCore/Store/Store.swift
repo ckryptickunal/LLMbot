@@ -341,7 +341,35 @@ public final class Store {
 
     public func addRule(_ rule: PermissionRule, to botID: UUID) {
         guard let i = bots.firstIndex(where: { $0.id == botID }) else { return }
-        bots[i].rules.append(rule)
+        // A rule the user already wrote for this bot is replaced rather than duplicated. Clicking
+        // "Always, for this bot" twice on the same prompt should not leave two identical rules
+        // that both have to be found and removed.
+        if let existing = bots[i].rules.firstIndex(where: {
+            $0.whenBotWantsTo.caseInsensitiveCompare(rule.whenBotWantsTo) == .orderedSame
+        }) {
+            bots[i].rules[existing] = rule
+        } else {
+            bots[i].rules.append(rule)
+        }
+        scheduleSave()
+    }
+
+    public func updateRule(_ rule: PermissionRule, in botID: UUID) {
+        guard let i = bots.firstIndex(where: { $0.id == botID }),
+              let j = bots[i].rules.firstIndex(where: { $0.id == rule.id }) else { return }
+        bots[i].rules[j] = rule
+        scheduleSave()
+    }
+
+    /// Remove a standing permission that applies to one bot.
+    ///
+    /// The counterpart to "Always, for this bot" on an approval card, and the same argument as
+    /// `deleteGlobalRule`: a permission system you can only ever loosen is not one. Per-bot rules
+    /// had no way to be listed or removed at all, so a single mis-click on a prompt granted
+    /// something for the life of the install with nothing on screen admitting it existed.
+    public func deleteRule(_ id: UUID, from botID: UUID) {
+        guard let i = bots.firstIndex(where: { $0.id == botID }) else { return }
+        bots[i].rules.removeAll { $0.id == id }
         scheduleSave()
     }
 
