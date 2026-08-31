@@ -132,6 +132,21 @@ about in its own falsifier, and it shipped anyway.
   each, within hours, and were fixed rather than argued with. A third would be evidence that
   string analysis is the wrong layer and that Option A is overdue rather than eventual.
 
+## Second amendment: Option A arrived
+
+A parallel effort built the seatbelt sandbox this ADR named as the eventual answer, so the
+boundary is now enforced by the kernel as well as by reading commands. `Tests/BotHarnessTests/
+ContainmentProofTests.swift` demonstrates the difference on the case that defeated string
+analysis: a path assembled at runtime from an environment variable, which no parser can see, is
+refused by the kernel while ordinary writes inside the workspace still succeed.
+
+Two things are worth stating plainly. The sandbox narrows **writes and the network, not reads** —
+a read-deny profile that is even slightly wrong stops `python3` loading its own standard library,
+which reads as a broken app rather than as a boundary holding. So the interpreter refusal above
+stays: it covers runtime-assembled *reads*, which is precisely what the sandbox deliberately does
+not. And `sandbox-exec` is deprecated, so it self-tests at launch and reports honestly rather than
+claiming a boundary it does not have.
+
 ## Revisit when
 
 Bot-Harness runs a bot the user did not write themselves — an installed plugin, a shared routine,

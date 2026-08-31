@@ -205,30 +205,72 @@ public actor ContainerRuntime {
         try await ensureImage()
 
         // Already running from an earlier launch? Reuse it — a warm machine is the whole point.
+        //
+        // But `prepared` is empty at launch, so on the first run of each session this branch knows
+        // nothing about what the surviving container actually mounts. If the user moved the bot's
+        // folder between launches, reusing it blind serves the *old* folder while every path the
+        // bot prints looks right. The mount is therefore verified rather than assumed, and a
+        // container that fails the check is rebuilt.
         let existing = await run([Self.executable, "list", "--all", "--quiet"], timeout: 20)
         let names = existing.stdout.split(separator: "\n").map { $0.trimmingCharacters(in: .whitespaces) }
         if names.contains(name) {
             _ = await run([Self.executable, "start", name], timeout: 60)
-        } else {
-            // `sleep infinity` keeps the machine warm so each command is an `exec` rather than a
-            // fresh boot. Memory and CPU are capped: a runaway build inside the container must
-            // not take the Mac down with it.
-            let create = await run([
-                Self.executable, "run", "--detach",
-                "--name", name,
-                "--volume", "\(workspace):\(Self.guestWorkspace)",
-                "--memory", "2g", "--cpus", "2",
-                Self.defaultImage,
-                "sleep", "infinity",
-            ], timeout: 180)
-            guard create.exitCode == 0 else {
-                throw Failure.commandFailed(Self.firstLine(create.stderr.isEmpty ? create.stdout : create.stderr))
+            if await !mountMatches(name: name, workspace: workspace) {
+                await destroy(botID: botID)
+                try await create(name: name, workspace: workspace)
             }
+        } else {
+            try await create(name: name, workspace: workspace)
         }
 
         prepared.insert(name)
         mountedWorkspace[name] = workspace
         return name
+    }
+
+    /// Create the machine.
+    ///
+    /// `sleep infinity` keeps it warm so each command is an `exec` rather than a fresh boot.
+    /// Memory and CPU are capped: a runaway build inside the container must not take the Mac
+    /// down with it.
+    private func create(name: String, workspace: String) async throws {
+        let result = await run([
+            Self.executable, "run", "--detach",
+            "--name", name,
+            "--volume", "\(workspace):\(Self.guestWorkspace)",
+            "--memory", "2g", "--cpus", "2",
+            Self.defaultImage,
+            "sleep", "infinity",
+        ], timeout: 180)
+        guard result.exitCode == 0 else {
+            throw Failure.commandFailed(
+                Self.firstLine(result.stderr.isEmpty ? result.stdout : result.stderr))
+        }
+    }
+
+    /// Whether `name` really has `workspace` mounted at `/work`.
+    ///
+    /// Checked by observation rather than by parsing `container inspect`: a nonce is written on
+    /// the host and looked for in the guest. That depends only on the two subcommands this type
+    /// already relies on, and it answers the question that actually matters — whether the bytes
+    /// the bot sees are the bytes in the user's folder — instead of whether a JSON field looks
+    /// right. A false answer costs one rebuild, never a wrong folder.
+    private func mountMatches(name: String, workspace: String) async -> Bool {
+        let marker = ".bh-mount-check"
+        let nonce = UUID().uuidString
+        let hostFile = workspace + "/" + marker
+        guard (try? nonce.write(toFile: hostFile, atomically: true, encoding: .utf8)) != nil else {
+            // The workspace is not writable on the host, so nothing can be proven. Rebuilding is
+            // the safe answer; the create will fail loudly if the folder is genuinely unusable.
+            return false
+        }
+        defer { try? FileManager.default.removeItem(atPath: hostFile) }
+
+        let seen = await run([
+            Self.executable, "exec", name, "/bin/sh", "-c",
+            "cat \(Self.guestWorkspace)/\(marker) 2>/dev/null",
+        ], timeout: 20)
+        return seen.stdout.trimmingCharacters(in: .whitespacesAndNewlines) == nonce
     }
 
     /// Whether a folder is specific enough to hand to a container.
@@ -391,8 +433,17 @@ public actor ContainerRuntime {
                              stdout: collector.stdout(), stderr: collector.stderr())
     }
 
+    /// The one line of a tool's output a person should be shown.
+    ///
+    /// Trimmed, because CLI errors are routinely indented and an indented line rendered in a
+    /// sentence looks like a layout bug. Falls back rather than returning empty: a failure that
+    /// prints nothing still has to say something, or the user sees a blank where the reason goes.
     static func firstLine(_ text: String) -> String {
-        let line = text.split(separator: "\n").first.map(String.init) ?? "no detail given"
+        let line = text
+            .split(separator: "\n")
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .first(where: { !$0.isEmpty })
+        guard let line, !line.isEmpty else { return "no detail given" }
         return String(line.prefix(200))
     }
 

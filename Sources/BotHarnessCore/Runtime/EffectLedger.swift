@@ -124,7 +124,21 @@ public actor EffectLedger {
     /// the same effect even though they are different tool calls in different runs with different
     /// ids. Arguments are canonicalised (sorted keys, stable encoding) so key order in the model's
     /// JSON cannot make the same action look like two.
-    public static func key(tool: String, arguments: [String: Any]) -> String {
+    /// - Parameter environment: the computer the effect lands on, for tools where that is part
+    ///   of what the effect *is*. `nil` for everything else, and omitted from the hash entirely
+    ///   when nil, so keys for tools that do not pass it are unchanged.
+    ///
+    ///   Only shell tools pass it. A build, an install or a `mkdir` performed inside a bot's
+    ///   Linux machine has not been performed on the Mac, and suppressing the second one tells
+    ///   the bot a directory exists that does not — a false premise it then works from. The
+    ///   opposite mistake is possible too: a `curl -X POST` reaches the same third party from
+    ///   either computer, so changing a bot's environment can let one such command run a second
+    ///   time. That is the narrower and less confusing failure, and it only occurs when the user
+    ///   changes the setting between runs. The tools whose whole purpose is an outward,
+    ///   irreversible effect — `mail.send`, `message.send`, `capability.invoke` — deliberately do
+    ///   not pass an environment, so their identity is unchanged and unaffected by any of this.
+    public static func key(tool: String, arguments: [String: Any],
+                           environment: String? = nil) -> String {
         var hasher = SHA256()
         // The scheme name is hashed in so that changing the encoding below can only ever make
         // old keys stop matching. Without it a future encoding could hand an existing record to
@@ -133,6 +147,9 @@ public actor EffectLedger {
         hasher.update(data: Data(keyScheme.utf8))
         hasher.update(data: Data(canonicalise(tool).utf8))
         hasher.update(data: Data(canonicalise(arguments).utf8))
+        if let environment {
+            hasher.update(data: Data(canonicalise("env:" + environment).utf8))
+        }
         return hasher.finalize().map { String(format: "%02x", $0) }.joined()
     }
 

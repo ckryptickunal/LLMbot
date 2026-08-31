@@ -472,6 +472,13 @@ extension TraceWriter {
         var output: String?
         var error: String?
 
+        /// Which computer this step actually ran on: `mac`, `mac (sandboxed)`, or the name of
+        /// the bot's container. Recorded rather than inferred from the bot's setting, because a
+        /// run that asked for a container and fell back to the Mac must not leave a trace saying
+        /// it used one. Optional, so traces written before this field decode unchanged and their
+        /// seals still verify.
+        var computer: String?
+
         // — permission —
         var permissionOutcome: String?
         var permissionReason: String?
