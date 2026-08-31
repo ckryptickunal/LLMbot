@@ -167,4 +167,84 @@ final class PathGuardTests: XCTestCase {
         XCTAssertEqual(out.exitCode, 124, out.stderr)
         XCTAssertLessThan(Date().timeIntervalSince(started), 10)
     }
+
+    // MARK: The escapes an adversarial pass demonstrated against the first version of this guard
+
+    func testAnInterpreterCannotBeHandedAProgramThatReadsAnything() async {
+        // `python3 -c "print(open('/Users/.../secret').read())"` ran and printed the file: the path
+        // lives inside a code string that does not begin with "/", so nothing judged it. The
+        // node form was worse — process.env.HOME kept the literal path off the command line
+        // entirely, so even the raw-text floor scan saw nothing.
+        let scoped = Authority(readable: ["~/Desktop/project/**"], writable: ["~/Desktop/project/**"])
+        let shell = ShellExecutor(authority: scoped)
+        for command in ["python3 -c \"print(open('/Users/Kunal/Documents/secret.txt').read())\"",
+                        "node -e \"process.stdout.write(require('fs').readFileSync(process.env.HOME+'/Library/Application Support/Bot-Harness/credentials.json').toString('base64'))\"",
+                        "perl -e 'open(F,\"/etc/passwd\"); print <F>;'"] {
+            let out = await shell.run(command, cwd: nil, timeout: 5)
+            XCTAssertEqual(out.exitCode, 126, "not refused: \(command)")
+        }
+    }
+
+    func testAPathHiddenInsideAnArgumentIsStillSeen() async {
+        let scoped = Authority(readable: ["~/Desktop/project/**"], writable: ["~/Desktop/project/**"])
+        let shell = ShellExecutor(authority: scoped)
+        // The operand does not start with a slash, but it names a file all the same.
+        let out = await shell.run("awk '{print}' /Users/Kunal/Documents/secret.txt", cwd: nil, timeout: 5)
+        XCTAssertEqual(out.exitCode, 126, out.stderr)
+    }
+
+    func testOrdinaryRelativeWritesInsideTheWorkspaceAreAllowed() async {
+        // The guard was resolving relative targets against this process's working directory,
+        // which for a GUI app is "/". So `echo x > out.txt` in a bot's own workspace was judged a
+        // write to /out.txt and refused, while the same write spelled absolutely was allowed —
+        // every relative write, copy, move and chmod inside the workspace was blocked.
+        let workspace = NSTemporaryDirectory() + "bh-ws-\(UUID().uuidString)"
+        try? FileManager.default.createDirectory(atPath: workspace, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(atPath: workspace) }
+
+        let scoped = Authority(readable: [workspace + "/**"], writable: [workspace + "/**"])
+        let shell = ShellExecutor(authority: scoped)
+        for command in ["echo x > out.txt", "touch a.txt && cp a.txt b.txt", "mkdir -p sub"] {
+            let out = await shell.run(command, cwd: workspace, timeout: 10)
+            XCTAssertNotEqual(out.exitCode, 126, "wrongly refused: \(command) — \(out.stderr)")
+        }
+    }
+
+    func testOrdinaryDeveloperCommandsAreNotMistakenForInterpreters() async {
+        let workspace = NSTemporaryDirectory() + "bh-ws-\(UUID().uuidString)"
+        try? FileManager.default.createDirectory(atPath: workspace, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(atPath: workspace) }
+        let scoped = Authority(readable: [workspace + "/**"], writable: [workspace + "/**"])
+        let shell = ShellExecutor(authority: scoped)
+
+        // `swift build -c release` uses -c for the build configuration. Treating every -c as
+        // "here is a program" would refuse the most ordinary command in this repository.
+        for command in ["swift build -c release", "swift test", "python3 -m pytest -q",
+                        "node script.js", "ruby script.rb"] {
+            let refusal = await shell.refusalForTesting(command, cwd: workspace)
+            XCTAssertNil(refusal, "wrongly refused: \(command) — \(refusal ?? "")")
+        }
+    }
+
+    func testRelativePathsResolveAgainstTheCommandsOwnDirectory() {
+        // Asserted on the resolver rather than through a real command, because a workspace under
+        // the system temp directory is *deliberately* writable anyway — tooling needs /tmp — so a
+        // filesystem test there could not tell a working guard from a broken one.
+        let base = "/Users/someone/project"
+        XCTAssertEqual(ShellExecutor.resolve("out.txt", against: base), base + "/out.txt")
+        XCTAssertEqual(ShellExecutor.resolve("sub/out.txt", against: base), base + "/sub/out.txt")
+        // Absolute stays absolute; the cwd must not be prepended to it.
+        XCTAssertEqual(ShellExecutor.resolve("/etc/hosts", against: base), "/etc/hosts")
+        // With no cwd there is nothing to resolve against, and guessing would be worse than
+        // leaving it relative — the old code guessed "/" and refused every workspace write.
+        XCTAssertEqual(ShellExecutor.resolve("out.txt", against: nil), "out.txt")
+    }
+
+    func testAPathEmbeddedInAStringIsExtractedOnlyWhenItLooksLikeOne() {
+        XCTAssertEqual(ShellExecutor.embeddedAbsolutePaths(in: "print(open('/Users/k/secret.txt'))"),
+                       ["/Users/k/secret.txt"])
+        // One component is not a path — a lone slash or a division sign must not become a file.
+        XCTAssertTrue(ShellExecutor.embeddedAbsolutePaths(in: "let x = a / b").isEmpty)
+        XCTAssertTrue(ShellExecutor.embeddedAbsolutePaths(in: "cd /tmp").isEmpty)
+    }
 }

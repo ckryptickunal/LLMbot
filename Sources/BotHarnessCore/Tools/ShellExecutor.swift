@@ -60,8 +60,33 @@ public actor ShellExecutor: CommandRunning {
             return "`\(hit)` holds credentials, and no bot may read it. Nothing was run."
         }
 
-        // 2. Writes.
-        for path in ShellFloor.pathsWrittenBy(parse) {
+        // 2. An interpreter is a hole no amount of operand analysis closes.
+        //
+        // `python3 -c "print(open('/Users/…/secret').read())"` was allowed and printed the file:
+        // the path lives inside a code string that does not begin with `/`, so nothing judged it.
+        // `node -e "…process.env.HOME…"` was worse — it kept the literal home path off the command
+        // line entirely, so even the raw-text floor scan saw nothing, and the keys came back
+        // base64-encoded where value-redaction cannot reach them.
+        //
+        // Scanning the code string for paths (below) catches the first form and not the second,
+        // and no version of that catches a path the interpreter assembles at runtime. So an
+        // interpreter that is handed a program on the command line is refused outright when the
+        // bot is scoped to anything narrower than the whole disk. That is a real cost — it blocks
+        // a legitimate `python3 -c` one-liner — and it is the honest trade: the alternative is a
+        // boundary that is decorative for anyone who knows to type `node -e`.
+        if let executable = Self.inlineInterpreter(parse), !Self.hasWholeDiskRead(authority) {
+            return "`\(executable)` runs a program given on the command line, and what that program "
+                 + "reads cannot be checked before it runs. Use the file tools, or put the script in "
+                 + "a file inside the workspace and run that. Nothing was run."
+        }
+
+        // 3. Writes. Relative targets resolve against the directory the command will actually run
+        //    in, not against this process's. A GUI app's working directory is "/", so `echo x >
+        //    out.txt` in a bot's own workspace was being judged as a write to `/out.txt` and
+        //    refused — every relative write, copy, move and chmod inside the workspace was blocked
+        //    while the same operation spelled absolutely was allowed.
+        let base = cwd.map { PathGuard.expand($0) }
+        for path in ShellFloor.pathsWrittenBy(parse).map({ Self.resolve($0, against: base) }) {
             if let hit = PathGuard.denied(path, by: Authority.alwaysDeniedForWriting) {
                 return "`\(hit)` is the app's own record and must stay as written. Nothing was run."
             }
@@ -70,14 +95,100 @@ public actor ShellExecutor: CommandRunning {
             }
         }
 
-        // 3. Reads. Only absolute paths are judged: a bare word is usually a pattern or a
-        //    workspace-relative name, and refusing those would refuse ordinary work.
-        for candidate in Self.namedPaths(parse) where candidate.hasPrefix("/") {
+        // 4. Reads. Absolute paths anywhere in the command, including ones embedded inside a
+        //    quoted argument — an operand does not have to *start* with `/` to name a file.
+        for candidate in Self.readCandidates(parse, base: base) {
             if !Self.isReadable(candidate, authority: authority) {
                 return "this bot may only read inside the paths you gave it, and `\(candidate)` is outside them. Nothing was run."
             }
         }
         return nil
+    }
+
+    /// The refusal reason, for tests. Running the command would be a slower and less precise way
+    /// of asking the same question.
+    public func refusalForTesting(_ command: String, cwd: String?) -> String? {
+        refusal(for: command, cwd: cwd)
+    }
+
+    /// Interpreters being handed a program inline, rather than a file to run.
+    static func inlineInterpreter(_ parse: ShellParse) -> String? {
+        // `swift` is deliberately absent. `swift build -c release` uses `-c` for the build
+        // configuration, so including it would refuse the most ordinary command in this very
+        // repository — the exact "guard that blocks real work" failure this pass exists to avoid.
+        // Its inline form (`swift -e`) is rare enough not to be worth that.
+        let interpreters: Set<String> = [
+            "python", "python3", "node", "nodejs", "deno", "bun", "ruby", "perl", "php",
+            "osascript", "lua", "Rscript", "tclsh",
+        ]
+        for command in parse.commands where interpreters.contains(command.executable) {
+            // `-c`, `-e`, `-r`: the flags that mean "here is the program". A path to a script is
+            // fine and is checked like any other operand — it is the inline text that cannot be.
+            if command.hasFlag("c", "e", "r", "eval", "command") { return command.executable }
+        }
+        return nil
+    }
+
+    /// A bot that may already read everything has nothing left for this rule to protect.
+    private static func hasWholeDiskRead(_ authority: Authority) -> Bool {
+        authority.readable.contains { PathGuard.stem(of: $0) == "/" }
+    }
+
+    /// Resolve a possibly-relative path against the directory the command runs in.
+    static func resolve(_ path: String, against base: String?) -> String {
+        let expanded = PathGuard.expand(path)
+        guard !expanded.hasPrefix("/") else { return expanded }
+        guard let base else { return expanded }
+        return URL(fileURLWithPath: base).appendingPathComponent(expanded).path
+    }
+
+    /// Absolute paths named anywhere in the command, plus relative operands resolved against cwd.
+    ///
+    /// Extracting from *inside* an argument matters: `find . -exec cat /etc/passwd {} ;` and
+    /// `awk '{print}' /Users/x/secret` both hide a path behind punctuation or quoting that leaves
+    /// the operand not starting with a slash.
+    static func readCandidates(_ parse: ShellParse, base: String?) -> [String] {
+        var out: [String] = []
+        for command in parse.commands {
+            for argument in command.operands + command.redirects.map({ $0.target }) {
+                let value = argument.value
+                guard !value.isEmpty, !value.hasPrefix("-"), !value.contains("://") else { continue }
+                let expanded = PathGuard.expand(value)
+                if expanded.hasPrefix("/") {
+                    out.append(expanded)
+                } else {
+                    out += Self.embeddedAbsolutePaths(in: expanded)
+                }
+            }
+        }
+        return out
+    }
+
+    /// Absolute-looking paths embedded inside a larger string.
+    ///
+    /// Deliberately conservative: it needs at least two path components so that a bare `/` or a
+    /// division sign in an expression is not mistaken for a file.
+    static func embeddedAbsolutePaths(in text: String) -> [String] {
+        var found: [String] = []
+        var current = ""
+        var collecting = false
+        // A tiny scanner rather than a regex, because the terminators are quote characters and
+        // a regex for "path until a quote or whitespace" is harder to read than this is.
+        for character in text {
+            if collecting {
+                if character.isWhitespace || character == "\"" || character == "'" || character == ")" {
+                    if current.filter({ $0 == "/" }).count >= 2 { found.append(current) }
+                    current = ""; collecting = false
+                } else {
+                    current.append(character)
+                }
+            } else if character == "/" {
+                collecting = true
+                current = "/"
+            }
+        }
+        if collecting, current.filter({ $0 == "/" }).count >= 2 { found.append(current) }
+        return found
     }
 
     private static func floorHit(_ parse: ShellParse, raw: String, bulk: Bool) -> String? {

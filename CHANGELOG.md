@@ -51,6 +51,18 @@ Versioning follows [Semantic Versioning 2.0.0](https://semver.org/spec/v2.0.0.ht
   the one channel no redactor can touch, and the image is written to the trace and sent to the
   model provider.
 
+### Fixed — defects found by attacking the fixes above
+
+- **An interpreter can no longer be handed a program that reads anything.**
+  `python3 -c "print(open('/Users/…/secret').read())"` ran and printed the file while `cat` on the
+  same path was refused, because the path sat inside a code string. Inline interpreter programs
+  are now refused for any bot not scoped to the whole disk, and absolute paths are recognised
+  inside arguments rather than only at the start of one.
+- **Ordinary writes inside a bot's own workspace work again.** Relative targets were being
+  resolved against the app's working directory — which for a Mac app is `/` — so `echo x >
+  out.txt` in the workspace was treated as a write to `/out.txt` and blocked, while the same
+  write spelled out in full was allowed.
+
 ### Fixed — things that did not work at all
 
 - **Stop now stops.** The agent ran in a task the Stop button never reached, so after the

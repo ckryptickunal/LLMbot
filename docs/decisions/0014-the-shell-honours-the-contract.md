@@ -85,6 +85,39 @@ Two related changes fell out of the same reasoning:
   handed a bot every exported `API_KEY`, `TOKEN` and `AWS_SECRET_ACCESS_KEY` they had. The child
   environment is now filtered.
 
+## Amendment, same day: interpreters
+
+An adversarial pass attacked this decision as soon as it landed and demonstrated that it did not
+hold. With a bot scoped to one project:
+
+```
+python3 -c "print(open('/Users/Kunal/Documents/secret.txt').read())"
+```
+
+ran and printed the file. `cat` on the same path was correctly refused. The difference is that the
+path lives inside a code string, and the read-scope check only judged operands that *begin* with
+`/`. The `node -e` form was worse: using `process.env.HOME` kept the literal path off the command
+line entirely, so even the raw-text floor scan saw nothing, and the keys came back base64-encoded
+where value-redaction cannot reach them.
+
+Two changes followed. Absolute paths are now extracted from *inside* an argument, not only from
+operands that start with one. And an interpreter handed a program on the command line — `python3
+-c`, `node -e`, `perl -e`, `osascript -e` — is **refused outright** unless the bot may already read
+the whole disk.
+
+That last one has a real cost: a legitimate `python3 -c` one-liner is now blocked, and the bot has
+to write a script into its workspace and run that instead. It is the honest trade. Scanning an
+interpreter's source for the files it will open is not tractable — the path can be assembled at
+runtime from anything — so the alternative is a boundary that is decorative for anyone who knows
+to type `node -e`.
+
+The same pass also found the guard **refusing ordinary work**: relative write targets were resolved
+against this process's working directory, which for a GUI app is `/`. So `echo x > out.txt` inside
+a bot's own workspace was judged a write to `/out.txt` and refused, while the identical write
+spelled absolutely was allowed. Relative paths now resolve against the directory the command
+actually runs in. That defect is worth recording because it is the failure mode this ADR warned
+about in its own falsifier, and it shipped anyway.
+
 ## Consequences
 
 - **We now must:** keep every path comparison in `PathGuard`. A second implementation is how the
@@ -95,7 +128,9 @@ Two related changes fell out of the same reasoning:
   callers. It now grants nothing, which is the point.
 - **We will know this was wrong if:** users hit false refusals on ordinary commands often enough
   to want the guard off, or if a real bypass is found that a seatbelt profile would have stopped —
-  in which case the answer is Option A, not a wider allowance here.
+  in which case the answer is Option A, not a wider allowance here. Both have now happened once
+  each, within hours, and were fixed rather than argued with. A third would be evidence that
+  string analysis is the wrong layer and that Option A is overdue rather than eventual.
 
 ## Revisit when
 
