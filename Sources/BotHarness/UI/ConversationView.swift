@@ -18,13 +18,22 @@ struct ConversationView: View {
     /// Height of the transcript viewport, so content can be pinned to its bottom.
     @State private var available: CGFloat = 0
     @FocusState private var composerFocused: Bool
+    /// Whether a drag is currently over the conversation.
+    @State private var droppingOnPane = false
 
     var body: some View {
         VStack(spacing: 0) {
             header
             if let conversation {
-                transcript(conversation)
-                ReadingColumn { ActivityInspector(conversationID: conversation.id) }
+                // An empty conversation is a hero card, not a scroll view: with nothing to
+                // scroll, the bottom-anchored transcript pinned the introduction against the
+                // composer with a void above it, which read as a footnote rather than a start.
+                if conversation.messages.isEmpty {
+                    emptyTranscript
+                } else {
+                    transcript(conversation)
+                }
+                ReadingColumn { ThinkingIndicator(conversationID: conversation.id) }
                 ReadingColumn {
                     Composer(conversationID: conversation.id,
                              draft: ui.draftBinding(for: conversation.id),
@@ -35,6 +44,41 @@ struct ConversationView: View {
             }
         }
         .background(DS.Surface.ground)
+        // The whole conversation is a drop target, not just the composer pill.
+        //
+        // The pill is about forty points tall at the very bottom of the window, and a person
+        // dragging a file aims at the conversation — the big obvious area with the messages in
+        // it. Dropping there did nothing, so attaching appeared broken even once the extraction
+        // was fixed. The composer keeps its own drop handler for the case where someone does aim
+        // at it; this one catches everything else.
+        .onDrop(of: DroppedFiles.accepted, isTargeted: $droppingOnPane) { providers in
+            guard let conversation else { return false }
+            DroppedFiles.load(from: providers) { paths in
+                guard !paths.isEmpty else { return }
+                let binding = ui.draftBinding(for: conversation.id)
+                binding.wrappedValue += (binding.wrappedValue.isEmpty ? "" : "\n")
+                    + DroppedFiles.draftLines(for: paths)
+                composerFocused = true
+            }
+            return true
+        }
+        .overlay {
+            if droppingOnPane, conversation != nil {
+                ZStack {
+                    DS.Accent.live.opacity(0.06)
+                    VStack(spacing: DS.Space.md) {
+                        Image(systemName: "arrow.down.doc")
+                            .font(.system(size: DS.Size.glyphHero, weight: .light))
+                            .foregroundStyle(DS.Accent.live)
+                        Text("Drop to attach")
+                            .font(DS.Text.callout.weight(.medium))
+                            .foregroundStyle(DS.Ink.primary)
+                    }
+                }
+                .allowsHitTesting(false)
+            }
+        }
+        .dsAnimation(DS.Motion.instant, value: droppingOnPane)
         // Focus has to wait for the window to become key. Setting @FocusState in onAppear runs
         // before that happens and is silently dropped, leaving the app looking usable while
         // typing does nothing.
@@ -83,17 +127,14 @@ struct ConversationView: View {
     /// a permanent divider under a header is a line the design does not need at rest.
     private var header: some View {
         VStack(spacing: 0) {
-            // The same reading column as the transcript, so the title sits directly above the
-            // first message and the buttons end where the messages end.
-            //
-            // This was full-pane width for a real reason, recorded here because the reason has
-            // since expired: back when `ReadingColumn` pinned its content to the leading edge,
-            // wrapping the header in one left the settings and panel buttons stranded in the
-            // middle of the pane with several hundred points of nothing to their right. Now that
-            // the column centres, its right edge *is* where the content ends, so the buttons
-            // land on the content's own margin instead of floating in the void — and the title
-            // stops drifting away from the messages it names.
-            ReadingColumn {
+            // Full pane width, settled the third time: the toolbar belongs to the *pane*, not
+            // to the reading column. Wrapped in the centred column, the title floated hundreds
+            // of points off the pane's left edge on a wide window — photographed doing exactly
+            // that — because a toolbar is chrome, and chrome anchors to the container it
+            // governs. The title sits at the pane's leading edge, the buttons at its trailing
+            // edge, the way ChatGPT, Claude and every Mac app place them; only the *content*
+            // gets a reading measure.
+            Group {
                 HStack(spacing: DS.Space.md) {
                     if let conversation, conversation.isChannel {
                         channelIdentity(conversation)
@@ -133,6 +174,7 @@ struct ConversationView: View {
                     }
                 }
                 .frame(height: DS.Size.titlebar)
+                .padding(.horizontal, DS.Space.xl)
             }
             if scrolled { Hairline() }
         }
@@ -230,9 +272,6 @@ struct ConversationView: View {
                     VStack(alignment: .leading, spacing: 0) {
                         Spacer(minLength: 0)
                         LazyVStack(alignment: .leading, spacing: DS.Space.lg) {
-                            if conversation.messages.isEmpty {
-                                introduction
-                            }
                             ForEach(rows(of: conversation)) { row in
                                 switch row {
                                 case .day(let date):
@@ -329,6 +368,23 @@ struct ConversationView: View {
         }
     }
 
+    /// The introduction, centred in the space between header and composer.
+    ///
+    /// A plain VStack rather than the transcript's ScrollView: there is nothing to scroll, and
+    /// inside the bottom-anchored ScrollView this block could only ever sit against the
+    /// composer — a hero rendered as a footnote. Centred, the first thing a new bot shows is
+    /// a face, a name and one sentence, in the middle of the stage.
+    private var emptyTranscript: some View {
+        ReadingColumn {
+            VStack(spacing: 0) {
+                Spacer(minLength: 0)
+                introduction
+                Spacer(minLength: 0)
+            }
+        }
+        .frame(maxHeight: .infinity)
+    }
+
     private static let bottomAnchor = "transcript-bottom"
 
     /// Changes whenever anything in the transcript changes, including a reply growing in place.
@@ -352,6 +408,16 @@ struct ConversationView: View {
         } else if let bot {
             VStack(spacing: DS.Space.lg) {
                 BotAvatar(bot: bot, size: DS.Size.avatarInspector)
+                    // A soft halo in the bot's own colour. It costs nothing and it is the
+                    // difference between an avatar floating on a void and a character with
+                    // a presence — the one place in the app that is allowed to feel warm.
+                    .background {
+                        Circle()
+                            .fill(RadialGradient(colors: [bot.halo, .clear],
+                                                 center: .center, startRadius: 0,
+                                                 endRadius: DS.Size.halo / 2))
+                            .frame(width: DS.Size.halo, height: DS.Size.halo)
+                    }
                     .accessibilityHidden(true)
                 Text(bot.name)
                     .font(DS.Text.title)

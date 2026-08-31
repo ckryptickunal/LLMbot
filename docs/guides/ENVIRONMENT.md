@@ -124,16 +124,31 @@ Probed with non-prompting APIs only, so nothing was shown to the user:
 > next run, and it is the one claim in this document that has been reasoned about but not yet
 > observed.
 
+## Capturing the running app's window — the recipe that works
+
+Verified 2026-08-31, capturing the live app without raising it or stealing focus:
+
+- `screencapture -l <windowID>` **fails** here with "could not create image from window",
+  even with Screen Recording granted. Use ScreenCaptureKit instead.
+- A bare Swift CLI must touch `NSApplication.shared` once before creating an
+  `SCContentFilter`, or SkyLight aborts with `CGS_REQUIRE_INIT`.
+- `CGWindowListCopyWindowInfo` entries for the app carry **no owner name** in this
+  environment — match on `kCGWindowOwnerPID` instead. Under ScreenCaptureKit, filter
+  `SCShareableContent.windows` by `owningApplication?.processID` and take the largest frame
+  (the app also owns a phantom 500×500 window that must be skipped).
+- The working shape: `SCContentFilter(desktopIndependentWindow:)` +
+  `SCScreenshotManager.captureImage(contentFilter:configuration:)`, run with the sandbox off.
+  Works while the window is fully occluded; the window must exist (an app running with its
+  window closed captures nothing).
+
 ## Open problem: disk space
 
-```
-/System/Volumes/Data   460Gi size   428Gi used   1.4Gi available   100% capacity
-```
-
-**1.4 GB free.** Enough to keep building this project, and not enough to install much of
-anything: a second Python toolchain, a browser automation runtime, a local eval harness, or
-any container image. Several things this project will eventually want are blocked until space
-is cleared. This is a real constraint on sequencing, not a nag.
+Measured 2026-08-31 after deleting `.build` debug artifacts: **~14 Gi available** (APFS also
+reclaimed purgeable space under pressure). The day before it was 1.4 Gi, and during this
+session the volume hit **0 bytes free mid-build** — writes failed everywhere, including the
+app's own state saves. Treat free space as volatile: check `df -h` before anything that
+writes gigabytes, and know that `rm -rf .build` is the fast lever (the debug tree alone is
+hundreds of MB and rebuilds in ~10 s with the pinned toolchain).
 
 ## Credentials
 

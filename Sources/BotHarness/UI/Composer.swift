@@ -20,6 +20,13 @@ struct Composer: View {
     @Binding var draft: String
     @FocusState.Binding var focused: Bool
     @State private var dropping = false
+    /// Counts sends, only so the arrow can bounce once per send.
+    @State private var sends = 0
+    /// Bumped when the key file changes, so `blocker` is re-asked. The banner reads the
+    /// credential store during render, and a key saved in the Settings window changes nothing
+    /// this view observes — the user's actual first experience was saving a key and returning
+    /// to a composer still demanding one.
+    @State private var keyEdition = 0
 
     var body: some View {
         VStack(spacing: DS.Space.md) {
@@ -46,6 +53,11 @@ struct Composer: View {
             controls
         }
         .padding(.bottom, DS.Space.lg)
+        // A key saved or removed in Settings re-renders this view the same second, which is
+        // what makes the banner disappear while the person is still looking at it.
+        .onReceive(NotificationCenter.default.publisher(for: .credentialsDidChange)) { _ in
+            keyEdition += 1
+        }
     }
 
     /// Why this bot cannot answer yet, if it cannot.
@@ -53,8 +65,14 @@ struct Composer: View {
     /// Without this the first run of the app is: type a message, wait, get a failure bubble.
     /// The only warning was a ten-point triangle inside a chip. Saying it before the send makes
     /// the first minute a setup step instead of an error.
+    ///
+    /// Asks about the bot's *own* brain — the same rule `BrainChip.unavailable` already
+    /// records. It used to ask only about Gemini, so a bot answering with Claude Code ran
+    /// happily underneath a banner demanding a Gemini key it would never use. The other brains
+    /// stay the chip's job: their warnings are about the chip's own choice, not about a key
+    /// the user has to go and fetch.
     private var blocker: String? {
-        guard bot != nil else { return nil }
+        guard let bot, case .gemini = bot.brain else { return nil }
         guard !CredentialStore.has("gemini") else { return nil }
         return "This bot answers with Gemini, and there is no key saved yet."
     }
@@ -70,8 +88,14 @@ struct Composer: View {
                 .foregroundStyle(DS.Ink.secondary)
                 .fixedSize(horizontal: false, vertical: true)
             Spacer(minLength: DS.Space.md)
-            SettingsLink { Text("Add a key").font(DS.Text.caption.weight(.medium)) }
-                .buttonStyle(PressableStyle())
+            SettingsLink {
+                Text("Add a key")
+                    .font(DS.Text.caption.weight(.medium))
+                    // The accent, because this is the banner's one action and it rendered as
+                    // plain white text — a button that does not look like one.
+                    .foregroundStyle(DS.Accent.live)
+            }
+            .buttonStyle(PressableStyle())
         }
         .padding(.horizontal, DS.Space.lg)
         .padding(.vertical, DS.Space.md)
@@ -138,16 +162,25 @@ struct Composer: View {
         // field's own line limit.
         .frame(minHeight: DS.Size.composerMin)
         .fixedSize(horizontal: false, vertical: true)
-        .background(DS.Tint.t3, in: RoundedRectangle(cornerRadius: DS.Radius.pill))
+        // The glow lives on the background shape, not on the composed view — a shadow applied
+        // after the fact haloes every glyph of the draft as well as the pill.
+        .background {
+            RoundedRectangle(cornerRadius: DS.Radius.pill)
+                .fill(DS.Tint.t3)
+                .shadow(color: focused ? DS.Accent.ringGlow : .clear,
+                        radius: DS.Size.glowRadius)
+        }
+        // Clay rather than a grey when focused — quiet, because the composer is focused
+        // almost always, but unmistakably the app's own colour saying "this is live".
         .overlay(
             RoundedRectangle(cornerRadius: DS.Radius.pill)
-                .stroke(focused ? DS.Surface.borderStrong : .clear, lineWidth: DS.Size.hairline)
+                .stroke(focused ? DS.Accent.ring : .clear, lineWidth: DS.Size.hairline)
         )
         .dsAnimation(DS.Motion.instant, value: focused)
         // Dropping a file on the composer is how a Mac user attaches one. Before this the only
         // path was a button that pasted absolute paths as text, and dragging anything onto the
         // window did nothing at all — in an app whose whole subject is files.
-        .onDrop(of: [.fileURL], isTargeted: $dropping) { providers in
+        .onDrop(of: DroppedFiles.accepted, isTargeted: $dropping) { providers in
             attach(providers)
             return true
         }
@@ -198,13 +231,22 @@ struct Composer: View {
         Button(action: send) {
             Image(systemName: "arrow.up")
                 .font(DS.Text.glyphBold)
-                .foregroundStyle(canSend ? Color.white : DS.Ink.quaternary)
+                // Dark ink on the clay, like every accent fill in the app — white here
+                // measures 3.1:1 and fails AA.
+                .foregroundStyle(canSend ? DS.Accent.onAccent : DS.Ink.quaternary)
+                // One quick bounce per send. Keyed to the counter, not to hover, so it fires
+                // exactly when a message leaves and never while the cursor is just passing.
+                .symbolEffect(.bounce, value: sends)
                 .frame(width: DS.Size.iconButton, height: DS.Size.iconButton)
                 .background(canSend ? DS.Accent.live : DS.Tint.t3, in: Circle())
+                // The fill popping in as the first character lands is the button saying
+                // "ready". Scale rides the same spring; the overshoot is a whisker, because
+                // this fires on every draft.
+                .scaleEffect(canSend ? 1 : DS.Motion.pressScale)
         }
         .buttonStyle(PressableStyle())
         .disabled(!canSend)
-        .dsAnimation(DS.Motion.instant, value: canSend)
+        .dsAnimation(DS.Motion.pop, value: canSend)
         .help("Send (Return)")
         .accessibilityLabel("Send message")
     }
@@ -212,7 +254,7 @@ struct Composer: View {
     private var stopButton: some View {
         Button { runner.stop(conversationID) } label: {
             RoundedRectangle(cornerRadius: DS.Radius.xs)
-                .fill(Color.white)
+                .fill(DS.Accent.onAccent)
                 .frame(width: DS.Space.md, height: DS.Space.md)
                 .frame(width: DS.Size.iconButton, height: DS.Size.iconButton)
                 .background(DS.Accent.live, in: Circle())
@@ -246,23 +288,28 @@ struct Composer: View {
         guard !text.isEmpty, runner.canSend(in: conversationID) else { return }
         runner.send(text, in: conversationID)
         draft = ""
+        sends += 1
     }
 
     /// Add dropped files to the draft, one path per line.
+    /// Pull paths out of a drop, whatever the source registered them as.
+    ///
+    /// The parsing lives in `DroppedFiles`, in the core, because the test bundle links that and
+    /// not this target — so anything left here could only ever be checked by dragging a file onto
+    /// a running app by hand, which is exactly the kind of test nobody repeats. See that file for
+    /// what was actually wrong with dropping, and for the theory that turned out not to be.
     private func attach(_ providers: [NSItemProvider]) {
-        for provider in providers {
-            _ = provider.loadObject(ofClass: URL.self) { url, _ in
-                guard let url else { return }
-                Task { @MainActor in
-                    append(paths: [url.path])
-                }
-            }
+        DroppedFiles.load(from: providers) { paths in
+            Task { @MainActor in append(paths: paths) }
         }
     }
 
     private func append(paths: [String]) {
         guard !paths.isEmpty else { return }
-        draft += (draft.isEmpty ? "" : "\n") + paths.joined(separator: "\n")
+        // Quoted where they need it. Most screenshots are called "Screen Shot …", and an
+        // unquoted path with a space in it read as two paths — the bot then went looking for a
+        // file called "Screen" and reported that it did not exist.
+        draft += (draft.isEmpty ? "" : "\n") + DroppedFiles.draftLines(for: paths)
         focused = true
     }
 
@@ -285,6 +332,9 @@ struct BrainChip: View {
     let bot: Bot
 
     @State private var open = false
+    /// Bumped when the key file changes, so the warning triangle clears the moment a key is
+    /// saved in Settings rather than at the next incidental re-render.
+    @State private var keyEdition = 0
 
     /// A popover rather than a `Menu`, for the reason already recorded on the roster's create
     /// button: `Menu` insets and restyles its own label, and there is no supported way to take
@@ -302,6 +352,9 @@ struct BrainChip: View {
         .buttonStyle(.plain)
         .help(helpText)
         .popover(isPresented: $open, arrowEdge: .top) { menu }
+        .onReceive(NotificationCenter.default.publisher(for: .credentialsDidChange)) { _ in
+            keyEdition += 1
+        }
     }
 
     private var menu: some View {

@@ -33,6 +33,10 @@ struct BotHarnessApp: App {
                 // The system is designed for one mode. Following the OS here would mean
                 // designing a second palette that nobody has designed.
                 .preferredColorScheme(.dark)
+                // The clay accent, applied where SwiftUI reads tint from: toggles, selection,
+                // link buttons, the caret. See ADR 0022 — the accent is the brand, not the
+                // System Settings choice.
+                .tint(DS.Accent.live)
                 // Everything else is debounced by 400 ms. Answering an approval and pressing
                 // Cmd-Q inside that window used to lose the answer: the loop had it, the disk
                 // did not. Quitting and losing focus are the two moments a write cannot wait.

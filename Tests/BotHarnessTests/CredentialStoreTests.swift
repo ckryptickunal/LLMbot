@@ -297,4 +297,32 @@ final class CredentialStoreTests: XCTestCase {
         let redactor = StreamingRedactor(secrets: ["and"])
         XCTAssertEqual(redactor.redact("this and that"), "this and that")
     }
+
+    // MARK: Change notification
+
+    /// Saving and removing both announce themselves, and a refused write does not.
+    ///
+    /// The announcement is what the composer's key banner listens for. Its first failure was
+    /// exactly this scenario lived out: the user saved a key in the Settings window, returned
+    /// to a main window that reads the store only when something re-renders it, and was told
+    /// there was still no key. If this regresses, that experience comes back.
+    func testAWriteAnnouncesItselfAndARefusedWriteDoesNot() throws {
+        let store = try makeStore()
+
+        let announced = expectation(forNotification: .credentialsDidChange, object: nil)
+        XCTAssertTrue(store.set("value-1", account: "gemini"))
+        wait(for: [announced], timeout: 1)
+
+        let announcedAgain = expectation(forNotification: .credentialsDidChange, object: nil)
+        XCTAssertTrue(store.delete("gemini"))
+        wait(for: [announcedAgain], timeout: 1)
+
+        // A save the store refuses must stay silent: the banner clearing on a write that did
+        // not happen is the confirmation-of-a-lie the save path is documented to prevent.
+        try "not an object".write(to: store.fileURL, atomically: true, encoding: .utf8)
+        let silent = expectation(forNotification: .credentialsDidChange, object: nil)
+        silent.isInverted = true
+        XCTAssertFalse(store.set("value-2", account: "gemini"))
+        wait(for: [silent], timeout: 0.3)
+    }
 }

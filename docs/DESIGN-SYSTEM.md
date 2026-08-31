@@ -6,34 +6,38 @@
 
 ## What we chose, and why
 
-**Radix Colors (dark, MIT) as the opaque surface and status ramp, with macOS owning accent, materials, type metrics and the focus ring — and zero Liquid Glass adoption of our own.** Radix wins the colour base because macOS publishes no neutral surface ramp with numeric values (you get `windowBackground`, `controlBackground`, `underPageBackground` and nothing between), and a three-pane cockpit needs five distinguishable depths; Radix's 12 steps are a semantic contract (3 = element background, 6 = subtle border, 9 = solid fill, 11 = low-contrast text) rather than a lightness ramp, so an engineer is told which value to use instead of guessing, and it ships a matched alpha scale — the only way to tint a surface sitting on an `NSVisualEffectView` without killing the material. Grok Bot's sampled palette is rejected as the base: it is an Electron app's flat neutral greys (#070707/#111111/#262626 are pure achromatic), and copying it head-on would make Bot-Harness look like the product it claims to beat; we keep Grok's *information design* (bubble geometry, the natural-language rule form, the handoff card, the settings copy) and discard its pixels. The single rule that decides whether this reads as Mac-native or as a web app in a window: **the functional layer is never painted and the content layer always is** — the roster sidebar, the inspector, the toolbar and all sheets get no `.background()` at all and inherit the system material (which also means we get macOS 26 Liquid Glass and the scroll edge effect for free by building against the 26 SDK), while the conversation pane is painted opaque Radix `slate1`, which lands it *darker* than the window chrome, matching the measured native relationship (#1E1E1E content against #323232 window). Text is the one place Radix loses outright: every readable string uses macOS semantic hierarchical styles, because `labelColor` is white at 84.7% alpha rather than a grey, and only an alpha composite tracks Increase Contrast, desktop tinting and material correctly — Radix `slate11`/`slate12` are reserved for exported PNGs and trace rendering, where a fixed value must reproduce identically later. We target **macOS 15.0 with the macOS 26 SDK** and ship no `glassEffect()` call anywhere, which gets us the new chrome without a single `#available` branch.
+**Radix Colors (dark, MIT) as the opaque surface and status ramp, with macOS owning accent, materials, type metrics and the focus ring — and zero Liquid Glass adoption of our own.** Radix wins the colour base because macOS publishes no neutral surface ramp with numeric values (you get `windowBackground`, `controlBackground`, `underPageBackground` and nothing between), and a three-pane cockpit needs five distinguishable depths; Radix's 12 steps are a semantic contract (3 = element background, 6 = subtle border, 9 = solid fill, 11 = low-contrast text) rather than a lightness ramp, so an engineer is told which value to use instead of guessing, and it ships a matched alpha scale — the only way to tint a surface sitting on an `NSVisualEffectView` without killing the material. Grok Bot's sampled palette is rejected as the base: it is an Electron app's flat neutral greys (#070707/#111111/#262626 are pure achromatic), and copying it head-on would make Bot-Harness look like the product it claims to beat; we keep Grok's *information design* (bubble geometry, the natural-language rule form, the handoff card, the settings copy) and discard its pixels. The single rule that decides whether this reads as Mac-native or as a web app in a window: **the functional layer is never painted and the content layer always is** — the roster sidebar, the inspector, the toolbar and all sheets get no `.background()` at all and inherit the system material (which also means we get macOS 26 Liquid Glass and the scroll edge effect for free by building against the 26 SDK), while the conversation pane is painted opaque Radix `sand1` (warm since ADR 0022), which lands it *darker* than the window chrome, matching the measured native relationship (#1E1E1E content against #323232 window). Text is the one place Radix loses outright: every readable string uses macOS semantic hierarchical styles, because `labelColor` is white at 84.7% alpha rather than a grey, and only an alpha composite tracks Increase Contrast, desktop tinting and material correctly — Radix `slate11`/`slate12` are reserved for exported PNGs and trace rendering, where a fixed value must reproduce identically later. We target **macOS 15.0 with the macOS 26 SDK** and ship no `glassEffect()` call anywhere, which gets us the new chrome without a single `#available` branch.
 
 ## TOKEN SPECIFICATION — implement verbatim in `Sources/BotHarness/Design/Tokens.swift`
 
 Add two private helpers first: `Color(hex: UInt32)` (sRGB) and `Color(p3: Double, Double, Double)`. Every colour below is given as sRGB hex; where a Display P3 triple is listed, use the P3 initialiser — every Mac display is P3 and the P3 value is the authored one.
 
 ### DS.Surface — opaque, content layer only. Never over a material.
-| Token | Hex | Display P3 | Radix | Use |
-|---|---|---|---|---|
-| `ground` | #111113 | 0.067 0.067 0.074 | slate1 | conversation pane background, Settings content pane |
-| `panel` | #18191b | 0.095 0.098 0.105 | slate2 | composer field, transcript inset wells |
-| `raised` | #212225 | 0.130 0.135 0.145 | slate3 | cards, incoming bubble, tool card, settings card |
-| `raisedHover` | #272a2d | 0.156 0.163 0.176 | slate4 | hovered card/row on an opaque surface |
-| `active` | #2e3135 | 0.183 0.191 0.206 | slate5 | pressed/selected element on an opaque surface, outgoing bubble |
-| `border` | #363a3f | 0.215 0.226 0.244 | slate6 | subtle borders, dividers inside cards |
-| `borderStrong` | #43484e | 0.265 0.280 0.302 | slate7 | field borders, focused composer border |
-| `borderHover` | #5a6169 | — | slate8 | hovered field border |
+**Sand, not slate, since ADR 0022:** the accent and the mascot are warm clay, and clay on a
+cool blue-grey ground read as a sticker on someone else's window. Same Radix contract, same
+steps — only the temperature changed.
+| Token | Hex | Radix | Use |
+|---|---|---|---|
+| `ground` | #111110 | sand1 | conversation pane background, Settings content pane |
+| `panel` | #191918 | sand2 | composer field, transcript inset wells |
+| `raised` | #222221 | sand3 | cards, incoming bubble, tool card, settings card |
+| `raisedHover` | #2a2a28 | sand4 | hovered card/row on an opaque surface |
+| `active` | #31312e | sand5 | pressed/selected element on an opaque surface, outgoing bubble |
+| `border` | #3b3a37 | sand6 | subtle borders, dividers inside cards |
+| `borderStrong` | #494844 | sand7 | field borders |
 
 ### DS.Tint — alpha, for anything drawn over an `NSVisualEffectView` material (sidebar, inspector, toolbar, sheets)
-Radix dark alphas are a slightly **cool** white (≈rgb(217,237,255)), not pure white. That cool cast is what stops stacked overlays from going brown. Replace every `Color.white.opacity(…)` currently in the codebase with these.
-| Token | Hex8 | Alpha | Tint RGB | Radix |
-|---|---|---|---|---|
-| `t2` | #d8f4f609 | 0.035 | 216,244,246 | slateA2 |
-| `t3` | #ddeaf814 | 0.078 | 221,234,248 | slateA3 — hover fill on material |
-| `t4` | #d3edf81d | 0.114 | 211,237,248 | slateA4 |
-| `t5` | #d9edfe25 | 0.145 | 217,237,254 | slateA5 — selected-unfocused row |
-| `t6` | #d6ebfd30 | 0.188 | 214,235,253 | slateA6 — separator on material |
-| `t7` | #d9edff40 | 0.251 | 217,237,255 | slateA7 |
+The base is a warm ivory (#F2EDE3), the alpha companion to the sand surfaces, so a tint over a
+material and a surface beside it read as one temperature. Replace every
+`Color.white.opacity(…)` in the codebase with these.
+| Token | Alpha | Use |
+|---|---|---|
+| `t2` | 0.035 | faintest wash |
+| `t3` | 0.078 | hover fill on material; chip and field fills |
+| `t4` | 0.114 | hovered control fill |
+| `t5` | 0.145 | selected-unfocused row |
+| `t6` | 0.188 | separator on material |
+| `t7` | 0.251 | strongest tint |
 
 ### DS.Ink — text. macOS semantic, NOT Radix.
 | Token | SwiftUI spelling | Dark value | Measured on `ground` #111113 |
@@ -47,10 +51,17 @@ Radix dark alphas are a slightly **cool** white (≈rgb(217,237,255)), not pure 
 | Export-only | `DS.Ink.exportHigh` #edeef0 (slate12), `DS.Ink.exportLow` #b0b4ba (slate11) | fixed | trace HTML, exported PNGs — anything that must reproduce identically in five years |
 
 ### DS.Accent
-- `DS.Accent.live = Color(nsColor: .controlAccentColor)` — selection, primary actions, focus. Tracks System Settings. Dark aqua measures #007AFF today; do **not** hardcode it.
-- `DS.Accent.unfocusedSelection = Color(nsColor: .unemphasizedSelectedContentBackgroundColor)` — #464646 dark, selected-but-window-unfocused rows.
-- `DS.Accent.static = #0090ff` (Radix blue9, P3 0.247 0.556 0.969) — traces, exports, chart series. Never for live UI.
-- **Delete on sight:** any `#007AFF`, `#0088FF`, `#FF3B30`, `#AF52DE` literal. macOS 26 shifted the system palette (systemRed is now #FF383C, systemPurple #CB30E0) and `controlAccentColor` ≠ `systemBlue`.
+**The accent is the brand, not the System Settings choice, since ADR 0022.** The mascot's
+clay is the one colour the app is recognised by, and it is what every action wears.
+- `DS.Accent.live = #DD775B` — selection, primary actions, focus, the send button. The same
+  value as `DS.Brand.mascot`, deliberately.
+- `DS.Accent.onAccent = #2B1811` — ink drawn *on* an accent fill. White on this clay measures
+  3.1:1 and fails AA; this warm near-black measures 5.3:1. No white text on accent, ever.
+- `DS.Accent.ring` / `ringGlow` / `wash` — the focused composer's hairline (live @ 0.45), its
+  soft glow (@ 0.12), and the selected-fill / halo wash (@ 0.14).
+- **Delete on sight:** any `#007AFF`, `#0088FF`, `#FF3B30`, `#AF52DE` literal, and any new
+  `Color(nsColor: .controlAccentColor)` — the accent divergence is recorded in ADR 0022 and
+  reverting it is a decision, not a cleanup.
 
 ### DS.Status — Radix step 9 for the dot/bar, step 11 for the word beside it. Never colour alone; always glyph + word.
 | State | Dot / bar (step 9) | Label text (step 11) | Contrast of label on `ground` | Glyph | Word |

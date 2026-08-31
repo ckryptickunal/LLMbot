@@ -30,6 +30,15 @@ import Darwin
 ///    migrated account too, but encrypted and re-locked to the new machine. Cleartext keys
 ///    copied onto every backup disk is the one difference from the keychain that a user has no
 ///    way to see, so `isExcludedFromBackup` is set on every write.
+public extension Notification.Name {
+    /// Posted after the key file is changed *through this process* — a save or a removal in
+    /// Settings. Views that render "is a key set?" listen for it, because they read the store
+    /// during render and nothing else tells them to render again: the user's actual first
+    /// experience was saving a key in Settings and returning to a main window still demanding
+    /// one. Carries no payload, least of all a key.
+    static let credentialsDidChange = Notification.Name("app.botharness.credentialsDidChange")
+}
+
 public enum CredentialStore {
 
     /// The real store. Everything public here forwards to it.
@@ -284,6 +293,10 @@ extension CredentialStore {
                 cachedStamp = freshStamp
                 writeFailure = nil
                 cacheLock.unlock()
+                // After the cache reflects the write, never inside the lock. Listeners will
+                // read back through this store on receipt, and a post made while the lock is
+                // held invites them to deadlock against it.
+                NotificationCenter.default.post(name: .credentialsDidChange, object: nil)
                 return true
             } catch {
                 cacheLock.lock()

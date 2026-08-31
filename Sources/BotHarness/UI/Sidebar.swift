@@ -91,6 +91,12 @@ struct Sidebar: View {
                 // background of its own — it inherits the window's material — so there is no
                 // colour an overlay could fade to without banding against it.
                 .safeAreaPadding(.bottom, DS.Space.sm)
+                // As much room at the top as the top fade is tall. The fade is constant, so
+                // without this inset it dissolved the first row's title even when the list had
+                // never been scrolled — the roster opened with its first bot beheaded. At rest
+                // the content starts just past the fade; scrolled, rows dissolve into it,
+                // which is the only moment the fade is for.
+                .safeAreaPadding(.top, DS.Space.lg)
                 // Both edges, and measured in points rather than in percent.
                 //
                 // The fade used to be the last 6% of the list, which is not a length: on a short

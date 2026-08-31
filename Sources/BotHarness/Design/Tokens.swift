@@ -12,9 +12,11 @@ import SwiftUI
 /// **Colour comes from two places, not one.** Radix Colors (MIT) supplies the opaque neutral
 /// ramp, because macOS publishes no numeric surface scale — you get `windowBackground`,
 /// `controlBackground`, `underPageBackground` and nothing between, and a three-pane cockpit
-/// needs five distinguishable depths. macOS supplies text, accent and materials, because
-/// `labelColor` is white at 84.7% alpha rather than a grey, and only an alpha composite tracks
-/// Increase Contrast, desktop tinting and translucency correctly.
+/// needs five distinguishable depths. macOS supplies text and materials, because `labelColor`
+/// is white at 84.7% alpha rather than a grey, and only an alpha composite tracks Increase
+/// Contrast, desktop tinting and translucency correctly. The accent is the one deliberate
+/// exception to "macOS owns it": it is the mascot's clay (ADR 0022), because the app has a
+/// character and a character wears one colour.
 ///
 /// **The functional layer is never painted; the content layer always is.** The roster, the
 /// inspector, the toolbar and every sheet get no background at all and inherit the system
@@ -29,52 +31,58 @@ public enum DS {
 
     // MARK: - Surface
     //
-    // Radix slate, dark, steps 1-8. Opaque. For the content layer only: anything drawn over a
+    // Radix sand, dark, steps 1-8. Opaque. For the content layer only: anything drawn over a
     // system material must use `DS.Tint` instead, or it flattens the material into mud.
     //
     // The 12 Radix steps are a semantic contract rather than a lightness ramp, which is why
     // this is the base: step 3 is an element background, 6 a subtle border, 9 a solid fill,
     // 11 low-contrast text. The scale tells you which value to use.
+    //
+    // Sand rather than slate, and the swap is the identity decision of the app (ADR 0022):
+    // the accent and the mascot are warm clay, and clay on a cool blue-grey ground reads as a
+    // sticker on someone else's window. The warm neutral is what makes the character look like
+    // it lives here. Same Radix contract, same steps — only the temperature changed.
 
     public enum Surface {
-        /// slate1 — the conversation pane, the Settings content pane.
+        /// sand1 — the conversation pane, the Settings content pane.
         /// Deliberately *darker* than the window chrome, which is the native relationship.
-        public static let ground = Color(p3: 0.067, 0.067, 0.074)
-        /// slate2 — composer field, inset wells inside the transcript.
-        public static let panel = Color(p3: 0.095, 0.098, 0.105)
-        /// slate3 — cards, incoming bubbles, tool cards, settings cards.
-        public static let raised = Color(p3: 0.130, 0.135, 0.145)
-        /// slate4 — a hovered card or row sitting on an opaque surface.
-        public static let raisedHover = Color(p3: 0.156, 0.163, 0.176)
-        /// slate5 — pressed or selected element on an opaque surface; the outgoing bubble.
-        public static let active = Color(p3: 0.183, 0.191, 0.206)
-        /// slate6 — subtle borders and dividers inside cards.
-        public static let border = Color(p3: 0.215, 0.226, 0.244)
-        /// slate7 — field borders, and the composer border when focused.
-        public static let borderStrong = Color(p3: 0.265, 0.280, 0.302)
+        public static let ground = Color(hex: 0x111110)
+        /// sand2 — composer field, inset wells inside the transcript.
+        public static let panel = Color(hex: 0x191918)
+        /// sand3 — cards, incoming bubbles, tool cards, settings cards.
+        public static let raised = Color(hex: 0x222221)
+        /// sand4 — a hovered card or row sitting on an opaque surface.
+        public static let raisedHover = Color(hex: 0x2A2A28)
+        /// sand5 — pressed or selected element on an opaque surface; the outgoing bubble.
+        public static let active = Color(hex: 0x31312E)
+        /// sand6 — subtle borders and dividers inside cards.
+        public static let border = Color(hex: 0x3B3A37)
+        /// sand7 — field borders.
+        public static let borderStrong = Color(hex: 0x494844)
     }
 
     // MARK: - Tint
     //
-    // Radix slate alphas, steps A2-A7. For anything drawn *over* a system material — the
-    // roster, the inspector, the toolbar, sheets.
+    // Sand alphas, steps A2-A7. For anything drawn *over* a system material — the roster, the
+    // inspector, the toolbar, sheets.
     //
-    // Note these are not pure white. Radix authors them as a slightly cool white (≈217,237,255),
-    // and that cool cast is precisely what stops stacked translucent overlays from drifting
-    // brown. Every `Color.white.opacity(…)` in this codebase is a bug; use these.
+    // Note these are not pure white. The base is a warm ivory, the alpha companion to the sand
+    // surfaces, so a tint over a material and a surface beside it read as one temperature. The
+    // cast is deliberate and small — at these opacities it warms without ever reading as
+    // yellow. Every `Color.white.opacity(…)` in this codebase is a bug; use these.
 
     public enum Tint {
-        private static let cool = Color(hex: 0xd9edff)
+        private static let warm = Color(hex: 0xF2EDE3)
 
-        public static let t2 = cool.opacity(0.035)
+        public static let t2 = warm.opacity(0.035)
         /// Hover fill for a row sitting on a material.
-        public static let t3 = cool.opacity(0.078)
-        public static let t4 = cool.opacity(0.114)
+        public static let t3 = warm.opacity(0.078)
+        public static let t4 = warm.opacity(0.114)
         /// A selected row in a window that does not have focus.
-        public static let t5 = cool.opacity(0.145)
+        public static let t5 = warm.opacity(0.145)
         /// A separator drawn on a material.
-        public static let t6 = cool.opacity(0.188)
-        public static let t7 = cool.opacity(0.251)
+        public static let t6 = warm.opacity(0.188)
+        public static let t7 = warm.opacity(0.251)
     }
 
     // MARK: - Ink
@@ -98,21 +106,39 @@ public enum DS {
     }
 
     // MARK: - Accent
+    //
+    // The mascot's clay, promoted to the app's accent (ADR 0022). This deliberately does NOT
+    // track `controlAccentColor` any more: the character standing on the composer, the send
+    // button beside it and the selection in the roster are one identity, and an app whose
+    // mascot is clay while its buttons follow whatever System Settings says wears two brands
+    // at once. The cost — ignoring the user's accent preference — is the decision.
 
     public enum Accent {
-        /// Selection, primary actions, focus. Tracks the user's choice in System Settings, so
-        /// it is never hardcoded — `controlAccentColor` is #007AFF in dark aqua today, and it
-        /// is a *different colour* from `systemBlue` (#0088FF).
-        public static let live = Color(nsColor: .controlAccentColor)
+        /// Selection, primary actions, focus. The same clay as `Brand.mascot`, on purpose.
+        public static let live = Color(hex: 0xDD775B)
 
+        /// Ink drawn *on* an accent fill. Dark, like the avatars' monograms, because white on
+        /// this clay measures 3.1:1 and fails AA — this warm near-black measures 5.3:1.
+        public static let onAccent = Color(hex: 0x2B1811)
 
+        /// The composer's border while focused. Quiet on purpose: the composer is focused
+        /// almost always, so anything louder would be permanent decoration.
+        public static let ring = live.opacity(0.45)
+
+        /// The soft glow under the focused composer. Barely there; it reads as warmth, not
+        /// as a highlight.
+        public static let ringGlow = live.opacity(0.12)
+
+        /// A wash for selected fills and the halo behind a hero avatar.
+        public static let wash = live.opacity(0.14)
     }
 
     // MARK: - Brand
     //
-    // The mascot's own colours. Deliberately outside the palette above and not derived from
-    // it: #DD775B is the character the way a logo's red is, and pulling it toward the system
-    // greys would leave the same shape wearing a different identity.
+    // The mascot's own colours. `mascot` and `Accent.live` are the same value and that is the
+    // point — the character *is* the accent. They stay separate names because they answer
+    // different questions: Brand is "what colour is the drawing", Accent is "what colour is
+    // an action", and the day a rebrand splits them the call sites are already sorted.
 
     public enum Brand {
         /// The mascot's clay, taken from the source SVG rather than sampled from a screenshot.
@@ -278,6 +304,8 @@ public enum DS {
         public static let avatarRoster: CGFloat = 24
         public static let avatarInspector: CGFloat = 64
         public static let glyph: CGFloat = 12
+        /// The large glyph an empty state or a drop target draws.
+        public static let glyphHero: CGFloat = 22
         public static let glyphSmall: CGFloat = 10
         public static let statusDot: CGFloat = 6
 
@@ -327,6 +355,10 @@ public enum DS {
         public static let screenshotMax: CGFloat = 460
         /// The activity stream is a peek, not a second transcript.
         public static let activityStreamMax: CGFloat = 220
+        /// The soft halo behind the hero avatar in an empty conversation.
+        public static let halo: CGFloat = 200
+        /// Blur radius of the focused composer's glow.
+        public static let glowRadius: CGFloat = 12
 
         // Split-view columns. Resizable ranges, not the fixed Electron numbers Grok Bot uses.
         public static let rosterMin: CGFloat = 180
@@ -437,6 +469,14 @@ public enum DS {
 
         /// Status pill, token count, row highlight, pane crossfade.
         public static let instant = out(0.12)
+        /// A control that just became available — the send button filling in. A small spring
+        /// with a small bounce: the state change carries the user's own momentum (they just
+        /// typed), which is the one licence for overshoot, and it fires constantly, which is
+        /// why the overshoot is barely there.
+        public static let pop = Animation.spring(duration: 0.30, bounce: 0.18)
+        /// One full sweep of the thinking shimmer. Slow enough to read as breathing, not
+        /// as a progress bar.
+        public static let shimmerPeriod: Double = 1.6
         /// Expand and collapse. The chevron rotates on the same curve.
         public static let disclosure = out(0.18)
         /// Transcript and activity row insertion.

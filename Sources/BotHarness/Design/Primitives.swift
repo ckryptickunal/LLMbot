@@ -70,6 +70,9 @@ public struct IconButton: View {
                 } else {
                     Image(systemName: systemName)
                         .font(.system(size: glyph, weight: .medium))
+                        // Hierarchical, so multi-layer symbols get their designed depth
+                        // instead of flattening every plane to one grey.
+                        .symbolRenderingMode(.hierarchical)
                         .foregroundStyle(tint)
                 }
             }
@@ -119,13 +122,15 @@ public struct PrimaryButton: View {
         Button(action: action) {
             HStack(spacing: DS.Space.sm) {
                 if isLoading {
-                    Spinner(size: 10, tint: Color.white)
+                    Spinner(size: 10, tint: DS.Accent.onAccent)
                 } else if let systemImage {
                     Image(systemName: systemImage).font(.system(size: DS.Size.glyphSmall, weight: .semibold))
                 }
                 Text(isLoading ? "Working" : title).font(DS.Text.caption.weight(.medium))
             }
-            .foregroundStyle(isEnabled ? Color.white : DS.Ink.quaternary)
+            // Dark ink on the clay fill, not white: white on this accent measures 3.1:1 and
+            // fails AA. The avatars already settled the pattern — dark ink on a saturated fill.
+            .foregroundStyle(isEnabled ? DS.Accent.onAccent : DS.Ink.quaternary)
             .padding(.horizontal, DS.Space.lg)
             .frame(minHeight: DS.Size.controlHeight)
             .fixedSize(horizontal: true, vertical: false)
@@ -226,7 +231,10 @@ public struct Chip: View {
     public var body: some View {
         HStack(spacing: DS.Space.sm) {
             if let systemImage {
-                Image(systemName: systemImage).font(.system(size: 9)).foregroundStyle(tint)
+                Image(systemName: systemImage)
+                    .font(.system(size: 9))
+                    .symbolRenderingMode(.hierarchical)
+                    .foregroundStyle(tint)
             }
             // The label takes the tint too. A chip whose icon is amber and whose words are
             // grey does not read as a warning, and the warning was the whole point of tinting.
@@ -336,6 +344,52 @@ public struct Spinner: View {
     }
 }
 
+/// A line of secondary text with a soft highlight sweeping through it — the app's "thinking"
+/// voice, the way ChatGPT and Claude shimmer their status line while a reply is being worked
+/// on.
+///
+/// The sweep is the entire signal: it appears only while something is genuinely happening in
+/// the background, so motion here *means* work. Under Reduce Motion the text simply shows,
+/// because the words already carry the state and the sweep is the only part that moves.
+public struct ShimmeringText: View {
+    let text: String
+    var font: Font = DS.Text.caption
+
+    @State private var phase: CGFloat = -1
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    public init(_ text: String, font: Font = DS.Text.caption) {
+        self.text = text; self.font = font
+    }
+
+    public var body: some View {
+        Text(text)
+            .font(font)
+            .lineLimit(1)
+            .foregroundStyle(DS.Ink.secondary)
+            .overlay {
+                if !reduceMotion {
+                    GeometryReader { geo in
+                        // Same band geometry as `Skeleton`: 60% wide, travelling 1.6 widths so
+                        // it fully clears both ends before looping.
+                        LinearGradient(colors: [.clear, DS.Ink.primary, .clear],
+                                       startPoint: .leading, endPoint: .trailing)
+                            .frame(width: geo.size.width * 0.6)
+                            .offset(x: phase * geo.size.width * 1.6)
+                    }
+                    .mask(Text(text).font(font).lineLimit(1))
+                    .allowsHitTesting(false)
+                }
+            }
+            .onAppear {
+                guard !reduceMotion else { return }
+                withAnimation(.linear(duration: DS.Motion.shimmerPeriod)
+                    .repeatForever(autoreverses: false)) { phase = 1 }
+            }
+            .accessibilityLabel(text)
+    }
+}
+
 /// A placeholder for content that is on its way.
 ///
 /// Shaped like the thing it replaces, so the layout does not jump when the real content
@@ -421,7 +475,8 @@ public struct EmptyState: View {
     public var body: some View {
         VStack(spacing: DS.Space.lg) {
             Image(systemName: systemImage)
-                .font(.system(size: 22, weight: .light))
+                .font(.system(size: DS.Size.glyphHero, weight: .light))
+                .symbolRenderingMode(.hierarchical)
                 .foregroundStyle(DS.Ink.tertiary)
                 .accessibilityHidden(true)
             VStack(spacing: DS.Space.sm) {
