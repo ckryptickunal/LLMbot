@@ -552,8 +552,6 @@ public struct ReadingColumn<Content: View>: View {
     var alignment: HorizontalAlignment = .leading
     @ViewBuilder let content: Content
 
-    @State private var available: CGFloat = 0
-
     public init(maxWidth: CGFloat = DS.Size.readingMax,
                 alignment: HorizontalAlignment = .leading,
                 @ViewBuilder content: () -> Content) {
@@ -561,33 +559,31 @@ public struct ReadingColumn<Content: View>: View {
     }
 
     public var body: some View {
-        VStack(alignment: alignment, spacing: 0) { content }
-            .frame(width: columnWidth,
-                   alignment: Alignment(horizontal: alignment, vertical: .center))
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.leading, DS.Space.xxl)
-            .padding(.trailing, DS.Space.lg)
-            .background {
-                // Measure the width actually granted rather than trusting the proposal.
-                //
-                // Two earlier versions overflowed the window. A Spacer in an HStack let the
-                // column claim its full measure regardless of the pane. Nesting two maxWidth
-                // frames failed too, because a child asking for `.infinity` inside the capped
-                // frame claims the cap rather than the pane. Measuring removes the guesswork:
-                // the column is never wider than the space it was handed.
-                GeometryReader { geo in
-                    Color.clear
-                        .onAppear { available = geo.size.width }
-                        .onChange(of: geo.size.width) { _, width in available = width }
-                }
-            }
-    }
-
-    /// Never wider than the space available, never wider than a comfortable measure.
-    private var columnWidth: CGFloat? {
-        guard available > 1 else { return nil }
-        return min(maxWidth, available)
+        HStack(spacing: 0) {
+            VStack(alignment: alignment, spacing: 0) { content }
+                // A ceiling, not a width. `maxWidth` lets the column shrink with the pane and
+                // stop growing at a comfortable measure, which is the whole requirement.
+                .frame(maxWidth: maxWidth,
+                       alignment: Alignment(horizontal: alignment, vertical: .center))
+            // Takes the slack on a wide window and gives it all back on a narrow one, so the
+            // column never has a width of its own to defend.
+            Spacer(minLength: 0)
+        }
+        .padding(.leading, DS.Space.xxl)
+        .padding(.trailing, DS.Space.lg)
     }
 }
+
+// The version this replaced measured its own frame in a `.background` and fed that width back
+// into `.frame(width:)` — which is circular. On the first pass there is nothing to measure, so
+// the column sized to its content's *ideal* width; that ideal propagated up as the pane's
+// minimum, and the pane was then laid out wider than the window with everything past the right
+// edge simply clipped. Below roughly 900 points the transcript lost its right-hand side
+// entirely: status pills, the Try-again button and the ends of every sentence.
+//
+// Nothing here measures anything. A max-width frame inside an HStack with a zero-minimum
+// Spacer expresses "up to this wide, less if that is all there is" directly, which is what the
+// column always needed and what a measurement can only approximate.
+
 
 

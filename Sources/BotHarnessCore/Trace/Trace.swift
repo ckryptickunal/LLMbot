@@ -60,6 +60,12 @@ public actor TraceWriter {
 
     private let steps: URL
     private var sequence: Int = 0
+
+    /// Lines actually written to `steps.jsonl`, which is not `sequence`: `attach` takes a
+    /// sequence number and writes no line, and a record that fails to encode takes one too.
+    /// The manifest carries this number so a reader can tell a truncated file from a whole one.
+    private var recordsWritten: Int = 0
+
     private var handle: FileHandle?
 
     /// Hash of the previous record, or the genesis marker for the first one.
@@ -182,6 +188,7 @@ public actor TraceWriter {
         m.runID = runID
         m.finishedAt = Date()
         m.steps = sequence
+        m.records = recordsWritten
 
         // The manifest used to go to disk with no redaction whatever, which was the widest hole
         // in the whole trace: `goal` is the user's own message, and the message someone pastes a
@@ -239,7 +246,11 @@ public actor TraceWriter {
 
         guard var data = try? encoder.encode(chained) else { return }
         data.append(0x0A)  // newline
-        try? handle.write(contentsOf: data)
+        // Counted only after the write returns, not before it. A count that includes a line the
+        // disk refused would make the reader accuse an honest trace of having been truncated,
+        // which is the exact opposite of what the count is for.
+        guard (try? handle.write(contentsOf: data)) != nil else { return }
+        recordsWritten += 1
     }
 
     /// Both redactors, in this order.
@@ -413,6 +424,13 @@ public actor TraceWriter {
         case writtenBeforeSigning
         case altered
         case keyUnavailable
+        /// There is no `run.json` beside the steps at all.
+        ///
+        /// Distinct from `writtenBeforeSigning`, which used to stand in for it. Conflating the
+        /// two is what let an attacker undo a detected forgery by deleting one file: the reader
+        /// compares the seal against the steps, and "no manifest" scored the same as "an old
+        /// manifest with nothing to compare", so the run came back looking merely old.
+        case missing
     }
 
     private static let stampFormatter: DateFormatter = {
@@ -524,6 +542,21 @@ extension TraceWriter {
         public var startedAt: Date
         public var finishedAt: Date?
         public var steps: Int = 0
+
+        /// How many lines `steps.jsonl` held when this manifest was written.
+        ///
+        /// Not the same number as `steps`, which counts sequence numbers — and `attach` consumes
+        /// one of those without writing a line, so a run with a screenshot has more steps than
+        /// records and comparing `steps` with the file would call every such run damaged.
+        ///
+        /// This is the count that closes tail truncation. A hash chain cannot detect its own end
+        /// being cut off, because the surviving prefix is a valid chain; the only thing that
+        /// knows how long the file should be is this field, and it is inside the sealed body, so
+        /// an attacker cannot lower it to match what they deleted.
+        ///
+        /// Optional because manifests written before this field existed do not carry it, and a
+        /// `nil` optional is omitted by the encoder — so their seals still verify byte for byte.
+        public var records: Int?
         public var outcome: Outcome?
         public var totalCostUSD: Double = 0
         public var totalPromptTokens: Int = 0
@@ -552,19 +585,59 @@ extension TraceWriter {
 /// about redacting it, it has already been somewhere.
 ///
 /// It is a filter, not a guarantee. It catches known key shapes; it cannot catch a password
-/// that looks like an English word, or a database URL, or a bearer token with no prefix. That
-/// gap is why `TraceWriter` runs a value-seeded `StreamingRedactor` before this one rather than
-/// treating this as the whole defence.
+/// that looks like an English word, or an opaque refresh token with no prefix. That gap is why
+/// `TraceWriter` runs a value-seeded `StreamingRedactor` before this one rather than treating
+/// this as the whole defence.
+///
+/// What this pass trades, stated once so the next person does not have to re-derive it: every
+/// rule here is allowed to over-redact and none is allowed to under-redact. A false «redacted»
+/// costs a reader one confusing line; a missed key is permanent, because the trace is
+/// hash-chained and cannot be edited afterwards. The one place that trade is *not* taken
+/// blindly is prose: a rule loose enough to blank out ordinary words would make traces
+/// untrustworthy in a different way, so the widened prefixes below are anchored on a word
+/// boundary rather than left to match mid-word.
 public enum Redactor {
     private static let patterns: [NSRegularExpression] = {
         [
-            #"sk-ant-[A-Za-z0-9_\-]{20,}"#,
-            #"sk-[A-Za-z0-9]{32,}"#,
+            // One `sk-` rule for Anthropic (`sk-ant-…`) and OpenAI alike, including the current
+            // project format `sk-proj-…`. The old rule was `sk-[A-Za-z0-9]{32,}`, which demanded
+            // 32 alphanumerics straight after `sk-`: the hyphen in `sk-proj-` broke it four
+            // characters in, so the most widely issued key shape in circulation matched nothing.
+            // Allowing hyphens is what costs the `\b`. Without it this fires inside ordinary
+            // hyphenated prose — "task-oriented-agent-workflow" contains `sk-` followed by
+            // twenty-three word characters — and a trace with English words blanked out of it is
+            // not a trace anyone reads twice.
+            #"\bsk-[A-Za-z0-9_\-]{20,}"#,
             #"AIza[A-Za-z0-9_\-]{30,}"#,
             #"gh[pousr]_[A-Za-z0-9]{30,}"#,
+            #"\bglpat-[A-Za-z0-9_\-]{20,}"#,
+            // Stripe. `pk_live_` is deliberately absent: a publishable key is meant to be public,
+            // and redacting it would remove the one identifier that tells a reader which account
+            // a failing call was against, buying nothing.
+            #"\b[rs]k_(?:live|test)_[A-Za-z0-9]{10,}"#,
             #"xox[baprs]-[A-Za-z0-9\-]{10,}"#,
             #"eyJ[A-Za-z0-9_\-]{20,}\.[A-Za-z0-9_\-]{20,}\.[A-Za-z0-9_\-]{20,}"#,  // JWT
-            #"(?i)(authorization|api[-_]?key|token|secret|password)\s*[:=]\s*\S{8,}"#,
+            // Any URL carrying credentials in its userinfo — `postgres://user:password@host/db`
+            // and every other scheme that does the same. The whole URL goes, host and path
+            // included, rather than just the password: keeping the host would be friendlier to
+            // read, but it needs a per-pattern replacement template, and a second mechanism in
+            // the redactor is a place for a future edit to go wrong. A URL with a password in it
+            // is rare enough in a trace that losing the host with it is cheap.
+            #"[a-zA-Z][a-zA-Z0-9+.\-]*://[^\s:/@"']+:[^\s/@"']+@[^\s"']+"#,
+            // The labelled rule. Two changes, both of which were letting real headers through:
+            //
+            // The value used to be `\S{8,}` immediately after the separator, so
+            // `Authorization: Bearer sk-…` did not match — the next non-space run is "Bearer",
+            // six characters, and the key sat safely on the other side of a space. The scheme
+            // word is now skipped. Only the four RFC-registered ones are skipped rather than
+            // "any word": skipping an arbitrary word would let the rule swallow the start of a
+            // sentence after a colon.
+            //
+            // The value now stops at a quote instead of running to whitespace, so a JSON
+            // `"token":"…"` loses the secret and keeps its closing brace. Quotes are also
+            // allowed around the label and before the value, which is what a JSON body looks
+            // like and what the old rule missed entirely.
+            #"(?i)(authorization|api[-_]?key|token|secret|password)["']?\s*[:=]\s*["']?(?:(?:bearer|basic|token|digest)\s+)?[^\s"']{8,}"#,
         ].compactMap { try? NSRegularExpression(pattern: $0) }
     }()
 

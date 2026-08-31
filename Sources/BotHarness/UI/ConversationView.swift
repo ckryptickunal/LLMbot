@@ -109,12 +109,17 @@ struct ConversationView: View {
                             ui.openBotSettings()
                         }
                     }
-                    IconButton(ui.showPanel ? "sidebar.trailing" : "sidebar.leading",
-                               filled: false,
-                               help: ui.showPanel ? "Hide panel (⌥⌘2)" : "Show panel (⌥⌘2)",
-                               accessibilityLabel: ui.showPanel ? "Hide panel" : "Show panel") {
-                        ui.showPanel.toggle()
-                        ui.panelClosedByWindow = false
+                    // Hidden rather than disabled when the window is too narrow to hold a
+                    // panel. A control that is present and does nothing teaches people the
+                    // interface is unreliable; one that is absent when it cannot work does not.
+                    if ui.panelCanFit {
+                        IconButton(ui.showPanel ? "sidebar.trailing" : "sidebar.leading",
+                                   filled: false,
+                                   help: ui.showPanel ? "Hide panel (⌥⌘2)" : "Show panel (⌥⌘2)",
+                                   accessibilityLabel: ui.showPanel ? "Hide panel" : "Show panel") {
+                            ui.showPanel.toggle()
+                            ui.panelClosedByWindow = false
+                        }
                     }
                 }
                 .frame(height: DS.Size.titlebar)

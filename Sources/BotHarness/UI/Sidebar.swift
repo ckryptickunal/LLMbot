@@ -169,7 +169,7 @@ struct Sidebar: View {
         // thread, when the user asked to delete a room.
         if let botID = conversation.participants.first, !Store.isRoom(conversation) {
             let orphaned = store.deleteBot(botID)
-            runner.discard(orphaned)
+            runner.discard(orphaned, bots: [botID])
             ui.discardDrafts(for: orphaned)
         } else {
             store.deleteConversation(conversation.id)

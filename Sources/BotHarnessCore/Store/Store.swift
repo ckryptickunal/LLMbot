@@ -380,7 +380,70 @@ public final class Store {
         var bots: [Bot]
         var conversations: [Conversation]
         var globalRules: [PermissionRule]
+
+        /// Spelled out rather than synthesised. The synthesised enum is generated on demand and
+        /// is not in scope for a member that names it in its own signature, which `records`
+        /// below does; writing it here also pins the on-disk key names to something a schema
+        /// change has to touch on purpose.
+        private enum CodingKeys: String, CodingKey {
+            case version, bots, conversations, globalRules
+        }
+
+        init(bots: [Bot], conversations: [Conversation], globalRules: [PermissionRule]) {
+            self.bots = bots
+            self.conversations = conversations
+            self.globalRules = globalRules
+        }
+
+        /// Read so that one damaged record cannot cost the user every undamaged one.
+        ///
+        /// `Bot` and `Conversation` recover their own fields (see `LenientDecoding.swift`); this
+        /// is the level that decides what happens when a whole record, or a whole array, is
+        /// unreadable.
+        init(from decoder: Decoder) throws {
+            let recovery = try Recovery(decoder, of: "the state file", keyedBy: CodingKeys.self)
+            version = recovery.value(.version, or: 1)
+            bots = try Self.records(.bots, of: Bot.self, in: recovery.container)
+            conversations = try Self.records(.conversations, of: Conversation.self,
+                                             in: recovery.container)
+
+            // Strict, and the one thing in this file that can still fail the whole load.
+            //
+            // Every other recovery here trades a field for the rest of the document. That trade
+            // is wrong for the global rules, because the rule we could not read may be the one
+            // that says no, and a roster that opens governed by fewer rules than the user wrote
+            // is worse than a roster that does not open. Failing keeps the file, moves it aside
+            // under a name the user is shown, and starts from the safe defaults.
+            //
+            // Absent is a different thing and stays fine: a file written before global rules
+            // existed simply has none, and the built-in floor still applies to every bot.
+            globalRules = try recovery.container
+                .decodeIfPresent([PermissionRule].self, forKey: .globalRules) ?? []
+        }
+
+        /// The document's own arrays, decoded element by element so that a single bad entry is
+        /// skipped and the rest are kept.
+        ///
+        /// Absent is fine — a file written before the key existed. Present but holding something
+        /// that is not an array, an explicit `null` included, is not: quietly loading zero bots
+        /// would show the user an empty roster and then write it over their real one at the next
+        /// save, which is the total loss this whole decoder exists to prevent. That throws, and
+        /// the loader keeps the file and says where it went.
+        private static func records<T: Decodable>(
+            _ key: CodingKeys, of type: T.Type,
+            in container: KeyedDecodingContainer<CodingKeys>
+        ) throws -> [T] {
+            guard container.contains(key) else { return [] }
+            return try container.decode([Recoverable<T>].self, forKey: key).compactMap(\.element)
+        }
     }
+
+    /// A copy of the state file, kept when the file loaded but not all of it could be read.
+    /// Nil on a clean load. See `preserveOriginal`.
+    private(set) var recoveredCopy: URL?
+
+    /// What that load could not read, one line each, in the decoder's words.
+    private(set) var recoveryLosses: [String] = []
 
     private func load() {
         guard let data = try? Data(contentsOf: stateURL) else {
@@ -389,12 +452,17 @@ public final class Store {
         }
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .iso8601
+        // Carries the record of what had to be recovered down to every nested decoder, so the
+        // loader can tell a clean read from one that filled in gaps.
+        let log = RecoveryLog()
+        decoder.userInfo[.recoveryLog] = log
         do {
             let doc = try decoder.decode(Document.self, from: data)
             bots = doc.bots
             conversations = doc.conversations
             globalRules = doc.globalRules
             selection = sortedConversations.first?.id
+            if !log.isEmpty { preserveOriginal(log.losses, of: data) }
             reconcileInterruptedWork()
         } catch {
             // A corrupt state file is moved aside rather than deleted, **and the app says so**.
@@ -407,6 +475,49 @@ public final class Store {
             loadFailure = LoadFailure(movedTo: backup, reason: String(describing: error))
             seedFirstRun()
         }
+    }
+
+    /// Keep the file that could not be read in full.
+    ///
+    /// Whatever the decoder could not recover — a skipped bot, a message body it could not
+    /// parse — exists nowhere but this file, and the next save writes memory straight over it.
+    /// One copy is the difference between "the app lost a bot" and "the app lost a bot and here
+    /// is the bot". It costs one file copy on a load that has already gone wrong.
+    ///
+    /// Deliberately does **not** set `loadFailure`. That sheet tells the user their file "was
+    /// set aside" and the app "started fresh", and here neither is true: their real bots opened
+    /// and the file is still where it was. Showing it anyway would be a worse lie than saying
+    /// nothing, so a partial recovery needs its own notice in the interface — which is work in
+    /// `RootView`, not here.
+    private func preserveOriginal(_ losses: [String], of data: Data) {
+        recoveryLosses = losses
+
+        // A file that keeps failing the same way is copied once, not once per launch. The app
+        // heals the damage at its next save, so normally there is one copy and then no more
+        // reason to make any — but a user who opens the app and quits without touching anything
+        // never reaches that save, and the document is megabytes on a long chat, so a copy per
+        // launch is a disk filling up. Compared by content rather than by "a copy exists", so
+        // that a *different* loss later still gets its own copy.
+        if let existing = existingCopies().first(where: {
+            (try? Data(contentsOf: $0)) == data
+        }) {
+            recoveredCopy = existing
+            return
+        }
+
+        let copy = stateURL.appendingPathExtension("recovered-\(Int(Date().timeIntervalSince1970))")
+        guard (try? FileManager.default.copyItem(at: stateURL, to: copy)) != nil else { return }
+        // The copy holds everything the original held, so it gets the original's protection
+        // rather than the umask's idea of one.
+        try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: copy.path)
+        recoveredCopy = copy
+    }
+
+    private func existingCopies() -> [URL] {
+        let directory = stateURL.deletingLastPathComponent()
+        let prefix = stateURL.lastPathComponent + ".recovered-"
+        let names = (try? FileManager.default.contentsOfDirectory(atPath: directory.path)) ?? []
+        return names.filter { $0.hasPrefix(prefix) }.map(directory.appendingPathComponent)
     }
 
     /// Work that was in flight when the process stopped.
@@ -494,19 +605,46 @@ public final class Store {
             // Atomic: write beside the target, then rename. A crash mid-write leaves the previous
             // good document intact rather than a truncated one.
             let tmp = target.appendingPathExtension("tmp")
+
+            // Owner-only from the instant the file exists, rather than written at the umask and
+            // narrowed afterwards. The document holds every bot persona, every workspace path
+            // and the full text of every conversation, and the gap between `write` and `chmod`
+            // is a window in which all of that is world-readable — permanently, if the process
+            // dies inside it. A temporary left by a killed save is removed first so `O_EXCL` has
+            // something to guarantee: it means this never writes into a file another process is
+            // holding open.
+            try? FileManager.default.removeItem(at: tmp)
+            let descriptor = open(tmp.path, O_WRONLY | O_CREAT | O_EXCL, 0o600)
+            guard descriptor >= 0 else { return }
+            // The umask can only narrow the mode above, never widen it, so this is not a
+            // correctness fix — it is so the mode does not depend on the umask of whoever
+            // launched the app.
+            fchmod(descriptor, 0o600)
+
+            let handle = FileHandle(fileDescriptor: descriptor, closeOnDealloc: false)
             do {
-                try data.write(to: tmp)
-                // Owner-only. The document holds bot personas, workspace paths and the full text
-                // of every conversation; it inherited the umask before this.
-                try FileManager.default.setAttributes([.posixPermissions: 0o600],
-                                                      ofItemAtPath: tmp.path)
-                if FileManager.default.fileExists(atPath: target.path) {
-                    _ = try FileManager.default.replaceItemAt(target, withItemAt: tmp)
-                } else {
-                    try FileManager.default.moveItem(at: tmp, to: target)
-                }
+                try handle.write(contentsOf: data)
+                // fsync before the rename, for the reason `CredentialStore` gives: without it a
+                // power loss can land the new name over an empty file, which reads back as "no
+                // bots" — the exact loss the atomic write exists to prevent.
+                try handle.synchronize()
             } catch {
+                close(descriptor)
                 try? FileManager.default.removeItem(at: tmp)
+                return
+            }
+            close(descriptor)
+
+            // rename(2) rather than `FileManager.replaceItemAt`, which was the bug here.
+            // replaceItemAt keeps the *target's* mode and discards the replacement's, so every
+            // save after the first put this document back to whatever the first one inherited
+            // from the umask — 0644 in a normal login session — and the chmod above was undone
+            // as fast as it was applied. rename lands the descriptor opened at 0600 and nothing
+            // copies attributes back over it. Exactly this was found and fixed in
+            // `CredentialStore`; the same call had the same effect one file away.
+            guard rename(tmp.path, target.path) == 0 else {
+                try? FileManager.default.removeItem(at: tmp)
+                return
             }
         }
     }

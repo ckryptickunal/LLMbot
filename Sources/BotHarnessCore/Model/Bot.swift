@@ -111,6 +111,71 @@ public struct Bot: Identifiable, Codable, Hashable {
 
     /// Templates carry everything above except credentials, history, and workspace paths.
     public var templateSource: String?
+
+    /// Decoded leniently, for the reason set out in `LenientDecoding.swift`.
+    ///
+    /// `MemoryNote` was given a decoder like this so that a schema change could not cost a user
+    /// their bots. `Bot` did not have one, which made the same failure available one level up
+    /// and far worse: removing any single key from any single bot in `state.json` threw, the
+    /// whole document failed to load, and every bot and every conversation went with it.
+    ///
+    /// Two fields deliberately still fail the record rather than take a default, and the
+    /// comments on them say why. Everything else here recovers.
+    public init(from decoder: Decoder) throws {
+        let recovery = try Recovery(decoder, of: "a bot", keyedBy: CodingKeys.self)
+
+        // A fresh id detaches this bot from the conversations that name it, which is a real
+        // loss. It is the smaller one: dropping the record instead would lose the persona, the
+        // rules and the memory the user wrote, and those cannot be reconstructed from anywhere.
+        id = recovery.value(.id, or: UUID())
+
+        // Named rather than blank. A row with no text in the roster is a bot the user cannot
+        // click on with any confidence, and renaming it is one gesture.
+        name = recovery.value(.name, or: "Untitled bot")
+
+        label = recovery.value(.label, or: "")
+        persona = recovery.value(.persona, or: "")
+        avatar = recovery.value(.avatar, or: Avatar())
+        personaIsAuto = recovery.value(.personaIsAuto, or: true)
+        nameIsAuto = recovery.value(.nameIsAuto, or: true)
+        describedAtTurn = recovery.value(.describedAtTurn, or: 0)
+        brain = recovery.value(.brain, or: .gemini(model: "gemini-3.7-flash"))
+
+        // Absent means a file written while `thisMac` was the only environment there was.
+        // Present but unreadable is a value nobody can judge, and the two ways to guess are not
+        // symmetric: guessing `thisMac` hands a bot the user's real files, apps and logged-in
+        // browser on the strength of a field that would not parse, while guessing `container`
+        // only stops it working — visibly, in a control the user can put back in one click.
+        environment = recovery.contains(.environment)
+            ? recovery.value(.environment, or: .container)
+            : .thisMac
+
+        // Same argument, same asymmetry. An unreadable rung is not a reason to grant a higher
+        // one, and `advisory` is the rung that can only explain.
+        defaultAutonomy = recovery.contains(.defaultAutonomy)
+            ? recovery.value(.defaultAutonomy, or: .advisory)
+            : .confirmBeforeChange
+
+        // Nil is not a gap here — it is "wherever this bot works by default", which is exactly
+        // what an unreadable path should fall back to rather than a folder we invented.
+        workspace = recovery.optional(.workspace)
+
+        enabledPlugins = recovery.value(.enabledPlugins, or: [])
+
+        // The one field on a bot that can still fail the whole record, and the reason this is
+        // not simply `value(.rules, or: [])`: a rules array we cannot read in full may be one
+        // whose unreadable part is a "never allow", and a bot that loads holding fewer
+        // restrictions than the user wrote for it is the exact failure the permission system
+        // exists to prevent. Failing the record drops one bot and keeps the others; recovering
+        // it would silently widen what that bot may do. Absent is a different thing from
+        // unreadable and stays fine: a file written before rules existed simply has none.
+        rules = try recovery.container.decodeIfPresent([PermissionRule].self, forKey: .rules) ?? []
+
+        notifies = recovery.value(.notifies, or: true)
+        memory = recovery.elements(.memory, of: MemoryNote.self)
+        createdAt = recovery.value(.createdAt, or: Date())
+        templateSource = recovery.optional(.templateSource)
+    }
 }
 
 /// Where a bot's computer lives.

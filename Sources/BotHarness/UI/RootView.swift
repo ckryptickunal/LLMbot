@@ -24,8 +24,14 @@ struct RootView: View {
     private var inspectorThreshold: CGFloat {
         DS.Size.rosterMin + DS.Size.conversationMin + DS.Size.inspectorMin
     }
+    /// Where the roster has to go.
+    ///
+    /// Measured against `rosterIdeal`, not `rosterMin`: the split view keeps the sidebar near
+    /// its ideal width rather than compressing it to the minimum, so a threshold built from
+    /// the minimum leaves the transcript below *its* minimum and the window crops the
+    /// difference. The number that matters is the width the roster actually takes.
     private var rosterThreshold: CGFloat {
-        DS.Size.rosterMin + DS.Size.conversationMin
+        DS.Size.rosterIdeal + DS.Size.conversationMin
     }
 
     var body: some View {
@@ -39,16 +45,7 @@ struct RootView: View {
                         max: DS.Size.rosterMax
                     )
             } detail: {
-                ConversationView()
-                    .frame(minWidth: DS.Size.conversationMin)
-                    .inspector(isPresented: inspectorBinding(width: geo.size.width)) {
-                        ContextPanelView()
-                            .inspectorColumnWidth(
-                                min: DS.Size.inspectorMin,
-                                ideal: DS.Size.inspectorIdeal,
-                                max: DS.Size.inspectorMax
-                            )
-                    }
+                detail(fits: geo.size.width >= inspectorThreshold)
             }
             .navigationSplitViewStyle(.balanced)
             .onChange(of: geo.size.width, initial: true) { _, width in
@@ -61,6 +58,32 @@ struct RootView: View {
         .sheet(isPresented: Binding(get: { store.loadFailure != nil },
                                     set: { if !$0 { store.acknowledgeLoadFailure() } })) {
             if let failure = store.loadFailure { RecoveredStateSheet(failure: failure) }
+        }
+    }
+
+    /// The conversation, with an inspector attached only when there is room for one.
+    ///
+    /// **`.inspector` reserves its minimum column width even while `isPresented` is false.**
+    /// Attaching it unconditionally made the detail pane demand
+    /// `conversationMin + inspectorMin` — 680 points — so any window narrower than that plus
+    /// the roster laid the transcript out wider than the window and the right-hand side was
+    /// simply cropped: status pills, the send button, the end of every sentence. Below the
+    /// threshold the inspector does not exist rather than existing invisibly.
+    @ViewBuilder private func detail(fits: Bool) -> some View {
+        if fits {
+            ConversationView()
+                .frame(minWidth: DS.Size.conversationMin)
+                .inspector(isPresented: inspectorBinding(width: .infinity)) {
+                    ContextPanelView()
+                        .inspectorColumnWidth(
+                            min: DS.Size.inspectorMin,
+                            ideal: DS.Size.inspectorIdeal,
+                            max: DS.Size.inspectorMax
+                        )
+                }
+        } else {
+            ConversationView()
+                .frame(minWidth: DS.Size.conversationMin)
         }
     }
 
@@ -78,6 +101,7 @@ struct RootView: View {
     /// column the user wanted or reopens one they had deliberately dismissed.
     private func adapt(to width: CGFloat) {
         let inspectorFits = width >= inspectorThreshold
+        if ui.panelCanFit != inspectorFits { ui.panelCanFit = inspectorFits }
         if !inspectorFits, ui.showPanel {
             ui.showPanel = false
             ui.panelClosedByWindow = true

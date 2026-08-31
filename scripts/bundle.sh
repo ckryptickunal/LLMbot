@@ -29,6 +29,17 @@ rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp "$BIN" "$APP/Contents/MacOS/$NAME"
 
+# Say when the binary was built, and warn if any source is newer than it.
+#
+# Added after an hour was spent concluding a fix did not work in the running app when in fact a
+# stale bundle had been launched: the test passed, the real file stayed world-readable, and the
+# only clue was a timestamp nobody had thought to look at. A build script that can hand you
+# yesterday's app without saying so is a build script that will do it again.
+NEWEST_SOURCE=$(find Sources -name '*.swift' -newer "$APP/Contents/MacOS/$NAME" 2>/dev/null | head -1)
+if [[ -n "$NEWEST_SOURCE" ]]; then
+  print -u2 "warning: $NEWEST_SOURCE is newer than the binary just bundled — the build may not have picked it up"
+fi
+
 # Usage-description strings are mandatory: macOS kills the process rather than showing a
 # permission prompt if the matching NS*UsageDescription key is absent. The wording here is
 # what the user actually reads in the system dialog, so it explains the real reason.

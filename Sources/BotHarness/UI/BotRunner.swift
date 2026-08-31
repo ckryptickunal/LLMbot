@@ -72,6 +72,16 @@ final class BotRunner {
     init(store: Store) {
         self.store = store
         Task { await capabilities.registerConfiguredMCPServers() }
+        // Machines belonging to bots that no longer exist. Only ever names this app assigns,
+        // and only when no live bot owns them, so nothing else on the Mac is a candidate.
+        // Silent when the container tool is not installed, which is the ordinary case.
+        let owners = store.bots.map(\.id)
+        Task { await ContainerRuntime.shared.collectGarbage(keeping: owners) }
+    }
+
+    /// Whether a bot can currently be given its own computer, for the settings picker.
+    func containerAvailability() async -> ContainerRuntime.Availability {
+        await ContainerRuntime.shared.availability()
     }
 
     func isRunning(_ conversationID: UUID) -> Bool { tasks[conversationID] != nil }
@@ -142,8 +152,14 @@ final class BotRunner {
         }
         // A cap, because nothing else bounds this. The user can see and delete notes, but a bot
         // that saves one a run would otherwise grow its own prompt forever.
+        //
+        // `suffix(200)` was wrong in the way that matters: new notes are appended, so keeping the
+        // last 200 keeps the bot's most recent guesses and evicts the notes the person actually
+        // wrote. What the user confirmed is the last thing that should go.
         if bot.memory.count > 200 {
-            bot.memory = Array(bot.memory.suffix(200))
+            let mine = bot.memory.filter { $0.confirmedByUser || $0.provenance == .user }
+            let rest = bot.memory.filter { !($0.confirmedByUser || $0.provenance == .user) }
+            bot.memory = mine + rest.suffix(max(0, 200 - mine.count))
         }
         store.update(bot)
     }
@@ -202,7 +218,7 @@ final class BotRunner {
     ///
     /// Called before the store removes them. A loop left running against a deleted
     /// conversation writes into nothing and never stops.
-    func discard(_ conversationIDs: [UUID]) {
+    func discard(_ conversationIDs: [UUID], bots discardedBots: [UUID] = []) {
         for id in conversationIDs {
             tasks[id]?.cancel()
             tasks[id] = nil
@@ -211,6 +227,12 @@ final class BotRunner {
             for (messageID, owner) in awaiting where owner == id {
                 awaiting.removeValue(forKey: messageID)
             }
+        }
+        // A deleted bot's computer goes with it. Left behind it is a running Linux VM with a
+        // mount into a folder whose owner no longer exists — invisible in this app, and costing
+        // memory until the Mac restarts.
+        for botID in discardedBots {
+            Task { await ContainerRuntime.shared.destroy(botID: botID) }
         }
     }
 

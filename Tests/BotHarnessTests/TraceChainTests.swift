@@ -24,6 +24,12 @@ final class TraceChainTests: XCTestCase {
                     extraSecrets: secrets, chainKey: Self.key)
     }
 
+    private func finishRun(_ writer: TraceWriter, goal: String) async {
+        await writer.finish(.init(botID: UUID(), botName: "test", conversationID: UUID(),
+                                  goal: goal, brain: "gemini", environment: "mac",
+                                  startedAt: Date(), closingNote: "done"))
+    }
+
     // MARK: - The chain holds
 
     func testChainIsIntactForAnUntouchedTrace() async throws {
@@ -171,6 +177,108 @@ final class TraceChainTests: XCTestCase {
         }
     }
 
+    // MARK: - The end of the file
+
+    /// The move a hash chain cannot see: cut the last records off and the remainder is still a
+    /// valid chain, because a prefix of a chain always is. Every indicator the chain can offer
+    /// stays green — that is asserted here first, so that this test is about the cross-check and
+    /// not about some incidental breakage.
+    func testTruncatingTheTailOfACompletedTraceIsDetected() async throws {
+        let root = makeRoot()
+        let writer = await makeRun(root: root)
+        for i in 1...4 { await writer.record(.init(kind: .toolProposed, summary: "step \(i)")) }
+        await writer.record(.init(kind: .runFinished, summary: "succeeded: emptied the folder"))
+        await finishRun(writer, goal: "empty the folder")
+        let steps = await writer.directory.appendingPathComponent("steps.jsonl")
+
+        var lines = try String(contentsOf: steps, encoding: .utf8)
+            .split(separator: "\n", omittingEmptySubsequences: true).map(String.init)
+        lines.removeLast()  // the record that says how the run ended
+        try (lines.joined(separator: "\n") + "\n").write(to: steps, atomically: true, encoding: .utf8)
+
+        let report = TraceWriter.inspectChain(at: steps, chainKey: Self.key)
+        guard case .intact(let records) = report.status else {
+            return XCTFail("a cut chain still verifies; if it did not, this test would be "
+                           + "asserting something else entirely")
+        }
+        XCTAssertEqual(records, 4)
+        XCTAssertEqual(report.signing, .signed)
+
+        let run = try XCTUnwrap(TraceReader(root: root, chainKey: Self.key).runs().first)
+        XCTAssertEqual(run.manifestSeal, .sealed, "the count it is checked against is sealed")
+        guard case .brokenAt(let line, _) = run.chain else {
+            return XCTFail("a trace holding fewer records than its sealed manifest recorded has "
+                           + "had its tail cut off")
+        }
+        XCTAssertEqual(line, 5, "the break is the first record that is no longer there")
+    }
+
+    /// The trap the count has to avoid. `attach` takes a sequence number and writes no line, so a
+    /// check written against the manifest's `steps` would call every run that took a screenshot
+    /// truncated — and every run that drives the computer takes screenshots.
+    func testARunWithAnAttachmentIsNotMistakenForTruncated() async throws {
+        let root = makeRoot()
+        let writer = await makeRun(root: root)
+        await writer.record(.init(kind: .toolProposed, summary: "look at the screen"))
+        _ = await writer.attach(Data([0x89, 0x50, 0x4E, 0x47]), name: "screen.png")
+        await writer.record(.init(kind: .completion, summary: "succeeded"))
+        await finishRun(writer, goal: "look at the screen")
+
+        let run = try XCTUnwrap(TraceReader(root: root, chainKey: Self.key).runs().first)
+        let manifest = try XCTUnwrap(run.manifest)
+        XCTAssertEqual(manifest.steps, 3, "the screenshot consumed a sequence number")
+        XCTAssertEqual(manifest.records, 2, "but it wrote no line")
+        guard case .intact = run.chain else {
+            return XCTFail("a whole run with a screenshot in it is not a damaged run")
+        }
+    }
+
+    /// Deleting `run.json` used to undo the detection above: the same forged file that reads as
+    /// broken with the manifest present went back to reading as an unremarkable trace from before
+    /// signing existed. Nothing is left that could tell those two apart, so the honest answer is
+    /// that the run cannot be verified — not that it verified.
+    func testDeletingTheManifestDoesNotLaunderAForgery() async throws {
+        let root = makeRoot()
+        let writer = await makeRun(root: root)
+        await writer.record(.init(kind: .toolProposed, summary: "transfer the balance"))
+        await writer.record(.init(kind: .completion, summary: "succeeded"))
+        await finishRun(writer, goal: "move money")
+        let directory = await writer.directory
+
+        try rechainWithBareSHA256(directory.appendingPathComponent("steps.jsonl"),
+                                  strippingAlgorithm: true) { events in
+            events[0].summary = "check the balance"
+        }
+        try FileManager.default.removeItem(at: directory.appendingPathComponent("run.json"))
+
+        let run = try XCTUnwrap(TraceReader(root: root, chainKey: Self.key).runs().first)
+        XCTAssertEqual(run.manifestSeal, .missing,
+                       "no manifest is its own state, not the same as an unsealed one")
+        XCTAssertEqual(run.signing, .writtenBeforeSigning)
+        guard case .brokenAt = run.chain else {
+            return XCTFail("deleting the manifest must not turn a downgraded trace back into an "
+                           + "old one that verified fine")
+        }
+    }
+
+    /// The case the rule above must not accuse. A run killed before it could write its manifest
+    /// is the run you most want to read, and its steps are still signed — which is exactly what a
+    /// downgraded trace cannot produce.
+    func testAnInterruptedRunWithNoManifestIsNotAccused() async throws {
+        let root = makeRoot()
+        let writer = await makeRun(root: root)
+        for i in 1...3 { await writer.record(.init(kind: .toolProposed, summary: "step \(i)")) }
+        // No `finish`: this is what is left on disk when the app is killed mid-run.
+
+        let run = try XCTUnwrap(TraceReader(root: root, chainKey: Self.key).runs().first)
+        XCTAssertEqual(run.manifestSeal, .missing)
+        guard case .intact(let records) = run.chain else {
+            return XCTFail("a crashed run has not been tampered with, and saying so would make "
+                           + "the warning worthless everywhere else")
+        }
+        XCTAssertEqual(records, 3)
+    }
+
     // MARK: - Redaction
 
     func testSecretsAreRedactedBeforeReachingDisk() async throws {
@@ -188,11 +296,53 @@ final class TraceChainTests: XCTestCase {
         XCTAssertFalse(text.contains("AIzaSyC0123456789abcdefghijklmnopqrstuvw"))
     }
 
-    /// The gap the regex cannot close. A database URL carrying a password has no key shape at
-    /// all, so the only thing that can catch it is knowing the value — which is what seeding the
-    /// writer from the credential store buys.
+    /// The shapes the pattern pass misses were the ones actually in circulation: the key in a
+    /// real `Authorization` header sits behind the word "Bearer", and the current OpenAI project
+    /// format has a hyphen four characters in. Both used to reach the file verbatim, and the file
+    /// is hash-chained, so nothing could be taken back out afterwards.
+    ///
+    /// Written against the trace rather than against `Redactor` directly because that is where it
+    /// matters: this asserts what is on disk.
+    func testTodaysKeyFormatsDoNotSurviveIntoATrace() async throws {
+        // The writer is seeded with no values, so only the pattern pass is on trial here.
+        let writer = await makeRun()
+        for leak in Self.currentFormatLeaks {
+            await writer.record({
+                var e = TraceWriter.Event(kind: .toolProposed, summary: "call the API")
+                e.arguments = leak
+                return e
+            }())
+        }
+
+        let steps = await writer.directory.appendingPathComponent("steps.jsonl")
+        let text = try String(contentsOf: steps, encoding: .utf8)
+        for leak in Self.currentFormatLeaks {
+            XCTAssertFalse(text.contains(leak), "«\(leak)» reached the trace intact")
+        }
+        // The distinctive middle of each value, so that a rule which redacts the prefix and
+        // leaves the key behind cannot pass this test.
+        for core in ["LEAK1abc123", "LEAK2abc123", "LEAK3abc123", "LEAK4abc123", "LEAK5abc123",
+                     "user:password"] {
+            XCTAssertFalse(text.contains(core), "\(core) survived into the trace")
+        }
+    }
+
+    /// The real header, the real project-key format, and the three shapes that matched no rule
+    /// at all. Kept as literals because the point of the test is the exact format.
+    static let currentFormatLeaks = [
+        "Authorization: Bearer sk-proj-LEAK1abc123DEF456ghi789JKL012mno",
+        "sk-proj-LEAK2abc123DEF456ghi789JKL012mno",
+        "glpat-LEAK3abc123DEF456ghi7",
+        "rk_live_LEAK4abc123DEF456ghi789",
+        "sk_live_LEAK5abc123DEF456ghi789",
+        "postgres://user:password@host/db",
+    ]
+
+    /// The gap the regex cannot close. An opaque refresh token has no key shape at all — no
+    /// prefix, no label, nothing to write a rule against — so the only thing that can catch it is
+    /// knowing the value, which is what seeding the writer from the credential store buys.
     func testAValueShapedSecretIsScrubbedFromAnAppendedRecord() async throws {
-        let secret = "postgres://app:tr0ub4dor-and-three@db.internal:5432/prod"
+        let secret = Self.shapelessSecret
         XCTAssertEqual(Redactor.redact(secret), secret,
                        "if the pattern redactor already catches this, the test is not testing "
                        + "value-based redaction")
@@ -200,21 +350,25 @@ final class TraceChainTests: XCTestCase {
         let writer = await makeRun(secrets: [secret])
         await writer.record({
             var e = TraceWriter.Event(kind: .completion, summary: "connected")
-            e.output = "psql: connecting to \(secret) … ok"
+            e.output = "refreshed the session with \(secret) … ok"
             return e
         }())
 
         let steps = await writer.directory.appendingPathComponent("steps.jsonl")
         let text = try String(contentsOf: steps, encoding: .utf8)
         XCTAssertFalse(text.contains(secret), "a known secret value must not reach the trace")
-        XCTAssertFalse(text.contains("tr0ub4dor-and-three"))
+        XCTAssertFalse(text.contains("noShapeAtAll"))
         XCTAssertTrue(text.contains("«redacted»"))
     }
+
+    /// A Google-style refresh token: it begins with a digit, so it is not a URL; it carries no
+    /// vendor prefix and no label. Deliberately something no pattern can be written for.
+    static let shapelessSecret = "1//0eLEAK-noShapeAtAll-4f9a2c7d1b6e"
 
     /// `run.json` used to be written with no redaction at all, and `goal` is the user's own
     /// message — the single most likely place for a pasted key to be sitting.
     func testSecretsInTheGoalAndClosingNoteDoNotReachTheManifest() async throws {
-        let valueSecret = "postgres://app:tr0ub4dor-and-three@db.internal:5432/prod"
+        let valueSecret = Self.shapelessSecret
         let shapedSecret = "sk-ant-abcdefghijklmnopqrstuvwxyz0123456789"
 
         let writer = await makeRun(secrets: [valueSecret])
@@ -230,7 +384,7 @@ final class TraceChainTests: XCTestCase {
         XCTAssertFalse(text.contains("abcdefghijklmnopqrstuvwxyz0123456789"),
                        "a key pasted into the goal must not survive into the manifest")
         XCTAssertFalse(text.contains(valueSecret))
-        XCTAssertFalse(text.contains("tr0ub4dor-and-three"),
+        XCTAssertFalse(text.contains("noShapeAtAll"),
                        "the closing note and the goal get the same treatment as a step record")
         XCTAssertTrue(text.contains("«redacted»"))
     }

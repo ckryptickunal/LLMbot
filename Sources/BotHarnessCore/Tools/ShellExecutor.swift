@@ -14,7 +14,69 @@ public actor ShellExecutor: CommandRunning {
     /// readable/writable boundary evaporated the moment a bot ran `cat` instead of `files.read`.
     private let authority: Authority
 
-    public init(authority: Authority = Authority()) { self.authority = authority }
+    /// The kernel-enforced half of the boundary, or nil when this bot runs unconfined.
+    ///
+    /// Nil for exactly two reasons, both honest: the bot's computer is a container (the Linux
+    /// machine is the boundary, and Seatbelt has nothing to say about it), or Seatbelt itself
+    /// is not working on this OS build. `isSandboxed` is what the trace records, so a run can
+    /// never claim containment it did not have.
+    private let sandbox: Seatbelt.Policy?
+
+    /// Per-run scratch, exported as TMPDIR so a confined build has somewhere to stage work.
+    private let scratchDirectory: String?
+
+    public var isSandboxed: Bool { sandbox != nil }
+
+    public init(authority: Authority = Authority(), sandbox: Seatbelt.Policy? = nil) {
+        self.authority = authority
+        self.sandbox = sandbox
+        self.scratchDirectory = sandbox?.scratchDirectory
+        if let scratch = sandbox?.scratchDirectory {
+            try? FileManager.default.createDirectory(atPath: scratch, withIntermediateDirectories: true)
+        }
+    }
+
+    // MARK: - Spawning
+
+    /// Point a process at `command`, confined if this bot is confined.
+    ///
+    /// Both the one-shot and the long-lived paths go through here, because a sandbox that
+    /// covers `shell.exec` and not `shell.start_process` is a sandbox with a documented way
+    /// around it — and starting a dev server is exactly the thing an agent does when it wants
+    /// something long-lived.
+    private func configure(_ process: Process, for command: String) {
+        if let sandbox {
+            process.executableURL = URL(fileURLWithPath: Seatbelt.executable)
+            process.arguments = Seatbelt.arguments(for: command, policy: sandbox)
+        } else {
+            process.executableURL = URL(fileURLWithPath: "/bin/zsh")
+            // `-l` is deliberately gone. A login shell sources `.zprofile`/`.zshrc`, which on a
+            // developer's Mac exports API keys, tokens and cloud credentials into the environment —
+            // so `env` handed a bot every secret the user has, and no path guard was ever involved.
+            // `-c` keeps the user's PATH (inherited) without dumping their dotfile secrets.
+            process.arguments = ["-c", command]
+        }
+        var environment = Self.sanitisedEnvironment()
+        if let scratchDirectory { environment["TMPDIR"] = scratchDirectory }
+        process.environment = environment
+    }
+
+    /// Turn a kernel refusal into a sentence that says what happened and what to do.
+    ///
+    /// Without this the model sees `Operation not permitted` and reasonably concludes the file
+    /// is missing or the disk is read-only, then retries the same command with `sudo` — which is
+    /// worse than useless, because it also trips the safety floor.
+    private func annotate(_ output: CommandOutput) -> CommandOutput {
+        guard sandbox != nil, output.exitCode != 0 else { return output }
+        let text = output.stderr.lowercased()
+        guard text.contains("operation not permitted") || text.contains("permission denied")
+        else { return output }
+        let note = "\n[blocked by the sandbox: this bot may only change files inside its own "
+                 + "workspace, and may not reach the network unless you grant it. Nothing outside "
+                 + "was touched.]"
+        return CommandOutput(exitCode: output.exitCode, stdout: output.stdout,
+                             stderr: output.stderr + note)
+    }
 
     // MARK: - Scope
 
@@ -270,11 +332,15 @@ public actor ShellExecutor: CommandRunning {
     }
 
     private func guarded(_ output: CommandOutput) -> CommandOutput {
+        // Sandbox annotation happens before redaction, so the added sentence is itself scanned
+        // for secrets like everything else — and every exit path already funnels through here,
+        // which is why the annotation lives at this one choke point rather than at each return.
+        let annotated = annotate(output)
         let redactor = StreamingRedactor.forRun()
-        guard !redactor.isEmpty else { return output }
-        return CommandOutput(exitCode: output.exitCode,
-                             stdout: redactor.redact(output.stdout),
-                             stderr: redactor.redact(output.stderr))
+        guard !redactor.isEmpty else { return annotated }
+        return CommandOutput(exitCode: annotated.exitCode,
+                             stdout: redactor.redact(annotated.stdout),
+                             stderr: redactor.redact(annotated.stderr))
     }
 
     private final class Running: @unchecked Sendable {
@@ -326,13 +392,7 @@ public actor ShellExecutor: CommandRunning {
         }
 
         let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/bin/zsh")
-        // `-l` is deliberately gone. A login shell sources `.zprofile`/`.zshrc`, which on a
-        // developer's Mac exports API keys, tokens and cloud credentials into the environment —
-        // so `env` handed a bot every secret the user has, and no path guard was ever involved.
-        // `-c` keeps the user's PATH (inherited) without dumping their dotfile secrets.
-        process.arguments = ["-c", command]
-        process.environment = Self.sanitisedEnvironment()
+        configure(process, for: command)
         if let cwd { process.currentDirectoryURL = URL(fileURLWithPath: PathGuard.expand(cwd)) }
 
         let out = Pipe(), err = Pipe()
@@ -467,9 +527,7 @@ public actor ShellExecutor: CommandRunning {
         }
 
         let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/bin/zsh")
-        process.arguments = ["-c", command]
-        process.environment = Self.sanitisedEnvironment()
+        configure(process, for: command)
         if let cwd { process.currentDirectoryURL = URL(fileURLWithPath: (cwd as NSString).expandingTildeInPath) }
 
         let out = Pipe(), err = Pipe()

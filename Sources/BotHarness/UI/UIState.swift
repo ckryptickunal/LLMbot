@@ -29,6 +29,13 @@ final class UIState {
     var columns: NavigationSplitViewVisibility = .all
     var rosterClosedByWindow = false
 
+    /// Whether the window is currently wide enough to hold the panel at all.
+    ///
+    /// Separate from `panelClosedByWindow`, which only says who closed it last. A window that
+    /// launches too narrow never closed anything, so the flag stays false while the panel is
+    /// still impossible — and the toolbar button would offer something that cannot happen.
+    var panelCanFit = true
+
     // MARK: Focus
 
     /// Bumped whenever something should put the cursor back in the composer.

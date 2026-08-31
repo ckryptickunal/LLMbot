@@ -21,6 +21,36 @@ Versioning follows [Semantic Versioning 2.0.0](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+### Added — plan
+- **A complete, hand-off-able implementation plan for giving bots their own computer**
+  (`docs/plans/own-computer.md`): Seatbelt enforcement for every shell command on This Mac,
+  then a real per-bot Linux machine via Apple's `container` tool — lifecycle, tool routing,
+  permission semantics inside the container, UI states, disk guardrails, security checklist,
+  failure-mode table, cross-breakage matrix, acceptance criteria, and the traps already paid
+  for while verifying it. Written so another session can implement it without this one's
+  context.
+
+### Added — research
+- **What "give a bot its own computer" should mean here**
+  (`docs/research/giving-a-bot-its-own-computer.md`): the phrase splits into isolated
+  execution and a screen of the bot's own; four options ranked against this machine's real
+  constraints, with a staged recommendation — Seatbelt now, `apple/container` as the meaning
+  of the existing "Container" environment, a local VM with a screen once disk allows, cloud
+  desktops only ever as opt-in.
+
+### Fixed — the window can be resized again
+- **The transcript no longer loses its right-hand side on a narrow window.** Below roughly 900
+  points the conversation was being laid out wider than the window and simply cropped: status
+  pills, the send button, the Try-again button and the end of every sentence were off-screen
+  with no way to reach them. The reading column measured its own width and fed the answer back
+  into its own width, which cannot settle; it now states a maximum and lets the layout do the
+  rest.
+- **A closed panel no longer reserves space.** The inspector held its minimum width even while
+  hidden, so every window paid 260 points for a panel that was not on screen.
+- **The roster gets out of the way at the right moment**, and the button that shows the panel is
+  hidden when the window is too narrow to hold one, instead of being present and doing nothing.
+- Verified by driving the real window through ten sizes from 1800 down to 600 points.
+
 ### Security — the permission system now covers the shell
 
 - **A bot's workspace boundary applies to the terminal, not just to the file tools.** The shell

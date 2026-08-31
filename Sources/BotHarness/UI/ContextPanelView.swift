@@ -120,12 +120,19 @@ private struct ScreenPane: View {
                     .fill(DS.Surface.ground)
                     .aspectRatio(16.0 / 10.0, contentMode: .fit)
                     .overlay {
+                        // A bot working inside its own Linux machine has no screen at all, so
+                        // "appears the first time this bot looks at a screen" is a promise that
+                        // can never be kept. Say what is actually true of that machine instead.
                         EmptyState(
-                            systemImage: "display",
-                            title: "No screen yet",
+                            systemImage: bot?.environment == .container ? "cube" : "display",
+                            title: bot?.environment == .container ? "No screen" : "No screen yet",
                             message: bot == nil
                                 ? "Pick a bot to see what it has been looking at."
-                                : "Appears the first time this bot looks at a screen."
+                                : bot?.environment == .container
+                                    ? "This bot works inside its own Linux machine, which has no "
+                                    + "display. Its work shows up in the conversation and in its "
+                                    + "folder."
+                                    : "Appears the first time this bot looks at a screen."
                         )
                     }
             }
@@ -205,6 +212,7 @@ private struct BotSettingsPane: View {
     let bot: Bot
 
     @State private var confirmingDelete = false
+    @State private var containerReady: ContainerRuntime.Availability = .notInstalled
 
     /// Always the current record, never a snapshot taken when the view was built.
     private var live: Bot { store.bot(bot.id) ?? bot }
@@ -225,7 +233,7 @@ private struct BotSettingsPane: View {
             workspace
 
             readOnly("Brain", live.brain.displayName, nil)
-            readOnly("Computer", live.environment.displayName, live.environment.explanation)
+            computer
 
             toggle("Notifications",
                    "Tell me when this bot finishes or needs me, even when the app is behind "
@@ -300,8 +308,9 @@ private struct BotSettingsPane: View {
 
     /// Stop the work before removing the thing it was working on.
     private func delete() {
-        let orphaned = store.deleteBot(live.id)
-        runner.discard(orphaned)
+        let botID = live.id
+        let orphaned = store.deleteBot(botID)
+        runner.discard(orphaned, bots: [botID])
         ui.discardDrafts(for: orphaned)
         ui.panel = .screen
     }
@@ -352,6 +361,73 @@ private struct BotSettingsPane: View {
                 .background(DS.Tint.t3, in: RoundedRectangle(cornerRadius: DS.Radius.sm))
                 .accessibilityLabel("Bot description")
         }
+    }
+
+    // MARK: Computer
+
+    /// Which machine this bot works on.
+    ///
+    /// Offered even when the container tool is not installed, and honest about it: the option is
+    /// visible with the reason it cannot be picked, because hiding it entirely means nobody
+    /// discovers the feature exists. Picking it on a Mac without the tool is prevented here
+    /// rather than failing later — but a bot that *already* has the setting keeps working
+    /// regardless, falling back to this Mac at run time.
+    private var computer: some View {
+        VStack(alignment: .leading, spacing: DS.Space.sm) {
+            Text("Computer").font(DS.Text.caption).foregroundStyle(DS.Ink.secondary)
+            VStack(alignment: .leading, spacing: DS.Space.md) {
+                Picker("", selection: environmentBinding) {
+                    ForEach(EnvironmentKind.allCases, id: \.self) { kind in
+                        Text(kind.displayName).tag(kind)
+                    }
+                }
+                .labelsHidden()
+                .pickerStyle(.segmented)
+                .accessibilityLabel("Which computer this bot works on")
+
+                Text(live.environment.explanation)
+                    .font(DS.Text.micro).foregroundStyle(DS.Ink.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                if live.environment == .container, !containerReady.isReady {
+                    Label(unavailableReason, systemImage: "exclamationmark.triangle.fill")
+                        .font(DS.Text.micro)
+                        .foregroundStyle(DS.Status.running.label)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(DS.Space.md)
+            .background(DS.Tint.t3, in: RoundedRectangle(cornerRadius: DS.Radius.sm))
+        }
+        .task { containerReady = await runner.containerAvailability() }
+    }
+
+    private var unavailableReason: String {
+        switch containerReady {
+        case .notInstalled:
+            return "Not set up on this Mac yet — Computers → Its own computer explains the "
+                 + "one-time install. Until then this bot works on your Mac, sandboxed."
+        case .serviceStopped:
+            return "The container service is not running. Computers → Its own computer can "
+                 + "start it. Until then this bot works on your Mac, sandboxed."
+        case .failing(let detail):
+            return "The container tool reported: \(detail). Until that is fixed this bot works "
+                 + "on your Mac, sandboxed."
+        case .ready:
+            return ""
+        }
+    }
+
+    private var environmentBinding: Binding<EnvironmentKind> {
+        Binding(
+            get: { live.environment },
+            set: { kind in
+                var updated = live
+                updated.environment = kind
+                store.update(updated)
+            }
+        )
     }
 
     // MARK: Workspace

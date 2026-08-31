@@ -53,6 +53,33 @@ public struct Conversation: Identifiable, Codable, Hashable {
     }
 
     public var isChannel: Bool { participants.count > 1 }
+
+    /// Decoded leniently, for the reason set out in `LenientDecoding.swift`. A conversation is
+    /// the user's record of what happened; a field this version does not recognise is not a
+    /// reason to hand back an empty roster and overwrite it at the next save.
+    public init(from decoder: Decoder) throws {
+        let recovery = try Recovery(decoder, of: "a conversation", keyedBy: CodingKeys.self)
+
+        id = recovery.value(.id, or: UUID())
+
+        // Element by element, so one unreadable id costs the room one member rather than all of
+        // them. A conversation can end up with nobody in it that way, and it is still kept: it
+        // can no longer answer, but the messages already in it are the user's, and deleting a
+        // thread to tidy up a field we could not read is not this decoder's decision to make.
+        participants = recovery.elements(.participants, of: UUID.self)
+
+        title = recovery.optional(.title)
+        leadBot = recovery.optional(.leadBot)
+        messages = recovery.elements(.messages, of: Message.self)
+        createdAt = recovery.value(.createdAt, or: Date())
+        lastActivity = recovery.value(.lastActivity, or: Date())
+        channelPolicy = recovery.value(.channelPolicy, or: ChannelPolicy())
+
+        // Nil is a real state here — a conversation nobody has opened — so an unreadable value
+        // falls back to it and the row shows as unread. Being told about something twice is a
+        // better failure than never being told at all.
+        lastReadAt = recovery.optional(.lastReadAt)
+    }
 }
 
 /// The rules that keep a room of bots from becoming a feedback loop.
@@ -86,6 +113,17 @@ public struct ChannelPolicy: Codable, Hashable {
     public enum PermissionInheritance: String, Codable, Hashable {
         case actingBot
         case requestingBot
+    }
+
+    /// Decoded leniently. Each fallback is this type's own shipped default, so a policy with one
+    /// unreadable knob keeps the other two rather than resetting all three.
+    public init(from decoder: Decoder) throws {
+        let recovery = try Recovery(decoder, of: "a channel policy", keyedBy: CodingKeys.self)
+        maxConsecutiveBotTurns = recovery.value(.maxConsecutiveBotTurns, or: 12)
+        botsMaySpeakUnprompted = recovery.value(.botsMaySpeakUnprompted, or: true)
+        // `.actingBot` for the reason given on the property: the alternative lets a permissive
+        // bot launder work through a restricted one, so it is not a value to fall back to.
+        permissionsFollow = recovery.value(.permissionsFollow, or: .actingBot)
     }
 }
 
@@ -144,6 +182,40 @@ public struct Message: Identifiable, Codable, Hashable {
         /// Stores a path, never the image bytes: the conversation document is rewritten on
         /// every change, and a run with thirty screenshots in it would make that unusable.
         case screenshot(Screenshot)
+    }
+
+    /// Decoded leniently, for the reason set out in `LenientDecoding.swift`.
+    ///
+    /// A body this version cannot read becomes a visible failure line in place rather than a
+    /// message that quietly disappears from the middle of a transcript. The timestamp and the
+    /// author survive, so the gap sits where the message was instead of at the end.
+    ///
+    /// `ToolActivity`, `ComputerActivity` and `ApprovalRequest` are deliberately *not* given
+    /// decoders like this one. A half-read tool card would claim a status nothing established —
+    /// "Done", or worse, an approval showing an answer that was not the one given — and a card
+    /// that lies about what happened is worse than a line admitting it could not be read.
+    public init(from decoder: Decoder) throws {
+        let recovery = try Recovery(decoder, of: "a message", keyedBy: CodingKeys.self)
+
+        id = recovery.value(.id, or: UUID())
+
+        // The one field that fails the message rather than recovering. `author` is nil for the
+        // user, so an unreadable id would fall back to nil and put a bot's words in the user's
+        // voice — and the transcript is what the next run is built from, so that is not a
+        // cosmetic mistake. It is a bot's own output coming back as something the user said.
+        author = try recovery.container.decodeIfPresent(UUID.self, forKey: .author)
+
+        do {
+            body = try recovery.container.decode(Body.self, forKey: .body)
+        } catch {
+            recovery.lost("body: \(String(describing: error))")
+            body = .failure("This message could not be read, so the app kept its place in the "
+                          + "conversation rather than dropping it. The original is in the copy "
+                          + "of the state file kept beside it.")
+        }
+
+        timestamp = recovery.value(.timestamp, or: Date())
+        routineID = recovery.optional(.routineID)
     }
 }
 

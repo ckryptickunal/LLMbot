@@ -23,7 +23,8 @@ public struct TraceReader: Sendable {
         /// written before there was anything to forge against", and presenting the second as
         /// the first is the overstatement this field exists to prevent.
         public var signing: TraceWriter.ChainReport.Signing
-        /// Whether `run.json` still carries the seal its writer put on it.
+        /// Whether `run.json` still carries the seal its writer put on it — or, when it is
+        /// `.missing`, whether there is a `run.json` at all.
         public var manifestSeal: TraceWriter.ManifestSeal
 
         /// Present when the run ended badly, so a list can show the reason without opening it.
@@ -58,7 +59,7 @@ public struct TraceReader: Sendable {
 
             let report = TraceWriter.inspectChain(at: steps, chainKey: chainKey)
             let seal = manifest.map { TraceWriter.verifyManifest($0, chainKey: chainKey) }
-                ?? TraceWriter.ManifestSeal.writtenBeforeSigning
+                ?? TraceWriter.ManifestSeal.missing
 
             found.append(Run(
                 id: name,
@@ -66,7 +67,7 @@ public struct TraceReader: Sendable {
                 manifest: manifest,
                 stepCount: events.count,
                 startedAt: manifest?.startedAt ?? events.first?.at ?? Date.distantPast,
-                chain: chainStatus(report, seal: seal),
+                chain: chainStatus(report, seal: seal, expectedRecords: manifest?.records),
                 signing: report.signing,
                 manifestSeal: seal,
                 failureSummary: failure.map { $0.error ?? $0.summary }
@@ -83,15 +84,49 @@ public struct TraceReader: Sendable {
     /// altered. The manifest is what catches that. Its seal cannot be forged without the key, so
     /// a run whose `run.json` still says "this was signed" while its steps claim to predate
     /// signing has had its steps rewritten, and this is the only place that sees both facts at
-    /// once. Nothing stops the same attacker deleting `run.json` outright — but a run with no
-    /// manifest is visibly incomplete, which is the point.
+    /// once.
+    ///
+    /// Two moves that used to survive this comparison, both closed below.
+    ///
+    /// **Cutting the tail off.** Delete the last lines of `steps.jsonl` and the chain still
+    /// verifies — a prefix of a hash chain is a hash chain, and no amount of hashing can make a
+    /// file notice an end that is no longer there. The manifest is the only witness to how long
+    /// the file was, and its count is sealed, so the two are compared here.
+    ///
+    /// **Deleting `run.json`.** The note that used to sit here said a run with no manifest is
+    /// "visibly incomplete", and that was wrong: no manifest scored the same as an unsealed one,
+    /// so deleting the file turned a caught forgery back into an unremarkable old trace. A run
+    /// with no manifest whose steps also claim to predate signing is now reported as damaged,
+    /// because nothing is left that could tell a genuinely old trace from a downgraded one. A run
+    /// that was interrupted before it could write its manifest is the case this must not accuse,
+    /// and it does not: those steps are signed, and a signed chain with no manifest still reads
+    /// as intact.
     private func chainStatus(_ report: TraceWriter.ChainReport,
-                             seal: TraceWriter.ManifestSeal) -> TraceWriter.ChainStatus {
+                             seal: TraceWriter.ManifestSeal,
+                             expectedRecords: Int?) -> TraceWriter.ChainStatus {
         if seal == .sealed, report.signing == .writtenBeforeSigning {
             return .brokenAt(line: 1, reason: "re-written without the signature this run was sealed with")
         }
         if seal == .altered, case .intact = report.status {
             return .brokenAt(line: 0, reason: "the run manifest no longer matches its seal")
+        }
+        if case .intact(let records) = report.status, let expected = expectedRecords,
+           records != expected {
+            // Checked whichever way the two disagree, not only when the file is short. Nothing
+            // appends to a trace after its manifest is written — `finish` closes the handle — so
+            // a file longer than its manifest says has had records added to it, and that is no
+            // more innocent than having them removed.
+            return .brokenAt(
+                line: min(records, expected) + 1,
+                reason: records < expected
+                    ? "the file stops \(expected - records) records before the manifest says it ended"
+                    : "\(records - expected) records were added after the manifest was sealed"
+            )
+        }
+        if seal == .missing, report.signing == .writtenBeforeSigning, case .intact = report.status {
+            return .brokenAt(line: 0,
+                             reason: "there is no run manifest, and unsigned steps with nothing "
+                             + "to check them against prove nothing")
         }
         return report.status
     }

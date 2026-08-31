@@ -249,6 +249,8 @@ private struct SkillsList: View {
 
 private struct ComputersList: View {
     @State private var permissions = ComputerExecutor.permissions
+    @State private var container: ContainerRuntime.Availability = .notInstalled
+    @State private var images: String?
 
     var body: some View {
         VStack(alignment: .leading, spacing: DS.Space.xl) {
@@ -282,36 +284,124 @@ private struct ComputersList: View {
                 }
             }
 
-            Surface(fill: DS.Tint.t3.opacity(0.5), bordered: false) {
-                HStack(spacing: DS.Space.lg) {
-                    Image(systemName: "cube")
-                        .font(DS.Text.glyph)
-                        .foregroundStyle(DS.Ink.secondary)
-                    VStack(alignment: .leading, spacing: 1) {
-                        Text("Container").font(DS.Text.body.weight(.medium))
-                            .foregroundStyle(DS.Ink.secondary)
-                        Text("A throwaway machine that cannot touch your Mac")
-                            .font(DS.Text.caption).foregroundStyle(DS.Ink.secondary)
-                    }
-                    Spacer()
-                    Text("Soon").font(DS.Text.micro).foregroundStyle(DS.Ink.secondary)
-                        .padding(.horizontal, DS.Space.md)
-                        .padding(.vertical, DS.Space.hair)
-                        .background(DS.Tint.t3, in: Capsule())
-                }
-            }
+            containerCard
 
             Spacer()
         }
         .dsInset(DS.Inset.pane)
         .onAppear { permissions = ComputerExecutor.permissions }
+        .task { await refreshContainer() }
         // Granting a permission happens in System Settings, which means leaving this app and
         // coming back. Re-checking only on first appearance meant the row still said
         // "not granted" after the user had just granted it.
         .onReceive(NotificationCenter.default.publisher(
             for: NSApplication.didBecomeActiveNotification)) { _ in
             permissions = ComputerExecutor.permissions
+            // Installing the container tool means leaving the app and coming back, exactly like
+            // granting a permission — so the same moment is the right one to re-check both.
+            Task { await refreshContainer() }
         }
+    }
+
+    /// The bot's own computer: what it is, whether it is possible, and the one thing to do next.
+    ///
+    /// Four states, and each one names an action rather than a status. The card used to say
+    /// "Soon", which is the one thing it must never say again now that the feature exists —
+    /// and equally must never claim to be ready on a Mac where the tool is not installed.
+    private var containerCard: some View {
+        Surface(fill: DS.Tint.t3, bordered: false) {
+            VStack(alignment: .leading, spacing: DS.Space.lg) {
+                HStack(spacing: DS.Space.lg) {
+                    Image(systemName: "cube")
+                        .font(DS.Text.glyph)
+                        .foregroundStyle(container.isReady ? DS.Ink.primary : DS.Ink.secondary)
+                        .accessibilityHidden(true)
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text("Its own computer").font(DS.Text.body.weight(.semibold))
+                            .foregroundStyle(DS.Ink.primary)
+                        Text("A Linux machine per bot. It can install anything and break "
+                           + "anything, and none of it touches your Mac.")
+                            .font(DS.Text.caption).foregroundStyle(DS.Ink.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    Spacer(minLength: DS.Space.md)
+                    Circle()
+                        .fill(container.isReady ? DS.Status.done.mark : DS.Ink.tertiary)
+                        .frame(width: DS.Size.statusDot, height: DS.Size.statusDot)
+                        .accessibilityHidden(true)
+                }
+
+                Hairline()
+
+                switch container {
+                case .ready:
+                    HStack(spacing: DS.Space.md) {
+                        Image(systemName: "checkmark.circle.fill")
+                            .font(DS.Text.glyph).foregroundStyle(DS.Status.done.mark)
+                            .accessibilityHidden(true)
+                        VStack(alignment: .leading, spacing: 1) {
+                            Text("Ready").font(DS.Text.callout).foregroundStyle(DS.Ink.primary)
+                            Text(images ?? "A machine is built the first time a bot needs one.")
+                                .font(DS.Text.micro).foregroundStyle(DS.Ink.secondary)
+                        }
+                        Spacer()
+                        if images != nil {
+                            SecondaryButton("Free up space") {
+                                Task {
+                                    await ContainerRuntime.shared.removeUnusedImages()
+                                    await refreshContainer()
+                                }
+                            }
+                        }
+                    }
+
+                case .notInstalled:
+                    stateRow("Not set up",
+                             "Bots work fine without this — they use your Mac, guarded by "
+                           + "permissions. Setting it up is a one-time install of Apple's "
+                           + "container tool, which needs your admin password, so it is yours "
+                           + "to run rather than something this app can do for you.",
+                             action: "Get the installer") {
+                        NSWorkspace.shared.open(
+                            URL(string: "https://github.com/apple/container/releases/latest")!)
+                    }
+
+                case .serviceStopped:
+                    stateRow("Installed, not running",
+                             "The container service starts on demand and is not running yet.",
+                             action: "Start it") {
+                        Task { container = await ContainerRuntime.shared.startService() }
+                    }
+
+                case .failing(let detail):
+                    stateRow("Not working", detail, action: "Check again") {
+                        Task { await refreshContainer() }
+                    }
+                }
+            }
+        }
+    }
+
+    private func stateRow(_ title: String, _ detail: String, action: String,
+                          run: @escaping () -> Void) -> some View {
+        HStack(alignment: .top, spacing: DS.Space.md) {
+            Image(systemName: "info.circle")
+                .font(DS.Text.glyph).foregroundStyle(DS.Ink.secondary)
+                .accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: DS.Space.xs) {
+                Text(title).font(DS.Text.callout).foregroundStyle(DS.Ink.primary)
+                Text(detail).font(DS.Text.micro).foregroundStyle(DS.Ink.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Spacer(minLength: DS.Space.md)
+            SecondaryButton(action, action: run)
+        }
+    }
+
+    private func refreshContainer() async {
+        await ContainerRuntime.shared.refresh()
+        container = await ContainerRuntime.shared.availability()
+        images = await ContainerRuntime.shared.imageSummary()
     }
 
     private func permissionRow(_ title: String, _ why: String, granted: Bool, pane: String) -> some View {
