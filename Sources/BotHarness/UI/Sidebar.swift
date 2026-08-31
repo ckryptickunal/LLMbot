@@ -209,9 +209,13 @@ struct Sidebar: View {
     /// hands the room to whoever is next, and that belongs in front of the click rather than
     /// being discovered afterwards.
     @ViewBuilder private func members(of conversation: Conversation) -> some View {
+        // The room as the store has it now rather than as the row captured it when the menu was
+        // built. A checkmark here is a claim about who is in the room at this moment, and the
+        // control next to it is the thing that changes that.
+        let live = store.conversation(conversation.id) ?? conversation
         Menu("Members") {
             ForEach(store.bots) { bot in
-                let isMember = conversation.participants.contains(bot.id)
+                let isMember = live.participants.contains(bot.id)
                 Toggle(isOn: Binding(
                     get: { isMember },
                     set: { wanted in
@@ -222,7 +226,7 @@ struct Sidebar: View {
                         }
                     }
                 )) {
-                    Text(conversation.participants.first == bot.id
+                    Text(live.participants.first == bot.id
                          ? "\(bot.name) — answers here"
                          : bot.name)
                 }
@@ -230,7 +234,7 @@ struct Sidebar: View {
                 // and there is nothing left to do with it but delete it. Disabled rather than
                 // silently refused on click, because a control that does nothing is exactly the
                 // dead end this pass exists to remove.
-                .disabled(isMember && conversation.participants.count == 1)
+                .disabled(isMember && live.participants.count == 1)
             }
         }
     }

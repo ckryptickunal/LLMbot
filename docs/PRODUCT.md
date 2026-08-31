@@ -146,7 +146,9 @@ the trace. A permission system you cannot audit is a permission system you canno
 
 ## Bring your own everything
 
-- **Your keys.** Gemini, Anthropic, OpenAI, whatever else. Stored in one owner-only file, never
+- **Your keys.** Gemini, Anthropic, OpenAI, whatever else. Stored in one owner-only file that no
+  bot can read — it is on the permanent deny list the tool layer checks before every file read and
+  every shell command (ADR 0012, ADR 0014). Never
   in a config file, never in a prompt, never in a log.
 - **Your models.** Per bot. A cheap fast model for a watcher routine, a strong one for the bot
   that writes code.

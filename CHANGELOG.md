@@ -107,6 +107,16 @@ Versioning follows [Semantic Versioning 2.0.0](https://semver.org/spec/v2.0.0.ht
 
 ### Added
 
+- **Claude Code actually works as a brain.** Settings listed it first with a green check and the
+  words "no API key needed", while every bot answered with Gemini regardless of what you picked —
+  so a user whose only credential was a Claude Code subscription was told they were ready and then
+  got a silent failure. There is now a real adapter driving the local `claude` CLI, and the
+  Settings row reports what it actually checked rather than promising sign-in it cannot verify.
+  The CLI is invoked with its own tools, MCP servers, plugins and settings files all switched off:
+  left to itself it is an agent with a shell and a file editor, and letting it act would route
+  every action around this app's permission floor, path guard and trace.
+- **Brains that have no adapter say so.** Anthropic and OpenAI previously became Gemini silently.
+- **Channels can be renamed**, like bots.
 - **Repeated side effects are prevented across runs** (see docs/decisions/0016). If a run is
   stopped or crashes after sending something, asking again does not send it twice — and an action
   whose result was never confirmed is reported as uncertain rather than guessed either way.

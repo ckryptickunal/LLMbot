@@ -450,21 +450,79 @@ final class BotRunner {
     }
 
     /// Which brain answers for this bot.
-    /// Which brain answers for this bot.
     ///
-    /// Only Gemini is implemented. The others are selectable but fall back, and the composer
-    /// chip says so rather than showing a name that is not the one answering — a control that
-    /// reports a state the system is not in is worse than one that admits the gap.
+    /// Every case now returns the adapter it names. There is deliberately no `default` that
+    /// substitutes Gemini: that is what this function used to do, and it meant a bot set to
+    /// Claude Code answered as Gemini, failed with an error about a Gemini key the user had
+    /// never been asked for, and had no way to find out why. Silently answering as something
+    /// else is worse than not answering, because only one of the two is debuggable.
+    ///
+    /// The two brains without an adapter return `UnbuiltBrain`, which fails on the first call
+    /// with a sentence naming the actual problem and the actual remedy.
     static func brain(for bot: Bot) -> any BrainAdapter {
         switch bot.brain {
-        case .gemini(let model): return GeminiAdapter(model: model)
-        default:                 return GeminiAdapter()
+        case .gemini(let model):
+            return GeminiAdapter(model: model)
+
+        case .claudeCLI(let model):
+            // The workspace is passed through because the CLI is a coding brain and a coding
+            // brain with no working directory is close to useless. See the adapter for what
+            // that costs and which flag pays for it.
+            return ClaudeCLIAdapter(model: model, workspace: bot.effectiveWorkspace.path)
+
+        case .anthropic(let model):
+            return UnbuiltBrain(
+                label: "anthropic/\(model)",
+                explanation: "This bot is set to \(model) through Anthropic's API, and this "
+                           + "build has no adapter for it — an Anthropic key changes nothing "
+                           + "until one exists. Pick Claude Code or Gemini in the brain menu "
+                           + "next to the message box. Claude Code runs the same models on "
+                           + "your subscription and needs no key.")
+
+        case .openAI(let model):
+            return UnbuiltBrain(
+                label: "openai/\(model)",
+                explanation: "This bot is set to \(model), and this build has no adapter for "
+                           + "OpenAI — a key changes nothing until one exists. Pick Claude Code "
+                           + "or Gemini in the brain menu next to the message box.")
         }
     }
 
-    /// True when the selected brain is not the one that will actually answer.
+    /// True when the selected brain will not answer at all.
+    ///
+    /// The name is older than the behaviour: nothing falls back to anything now. It still
+    /// answers the question the composer's chip actually asks — "is the model on this button
+    /// the one that will reply?" — so it kept its callers rather than churning them.
     static func isFallingBack(_ bot: Bot) -> Bool {
-        if case .gemini = bot.brain { return false }
-        return true
+        switch bot.brain {
+        case .gemini, .claudeCLI:  return false
+        case .anthropic, .openAI:  return true
+        }
+    }
+}
+
+/// A brain that is named in the interface and does not exist yet.
+///
+/// It reports itself as configured and then throws. That reads backwards, and the alternative
+/// is worse: `AgentLoop` answers a false `isConfigured()` with one fixed sentence — "… is not
+/// set up. Add the key in Settings (⌘,)" — which for a missing adapter is a remedy that cannot
+/// work. Sending the failure through `step()` instead is what lets the message say the true
+/// thing, which is that no key will help and the user needs to choose a different brain.
+struct UnbuiltBrain: BrainAdapter {
+    let label: String
+    let explanation: String
+
+    var name: String { label }
+    var canDriveComputer: Bool { false }
+
+    func isConfigured() async -> Bool { true }
+
+    func step(_ request: BrainRequest) async throws -> BrainResponse {
+        throw Unavailable(explanation: explanation)
+    }
+
+    struct Unavailable: LocalizedError {
+        let explanation: String
+        var errorDescription: String? { explanation }
     }
 }

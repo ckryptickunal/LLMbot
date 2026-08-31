@@ -35,12 +35,12 @@ Every capability the bot can invoke, in one registry, grouped by domain:
 
 ```
 research    web.search · web.open · web.find · web.download
-browser     navigate · click · type · extract · download · upload · dom · js · network
+browser     navigate · click · type · extract        (built; one window, one tab)
 computer    screenshot · click · type · key · scroll · launch_app · accessibility_tree
 shell       exec · start_process · read_process · signal · kill
 files       read · write · patch · search · glob · move · delete
 dev         git.* · github.* · docker.* · test.* · build.*
-memory      search · save · forget
+memory      search · save · forget                   (built; notes carry provenance, ADR 0015)
 external    every MCP server, namespaced by plugin
 ```
 
@@ -113,7 +113,7 @@ The selector, in strict preference order:
 ```
 direct API available?          → use it
 machine-readable without one?  → use shell or code
-structured browser access?     → use CDP/DOM
+structured browser access?     → use browser.* (AppleScript; see ADR 0018)
 none of the above?             → use GUI computer control
 still stuck?                   → ask the user
 ```
@@ -317,7 +317,7 @@ Layers are not equally urgent. This is the sequence, and the reason for each pos
 | 7 | Layered observation + state diffing | Makes the computer layer affordable |
 | 8 | Recovery + stuck detection | The difference between a demo and a tool |
 | 9 | Skills | Once we know what the bot keeps getting wrong |
-| 10 | Browser via CDP | After shell and files, because most tasks never need it |
+| 10 | Browser via AppleScript | Built. CDP was rejected — it needs Chrome relaunched with a debugging port, which kills the user's session and is the move a session-stealing attack makes. See ADR 0018. |
 | 11 | Processes + watchers + event bus | Turns it from request-response into always-on |
 | 12 | Scheduler / routines | Needs the event bus underneath |
 | 13 | Subagents, planner, model routing | Only once single-agent runs are reliable |

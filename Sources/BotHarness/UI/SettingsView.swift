@@ -59,14 +59,16 @@ struct SettingsView: View {
 ///    and never to a path any bot is allowed to read. The copy below says plainly that they are
 ///    on disk, because they are; a settings screen that oversells its own security is worse than
 ///    one that admits what it is.
-/// 3. **The brain that actually answers is listed first.** This used to be Claude Code, on the
-///    reasoning that the fastest path to a working app is the one requiring nothing at all —
-///    which would be right if it worked. `BotRunner.brain(for:)` returns a Gemini adapter for
-///    every case, so following this screen and adding no key produced a bot that failed on its
-///    first message with no clue why. Ordering by what is true beats ordering by what is easy.
+/// 3. **Every row says what is true of the code, not what is intended.** Claude Code used to
+///    lead this screen with a green tick and "Signed in and ready — no API key needed", while
+///    `BotRunner.brain(for:)` returned a Gemini adapter for every case; someone who believed
+///    the tick and added no key got a bot that failed on its first message with an error about
+///    a provider they had never chosen. That adapter now exists, so the row makes a claim
+///    again — but the claim is checked against the disk each time this screen opens rather
+///    than asserted, which is the only kind of tick worth showing.
 struct ProviderSettings: View {
     @State private var present: [String: Bool] = [:]
-    @State private var claudeCLIPath: String?
+    @State private var claudeCLI: ClaudeCLIState = .checking
     @State private var justSaved: String?
     @State private var permissionProblems: [String] = []
     /// Why the last save or delete did not happen. Previously a failed write showed the same
@@ -99,23 +101,26 @@ struct ProviderSettings: View {
                     ErrorState(failure)
                 }
 
-                // The whole app is inert without this one key, so the screen says so before it
-                // says anything else. Previously the first thing here was a green tick beside a
-                // brain that cannot answer, which told a new user they were finished.
-                if !(present["gemini"] ?? false) {
+                // The app is inert with no brain at all, so the screen says so before it says
+                // anything else. It checks for both of them: a signed-in `claude` CLI is a
+                // working brain that costs nothing to set up, and telling someone who already
+                // has one that they have no brain would send them off to fetch a key they do
+                // not need.
+                if !(present["gemini"] ?? false), !claudeCLI.canAnswer {
                     StandingNotice(
                         systemImage: "key.horizontal",
                         title: "No brain is set up yet",
-                        detail: "Add a Google Gemini key below. It is the only one that answers "
-                              + "today — the others are stored for when their adapters exist.",
-                        actionTitle: "Where do I get one?",
+                        detail: "Either add a Google Gemini key below, or install the Claude "
+                              + "Code command and sign in — a Claude subscription needs no key. "
+                              + "Only Gemini can drive the screen, keyboard and mouse.",
+                        actionTitle: "Where do I get a Gemini key?",
                         tint: DS.Status.waiting.mark,
                         action: openGeminiKeyPage
                     )
                 }
 
                 KeyField(provider: "gemini", title: "Google Gemini",
-                         detail: "The brain every bot answers with today, and what drives the computer — screen, keyboard and mouse. Keys are free at aistudio.google.com.",
+                         detail: "The only brain that can drive the computer — screen, keyboard and mouse. Keys are free at aistudio.google.com.",
                          placeholder: "AIza…", isPresent: present["gemini"] ?? false,
                          onSave: { save("gemini", $0) }, onRemove: { remove("gemini") })
 
@@ -141,48 +146,62 @@ struct ProviderSettings: View {
             }
             .dsInset(DS.Inset.pane)
         }
-        .task { refresh() }
+        .task {
+            refresh()
+            await refreshClaudeCLI()
+        }
     }
 
-    /// Claude Code, described as what it is today rather than what it is meant to be.
+    /// What this screen can honestly say about the `claude` command.
     ///
-    /// It carried a green tick and "Signed in and ready — no API key needed", and `Bot.swift`
-    /// still documents the CLI as the first-class brain that lets someone with no key use this
-    /// app. Both are the intent. Neither is the code: `BotRunner.brain(for:)` returns a Gemini
-    /// adapter for every `BrainSpec`, so a bot set to Claude Code answers with Gemini, and a
-    /// user who added no key because this row said they were ready got silence.
-    ///
-    /// A tick is a claim. Until the adapter exists this row shows the same "Soon" chip the
-    /// Container environment uses, and says the same thing the composer's brain chip already
-    /// says — "adapter not written" — so the two places never disagree.
+    /// Three states, not two, and the third is the point. Whether the CLI is *signed in* cannot
+    /// be answered here: the subscription token lives in the login Keychain rather than a file,
+    /// so asking costs either a Keychain prompt or a real model call. So the row says what it
+    /// checked — the command is there and it runs — and stops short of the claim it cannot
+    /// support. The old row's "Signed in and ready" was exactly that unsupported claim, and it
+    /// is what sent a user into their first message believing they were set up.
+    enum ClaudeCLIState {
+        case checking
+        case missing
+        case installed(path: String, version: String)
+
+        /// Enough to be worth offering as a brain. Sign-in is proven by the first message, and
+        /// `ClaudeCLIAdapter` turns a signed-out CLI into an instruction rather than a silence.
+        var canAnswer: Bool {
+            if case .installed = self { return true }
+            return false
+        }
+    }
+
+    /// Claude Code: a brain that needs no key, described by what was checked.
     private var claudeCodeRow: some View {
         HStack(alignment: .top, spacing: DS.Space.lg) {
-            Image(systemName: "clock")
-                .foregroundStyle(DS.Ink.secondary)
+            Image(systemName: claudeCLIIcon)
+                .foregroundStyle(claudeCLITint)
                 .font(DS.Text.glyph)
             VStack(alignment: .leading, spacing: DS.Space.hair) {
                 HStack(spacing: DS.Space.md) {
                     Text("Claude Code")
                         .font(DS.Text.body.weight(.semibold))
                         .foregroundStyle(DS.Ink.primary)
-                    Text("Soon")
-                        .font(DS.Text.micro)
-                        .foregroundStyle(DS.Ink.secondary)
-                        .padding(.horizontal, DS.Space.md)
-                        .padding(.vertical, DS.Space.hair)
-                        .background(DS.Tint.t3, in: Capsule())
+                    switch claudeCLI {
+                    case .checking:     StatusPill(.running, "checking")
+                    case .missing:      StatusPill(.waiting, "not installed")
+                    case .installed:    StatusPill(.done, "installed")
+                    }
                 }
-                Text("Meant to make a Claude Code subscription a brain with no API key. The "
-                   + "adapter that speaks to the CLI is not written yet, so a bot set to Claude "
-                   + "Code answers with Gemini instead.")
+
+                Text(claudeCLIDetail)
                     .font(DS.Text.caption)
                     .foregroundStyle(DS.Ink.secondary)
                     .lineSpacing(DS.Text.bodyLineSpacing)
                     .fixedSize(horizontal: false, vertical: true)
-                if let path = claudeCLIPath {
-                    // Still worth showing: it is the one fact on this row that is checked
-                    // against the disk rather than asserted.
-                    Text("Found on this Mac at \(path)")
+
+                if case .installed(let path, let version) = claudeCLI {
+                    // The one fact on this row that is read off the disk rather than asserted,
+                    // so it is shown verbatim: if the row is ever wrong, this is the line that
+                    // says how.
+                    Text("\(path) — \(version)")
                         .font(DS.Text.monoSmall)
                         .foregroundStyle(DS.Ink.secondary)
                         .fixedSize(horizontal: false, vertical: true)
@@ -191,6 +210,38 @@ struct ProviderSettings: View {
             Spacer()
         }
         .accessibilityElement(children: .combine)
+    }
+
+    private var claudeCLIIcon: String {
+        switch claudeCLI {
+        case .checking:  return "hourglass"
+        case .missing:   return "arrow.down.circle"
+        case .installed: return "checkmark.circle.fill"
+        }
+    }
+
+    private var claudeCLITint: Color {
+        switch claudeCLI {
+        case .checking:  return DS.Ink.secondary
+        case .missing:   return DS.Ink.secondary
+        case .installed: return DS.Status.done.mark
+        }
+    }
+
+    private var claudeCLIDetail: String {
+        switch claudeCLI {
+        case .checking:
+            return "Looking for the claude command on this Mac."
+        case .missing:
+            return "A Claude subscription can run your bots with no API key, through the "
+                 + "claude command. It is not on this Mac. Install it from claude.com/code, "
+                 + "sign in once, then reopen this window."
+        case .installed:
+            return "Found and running. Pick Claude Code in the brain menu next to the message "
+                 + "box and this bot answers on your subscription, with no API key. If you have "
+                 + "not signed the command in yet, the first message will say so. It cannot "
+                 + "drive the screen, keyboard or mouse — only Gemini does that."
+        }
     }
 
     /// Where a Gemini key comes from. The only external link on this screen, and it exists
@@ -203,8 +254,28 @@ struct ProviderSettings: View {
     private func refresh() {
         CredentialStore.reload()
         for provider in ["gemini", "anthropic", "openai"] { present[provider] = CredentialStore.has(provider) }
-        claudeCLIPath = Self.findClaudeCLI()
         permissionProblems = CredentialStore.permissionProblems()
+    }
+
+    /// Separate from `refresh()` because it spawns a process, and a settings window that stalls
+    /// while it waits is a settings window that looks broken. The row starts on `.checking` and
+    /// this replaces it; `--version` neither reaches the network nor starts a login.
+    private func refreshClaudeCLI() async {
+        guard let path = Self.findClaudeCLI() else {
+            claudeCLI = .missing
+            return
+        }
+        let probe = await ClaudeCLIAdapter.execute(binary: path, arguments: ["--version"],
+                                                   stdin: nil, cwd: nil, timeout: 15)
+        // Present but not runnable is reported as missing rather than as a fourth state: to the
+        // person reading this, a command that will not run is a command they have to install,
+        // and the version line underneath is what would have said otherwise.
+        guard probe.exitCode == 0 else {
+            claudeCLI = .missing
+            return
+        }
+        let version = probe.stdout.trimmingCharacters(in: .whitespacesAndNewlines)
+        claudeCLI = .installed(path: path, version: version.isEmpty ? "version unknown" : version)
     }
 
     private func save(_ provider: String, _ value: String) {
@@ -247,15 +318,11 @@ struct ProviderSettings: View {
         }
     }
 
-    /// The CLI is usually outside a GUI app's inherited PATH, so look where it installs rather
-    /// than relying on `which`.
-    static func findClaudeCLI() -> String? {
-        [
-            "\(NSHomeDirectory())/.local/bin/claude",
-            "/opt/homebrew/bin/claude",
-            "/usr/local/bin/claude",
-        ].first { FileManager.default.isExecutableFile(atPath: $0) }
-    }
+    /// Deliberately delegates rather than keeping its own copy of the search paths. The adapter
+    /// is the thing that has to find the binary at run time; a second list here would be the
+    /// list that silently goes stale, and this screen would then promise a brain the runtime
+    /// cannot reach.
+    static func findClaudeCLI() -> String? { ClaudeCLIAdapter.locateBinary() }
 }
 
 /// One provider's key row. Deliberately has no "show key" affordance: the stored value is
