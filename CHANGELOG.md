@@ -21,6 +21,37 @@ Versioning follows [Semantic Versioning 2.0.0](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+### Added
+- **Select several bots and delete them in one go.** The roster is a normal macOS list now:
+  ⇧-click for a range, ⌘-click to add one, ⌘A for all. Right-clicking inside a selection offers
+  to delete the whole thing, the Delete key does the same, and File ▸ Delete (⌘⌫) names exactly
+  how many are going. The confirmation lists what is about to be removed rather than only
+  counting it — the reason you multi-select is that the rows look alike, so "Delete 40 items?"
+  with no names is not something anyone can check before agreeing to it.
+- **`scripts/start.sh`** — one command to build, sign and launch the app. `--reset` empties it
+  first, `--fresh` runs it against a throwaway home so you can try things without touching the
+  bots you keep, `--debug` compiles faster.
+- **`scripts/reset.sh`** — empties every bot, conversation and trace. Nothing is deleted: the
+  data directory is moved to a timestamped folder beside itself and the undo command is printed,
+  because that directory holds the only copy of every conversation you have had. Your saved API
+  keys are put back into the fresh directory, since losing those means going to fetch new ones.
+
+### Fixed
+- **The conversation is centred in its pane instead of hugging the left edge.** On an
+  1800-point window the transcript occupied 272–992 in a pane running to 1500, so a third of the
+  area was permanently blank on one side. Every part of the conversation — the title, the
+  messages, the activity bar, the composer — now sits in one centred column.
+- **The activity bar lines up with everything else.** It was indented 24 points further than the
+  transcript above it and the composer below it, which put three different left edges in one
+  vertical stack.
+- **The model and autonomy chips line up with the composer** they sit under, rather than four
+  points inside it.
+- **The roster no longer slices its top row in half.** A scrolled list was cut with a hard edge
+  through the middle of an avatar. Both edges of the list now dissolve, and the fade is a fixed
+  height rather than a percentage of the window — it used to be a hairline on a short window and
+  wash out most of a row on a tall one.
+
+
 ### Fixed — visual defects found by looking at the running app
 
 - **The settings and panel buttons sat in the middle of the conversation, not at its edge.** The

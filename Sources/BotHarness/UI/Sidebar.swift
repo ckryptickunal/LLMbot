@@ -25,7 +25,23 @@ struct Sidebar: View {
     @State private var makingChannel = false
     @State private var renaming: RenameTarget?
     @State private var renameText = ""
-    @State private var pendingDeletion: Conversation?
+    /// Which rows are selected, as a set.
+    ///
+    /// macOS lists are multi-selectable by convention — ⇧-click for a range, ⌘-click for one
+    /// more, ⌘A for all — and `List` gives all of that for free once its selection binding holds
+    /// a `Set`. `Store.selection` stays single, because it answers a different question: which
+    /// conversation the detail pane is showing. The two are kept in step below.
+    @State private var selected: Set<UUID> = []
+    @State private var pendingDeletion: DeletionRequest?
+
+    /// One or more rows the user has asked to delete, held until they confirm.
+    ///
+    /// Carries whole `Conversation` values rather than ids: the confirmation names what is about
+    /// to be destroyed, and by the time the user answers, a row may already be gone.
+    private struct DeletionRequest: Identifiable {
+        let id = UUID()
+        let conversations: [Conversation]
+    }
     /// Both are conditions the user cannot change from inside this app, so they are read when
     /// the window comes back to the front rather than held as a live subscription.
     @State private var keyFileIsExposed = false
@@ -51,13 +67,16 @@ struct Sidebar: View {
                 .padding(.horizontal, DS.Space.lg)
                 Spacer()
             } else {
-                List(selection: $store.selection) {
+                List(selection: $selected) {
                     ForEach(filtered) { conversation in
                         SidebarRow(conversation: conversation, matching: query)
                             .tag(conversation.id)
                             .contextMenu { menu(for: conversation) }
                     }
                 }
+                // The Delete key, on the list itself, so the keyboard route exists without a
+                // menu. macOS guidance asks for keyboard-only work styles to be possible.
+                .onDeleteCommand { askToDeleteSelection() }
                 .listStyle(.sidebar)
                 .scrollContentBackground(.hidden)
                 // Room to scroll clear of the footer, and a soft edge where it meets it.
@@ -72,12 +91,25 @@ struct Sidebar: View {
                 // background of its own — it inherits the window's material — so there is no
                 // colour an overlay could fade to without banding against it.
                 .safeAreaPadding(.bottom, DS.Space.sm)
+                // Both edges, and measured in points rather than in percent.
+                //
+                // The fade used to be the last 6% of the list, which is not a length: on a short
+                // window that is barely a hairline and on a tall one it washes out most of a row.
+                // A fixed height dissolves the same amount of a row wherever the list ends.
+                //
+                // The top got no treatment at all, which was the more visible half of the bug —
+                // a scrolled roster cut its first row straight through the middle of an avatar,
+                // with a hard edge and nothing above it to explain the cut.
                 .mask(
-                    LinearGradient(
-                        stops: [.init(color: .black, location: 0),
-                                .init(color: .black, location: 0.94),
-                                .init(color: .clear, location: 1)],
-                        startPoint: .top, endPoint: .bottom)
+                    VStack(spacing: 0) {
+                        LinearGradient(colors: [.clear, .black],
+                                       startPoint: .top, endPoint: .bottom)
+                            .frame(height: DS.Space.lg)
+                        Color.black
+                        LinearGradient(colors: [.black, .clear],
+                                       startPoint: .top, endPoint: .bottom)
+                            .frame(height: DS.Space.xl)
+                    }
                 )
             }
 
@@ -102,18 +134,37 @@ struct Sidebar: View {
         // scroll means the mark means "you looked at this", which is what a person expects.
         .onChange(of: store.selection, initial: true) { _, id in
             if let id { store.markRead(id) }
+            // Something outside the roster changed which conversation is open — ⌘N, a
+            // notification, a deletion repairing the selection. The row highlight has to follow
+            // it, or the list shows one thing selected while the pane shows another.
+            if let id, !selected.contains(id) { selected = [id] }
+            ui.selectionCount = max(selected.count, id == nil ? 0 : 1)
         }
+        .onChange(of: selected, initial: true) { _, rows in
+            ui.selectionCount = max(rows.count, store.selection == nil ? 0 : 1)
+            // One row selected means "open it". Several means the user is picking a batch, and
+            // opening whichever they touched last would yank the pane around under them, so the
+            // pane holds still as long as what it is showing is still in the batch.
+            if rows.count == 1 {
+                if store.selection != rows.first { store.selection = rows.first }
+            } else if rows.count > 1, let current = store.selection, !rows.contains(current) {
+                store.selection = filtered.first { rows.contains($0.id) }?.id
+            }
+        }
+        // ⌘⌫ from the menu bar. The roster owns the selection, so the command asks rather than
+        // reaching in — the same pattern ⇧⌘N already uses.
+        .onChange(of: ui.deleteSelectionRequests) { askToDeleteSelection() }
         .confirmationDialog(
             deletionTitle,
             isPresented: Binding(get: { pendingDeletion != nil },
                                  set: { if !$0 { pendingDeletion = nil } }),
             presenting: pendingDeletion
-        ) { conversation in
-            Button("Delete", role: .destructive) { confirmDelete(conversation) }
+        ) { request in
+            Button(request.conversations.count == 1 ? "Delete" : "Delete \(request.conversations.count)",
+                   role: .destructive) { confirmDelete(request.conversations) }
             Button("Cancel", role: .cancel) { pendingDeletion = nil }
-        } message: { conversation in
-            Text("This removes \(title(for: conversation)) and everything it has done. "
-               + "The trace of its past runs stays on disk. This cannot be undone.")
+        } message: { request in
+            Text(deletionMessage(for: request.conversations))
         }
         // Rename is an alert rather than an inline editable row on purpose: a list row that
         // becomes a text field on a second click is the pattern Finder uses for files, and it
@@ -134,7 +185,42 @@ struct Sidebar: View {
     }
 
     private var deletionTitle: String {
-        pendingDeletion.map { "Delete \(title(for: $0))?" } ?? "Delete?"
+        guard let request = pendingDeletion else { return "Delete?" }
+        guard let only = request.conversations.first, request.conversations.count == 1 else {
+            return "Delete \(request.conversations.count) items?"
+        }
+        return "Delete \(title(for: only))?"
+    }
+
+    /// What is about to be destroyed, named.
+    ///
+    /// A batch lists what it is going to remove rather than saying "3 items", up to a point: the
+    /// whole reason a person multi-selects is that the rows look alike, and "Delete 40 items?"
+    /// with no names is a dialog nobody can check before agreeing to it.
+    private func deletionMessage(for conversations: [Conversation]) -> String {
+        let tail = " The trace of past runs stays on disk. This cannot be undone."
+        guard let only = conversations.first, conversations.count == 1 else {
+            let names = conversations.prefix(5).map { title(for: $0) }.joined(separator: ", ")
+            let rest = conversations.count > 5 ? ", and \(conversations.count - 5) more" : ""
+            return "This removes \(names)\(rest), and everything they have done." + tail
+        }
+        return "This removes \(title(for: only)) and everything it has done." + tail
+    }
+
+    /// Ask about whatever is selected. Does nothing when nothing is selected, so the Delete key
+    /// on an empty roster is a no-op rather than a dialog about nothing.
+    private func askToDeleteSelection() {
+        var rows = filtered.filter { selected.contains($0.id) }
+        // Falling back to the open conversation is not a workaround for the set being empty —
+        // it is the behaviour people expect. `List` drops its selection set in situations the
+        // user does not think of as deselecting (the roster losing focus while they work in the
+        // transcript, the row set changing underneath it), and "delete" with one conversation
+        // plainly open in front of you should never answer "delete what?".
+        if rows.isEmpty, let open = store.selection.flatMap({ store.conversation($0) }) {
+            rows = [open]
+        }
+        guard !rows.isEmpty else { return }
+        pendingDeletion = DeletionRequest(conversations: rows)
     }
 
     // MARK: Actions
@@ -178,8 +264,13 @@ struct Sidebar: View {
     ///
     /// A loop left running against a deleted conversation writes into nothing, holds an
     /// approval nobody can answer, and never stops. The runner is told first, then the store.
-    private func confirmDelete(_ conversation: Conversation) {
+    private func confirmDelete(_ conversations: [Conversation]) {
         pendingDeletion = nil
+        selected.removeAll()
+        for conversation in conversations { delete(conversation) }
+    }
+
+    private func delete(_ conversation: Conversation) {
         runner.discard([conversation.id])
         ui.discardDrafts(for: [conversation.id])
         // `Store.isRoom` rather than `Conversation.isChannel`. A room that has lost members is
@@ -215,8 +306,17 @@ struct Sidebar: View {
         }
         Divider()
         Button("Clear Messages") { store.clearMessages(in: conversation.id) }
-        Button(Store.isRoom(conversation) ? "Delete Channel" : "Delete Bot", role: .destructive) {
-            pendingDeletion = conversation
+        // Right-clicking inside a multi-selection acts on the whole selection, which is what
+        // every macOS list does. Right-clicking a row *outside* it acts on that row alone.
+        if selected.count > 1, selected.contains(conversation.id) {
+            Button("Delete \(selected.count) Items", role: .destructive) {
+                askToDeleteSelection()
+            }
+        } else {
+            Button(Store.isRoom(conversation) ? "Delete Channel" : "Delete Bot",
+                   role: .destructive) {
+                pendingDeletion = DeletionRequest(conversations: [conversation])
+            }
         }
     }
 

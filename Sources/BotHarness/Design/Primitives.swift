@@ -560,17 +560,23 @@ public struct ReadingColumn<Content: View>: View {
 
     public var body: some View {
         HStack(spacing: 0) {
+            // A spacer on *both* sides. With only a trailing one the column was pinned to the
+            // leading edge, and every point the window gained past the measure became empty
+            // space on the right: measured at 1800pt wide, the transcript occupied 272–992 in a
+            // pane running to 1500, so a third of the conversation area was permanently blank on
+            // one side only. Apple's layout guidance asks for components aligned with one
+            // another; a column that drifts away from the centre of its own pane is the opposite.
+            Spacer(minLength: 0)
             VStack(alignment: alignment, spacing: 0) { content }
                 // A ceiling, not a width. `maxWidth` lets the column shrink with the pane and
                 // stop growing at a comfortable measure, which is the whole requirement.
                 .frame(maxWidth: maxWidth,
                        alignment: Alignment(horizontal: alignment, vertical: .center))
-            // Takes the slack on a wide window and gives it all back on a narrow one, so the
-            // column never has a width of its own to defend.
             Spacer(minLength: 0)
         }
-        .padding(.leading, DS.Space.xxl)
-        .padding(.trailing, DS.Space.lg)
+        // Symmetric, because the column is now symmetric. Asymmetric padding under a centred
+        // column shifts it off-centre by half the difference.
+        .padding(.horizontal, DS.Space.xxl)
     }
 }
 

@@ -83,15 +83,17 @@ struct ConversationView: View {
     /// a permanent divider under a header is a line the design does not need at rest.
     private var header: some View {
         VStack(spacing: 0) {
-            // Full pane width, not a reading column.
+            // The same reading column as the transcript, so the title sits directly above the
+            // first message and the buttons end where the messages end.
             //
-            // A reading column caps its content at a comfortable measure for prose and lets the
-            // slack fall to its trailing side — which is right for messages and wrong for a
-            // toolbar. Wrapped in one, the settings and panel buttons sat at the right edge of
-            // the *text column*, several hundred points short of the pane they belong to, and
-            // read as icons dropped in the middle of empty space. The leading padding matches
-            // `ReadingColumn`'s so the title still lines up with the messages beneath it.
-            Group {
+            // This was full-pane width for a real reason, recorded here because the reason has
+            // since expired: back when `ReadingColumn` pinned its content to the leading edge,
+            // wrapping the header in one left the settings and panel buttons stranded in the
+            // middle of the pane with several hundred points of nothing to their right. Now that
+            // the column centres, its right edge *is* where the content ends, so the buttons
+            // land on the content's own margin instead of floating in the void — and the title
+            // stops drifting away from the messages it names.
+            ReadingColumn {
                 HStack(spacing: DS.Space.md) {
                     if let conversation, conversation.isChannel {
                         channelIdentity(conversation)
@@ -131,8 +133,6 @@ struct ConversationView: View {
                     }
                 }
                 .frame(height: DS.Size.titlebar)
-                .padding(.leading, DS.Space.xxl)
-                .padding(.trailing, DS.Space.lg)
             }
             if scrolled { Hairline() }
         }

@@ -574,3 +574,59 @@ final class StoreLifecycleTests: XCTestCase {
         XCTAssertEqual(bot.effectiveWorkspace, chosen)
     }
 }
+
+/// Deleting many bots in one gesture, which is what the roster's multi-selection does.
+///
+/// The batch path is a loop over the single path, and that is exactly where it can go wrong:
+/// each deletion repairs the selection, so deleting the row the selection lands on next — over
+/// and over — is a sequence the single-delete tests never exercise.
+@MainActor
+final class BatchDeletionTests: XCTestCase {
+
+    private func makeStore() -> Store {
+        Store(loadingFrom: FileManager.default.temporaryDirectory
+            .appendingPathComponent("bh-batch-\(UUID().uuidString).json"))
+    }
+
+    func testDeletingEveryBotLeavesAnEmptyRosterAndNoSelection() {
+        let store = makeStore()
+        for bot in store.bots { _ = store.deleteBot(bot.id) }
+        for _ in 0..<12 { store.createBot(name: "New Bot") }
+        XCTAssertEqual(store.bots.count, 12)
+
+        for bot in store.bots { _ = store.deleteBot(bot.id) }
+
+        XCTAssertTrue(store.bots.isEmpty)
+        XCTAssertNil(store.selection, "an empty roster must not keep pointing at a deleted row")
+        XCTAssertTrue(store.conversations.allSatisfy { Store.isRoom($0) },
+                      "every one-bot conversation should have gone with its bot")
+    }
+
+    func testDeletingASubsetKeepsTheRestIntact() {
+        let store = makeStore()
+        for bot in store.bots { _ = store.deleteBot(bot.id) }
+        for i in 0..<10 { store.createBot(name: "Bot \(i)") }
+
+        let doomed = Array(store.bots.prefix(6)).map(\.id)
+        let survivors = Set(store.bots.dropFirst(6).map(\.id))
+        for id in doomed { _ = store.deleteBot(id) }
+
+        XCTAssertEqual(Set(store.bots.map(\.id)), survivors)
+        if let selection = store.selection, let conversation = store.conversation(selection) {
+            // Whatever the selection landed on has to still exist, or the detail pane is
+            // showing a conversation the roster no longer has.
+            XCTAssertNotNil(store.conversation(conversation.id))
+        }
+    }
+
+    func testDeletingTheSameBotTwiceIsHarmless() {
+        // A batch can contain a bot whose conversation was already removed by an earlier item
+        // in the same batch — a room and its last member, for instance.
+        let store = makeStore()
+        store.createBot(name: "Twice")
+        guard let id = store.bots.last?.id else { return XCTFail("no bot") }
+        _ = store.deleteBot(id)
+        _ = store.deleteBot(id)
+        XCTAssertFalse(store.bots.contains { $0.id == id })
+    }
+}

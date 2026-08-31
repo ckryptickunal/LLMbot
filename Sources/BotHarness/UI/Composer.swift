@@ -234,7 +234,6 @@ struct Composer: View {
             }
             Spacer()
         }
-        .padding(.horizontal, DS.Space.xs)
     }
 
     // MARK: Actions

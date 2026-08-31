@@ -79,6 +79,17 @@ struct BotHarnessApp: App {
 
                 Button("New Channel…") { ui.newChannel() }
                     .keyboardShortcut("n", modifiers: [.command, .shift])
+
+                Divider()
+
+                // Labelled by what is actually selected, and disabled when nothing is. A menu
+                // item reading "Delete Bot" while forty are selected is a small lie, and menus
+                // are the one part of a Mac app people expect to be able to trust literally.
+                Button(ui.selectionCount > 1 ? "Delete \(ui.selectionCount) Items…" : "Delete Bot…") {
+                    ui.deleteSelection()
+                }
+                .keyboardShortcut(.delete, modifiers: .command)
+                .disabled(ui.selectionCount == 0)
             }
 
             // Lost in the same parallel edit as the group above, and worth naming separately

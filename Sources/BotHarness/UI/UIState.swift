@@ -52,10 +52,20 @@ final class UIState {
     /// sheet that needs to name it and pick members, and that sheet lives in the roster — so the
     /// menu raises a signal rather than trying to reach into the roster's own state.
     var newChannelRequests = 0
+    /// Raised by the Delete Bots menu command. The roster owns the selection, and the menu bar
+    /// is built where the scene is, so the command asks rather than reaching in.
+    var deleteSelectionRequests = 0
 
     func focusComposer() { focusComposerRequests += 1 }
     func focusSearch() { focusSearchRequests += 1 }
     func newChannel() { newChannelRequests += 1 }
+    func deleteSelection() { deleteSelectionRequests += 1 }
+
+    /// How many rows the roster has selected, published so the menu bar can label and disable
+    /// its delete command truthfully. A menu item that says "Delete Bot" while three are
+    /// selected, or that stays enabled with none, is the kind of small lie that teaches people
+    /// not to trust the menus.
+    var selectionCount = 0
 
     // MARK: Drafts
 
