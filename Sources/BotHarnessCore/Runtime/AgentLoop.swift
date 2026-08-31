@@ -73,7 +73,13 @@ public actor AgentLoop {
     private var callSignatures: [String: Int] = [:]
 
     /// Side effects that already happened, across runs. See `EffectLedger`.
-    private let effects = EffectLedger(root: Paths.root)
+    ///
+    /// Rooted at the trace's own directory rather than at `Paths.root`. Pointing it at the app's
+    /// real data directory meant the test suite and the eval harness wrote into the user's own
+    /// ledger — 178 entries of `/var/folders/…` temp paths were found there — which is both
+    /// pollution and a coupling hazard: an eval that reused a stable path would have had its
+    /// second run refused as "already completed".
+    private let effects: EffectLedger
 
     /// The bot's workspace, used as the default working directory for tools that need one.
     /// A GUI app's actual working directory is "/", so defaulting to that would silently point
@@ -150,6 +156,7 @@ public actor AgentLoop {
         self.shell = ShellExecutor(authority: contract.authority)
         self.computer = ComputerExecutor()
         self.git = GitExecutor(authority: contract.authority)
+        self.effects = EffectLedger(root: trace.tracesRoot)
     }
 
     /// Called by the UI when the user taps Allow or Deny on an approval card.

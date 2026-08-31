@@ -125,10 +125,23 @@ public struct GeminiAdapter: BrainAdapter {
 
     /// The Interactions API takes `input` as either a string or a list of content parts.
     /// A single user turn is sent as a plain string; anything richer becomes parts.
-    private func buildInput(_ request: BrainRequest) -> Any {
+    func buildInput(_ request: BrainRequest) -> Any {
         var parts: [[String: Any]] = []
         // When continuing, send only what is new — the server already has the history.
-        let turns = request.previousInteractionID == nil ? request.turns : request.turns.suffix(1).map { $0 }
+        //
+        // "New" is everything after the last assistant turn, not `suffix(1)`. A single model turn
+        // can return several function calls, and the loop appends one `.tool` turn per result —
+        // so taking only the last one silently dropped every result but one, and the model was
+        // left to reason about calls it never saw answered. The assistant turn is the boundary
+        // because it is the last thing the server itself produced.
+        let turns: [BrainTurn]
+        if request.previousInteractionID == nil {
+            turns = request.turns
+        } else if let boundary = request.turns.lastIndex(where: { $0.role == .assistant }) {
+            turns = Array(request.turns[request.turns.index(after: boundary)...])
+        } else {
+            turns = request.turns
+        }
 
         // Every part carries a type. Without it the API answers
         // "Provide a 'role' field (for Turn[]), or a 'type' field (for Step[])".

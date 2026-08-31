@@ -53,6 +53,11 @@ public actor TraceWriter {
     public let runID: String
     public let directory: URL
 
+    /// Where traces live. Exposed so anything else that must write beside them —
+    /// the effect ledger — lands in the same place, which is what keeps a test or an
+    /// eval from writing into the real user's data directory.
+    public let tracesRoot: URL
+
     private let steps: URL
     private var sequence: Int = 0
     private var handle: FileHandle?
@@ -97,6 +102,7 @@ public actor TraceWriter {
         let stamp = TraceWriter.stampFormatter.string(from: Date())
         let slug = String(UUID().uuidString.prefix(6)).lowercased()
         self.runID = "\(stamp)-\(slug)"
+        self.tracesRoot = root
         self.directory = root.appendingPathComponent(runID, isDirectory: true)
         self.steps = directory.appendingPathComponent("steps.jsonl")
 

@@ -129,6 +129,14 @@ Versioning follows [Semantic Versioning 2.0.0](https://semver.org/spec/v2.0.0.ht
 - **Repeated side effects are prevented across runs** (see docs/decisions/0016). If a run is
   stopped or crashes after sending something, asking again does not send it twice — and an action
   whose result was never confirmed is reported as uncertain rather than guessed either way.
+- **Bots cannot erase the record of what they already did.** The effect ledger now lives beside
+  the traces, which are on the write-deny list, instead of somewhere any bot could delete it.
+  This also stopped the test suite and the eval harness writing into your real ledger — 178
+  entries of temporary paths had accumulated there. The old file at
+  `~/Library/Application Support/Bot-Harness/effects.jsonl` is no longer read and can be deleted.
+- **A continuation no longer drops tool results.** When a model turn asked for several tools at
+  once, only the last result was sent back, so the model reasoned about calls it never saw
+  answered — which looks like forgetfulness and was data loss.
 - **A bot cannot save a "lesson" that widens what it is allowed to do**, and anything it learned
   from a page it read is marked unverified when recalled.
 
