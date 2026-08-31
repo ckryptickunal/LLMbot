@@ -51,3 +51,4 @@ in `CHANGELOG.md` instead.
 | [0016](0016-effects-are-recorded-before-they-happen.md) | Effects are recorded before they happen, and "uncertain" is a real answer | accepted | 2026-08-31 |
 | [0017](0017-the-trace-chain-is-keyed.md) | The trace chain is keyed, and the key lives beside the API keys | accepted | 2026-08-31 |
 | [0018](0018-the-browser-is-driven-through-applescript.md) | The browser is driven through AppleScript, not a debugging port | accepted | 2026-08-31 |
+| [0019](0019-the-claude-cli-is-a-model-not-an-agent.md) | The claude CLI is used as a model, not as an agent | accepted | 2026-08-31 |

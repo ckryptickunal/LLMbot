@@ -7,6 +7,7 @@ struct BotHarnessApp: App {
     @State private var store: Store
     @State private var runner: BotRunner
     @State private var ui = UIState()
+    @Environment(\.openWindow) private var openWindow
 
     init() {
         let store = Store()
@@ -74,6 +75,35 @@ struct BotHarnessApp: App {
 
                 Button("New Channel…") { ui.newChannel() }
                     .keyboardShortcut("n", modifiers: [.command, .shift])
+            }
+
+            // Lost in the same parallel edit as the group above, and worth naming separately
+            // because losing these is quieter: the wiring they drive still exists, so
+            // `UIState.focusSearch()` and `columns` sat here fully implemented with nothing
+            // able to reach them. A shortcut whose target is live but unreachable is the exact
+            // shape of dead code this audit set out to remove.
+            CommandGroup(after: .toolbar) {
+                Button("Show Roster") {
+                    ui.columns = .all
+                    ui.rosterClosedByWindow = false
+                }
+                .keyboardShortcut("1", modifiers: [.command, .option])
+
+                Button(ui.showPanel ? "Hide Panel" : "Show Panel") {
+                    ui.showPanel.toggle()
+                    ui.panelClosedByWindow = false
+                }
+                .keyboardShortcut("2", modifiers: [.command, .option])
+
+                Divider()
+
+                Button("Activity…") { openWindow(id: "activity") }
+                    .keyboardShortcut("0", modifiers: [.command, .shift])
+            }
+
+            CommandGroup(after: .textEditing) {
+                Button("Find in Conversations") { ui.focusSearch() }
+                    .keyboardShortcut("f", modifiers: .command)
             }
         }
     }

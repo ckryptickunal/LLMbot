@@ -116,6 +116,11 @@ Versioning follows [Semantic Versioning 2.0.0](https://semver.org/spec/v2.0.0.ht
   left to itself it is an agent with a shell and a file editor, and letting it act would route
   every action around this app's permission floor, path guard and trace.
 - **Brains that have no adapter say so.** Anthropic and OpenAI previously became Gemini silently.
+- **"Always allow" no longer grants the action to every bot you own.** Answering an approval card
+  in one bot's conversation wrote a rule that applied roster-wide, including to bots created
+  later, and nothing on screen said so. An allow is now scoped to the bot that asked; a "never"
+  stays global, because refusing an action is a statement about the action rather than about who
+  asked. Both buttons now say which they mean.
 - **Channels can be renamed**, like bots.
 - **Repeated side effects are prevented across runs** (see docs/decisions/0016). If a run is
   stopped or crashes after sending something, asking again does not send it twice — and an action

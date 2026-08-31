@@ -288,8 +288,11 @@ struct BrainChip: View {
                 option(.gemini(model: GeminiAdapter.cheapModel), "Gemini 3.5 Flash-Lite",
                        "Faster and cheaper")
             }
+            Section("Claude Code") {
+                option(.claudeCode, "Claude Code",
+                       "Your subscription, no key — cannot drive the screen")
+            }
             Section("Not wired up yet") {
-                option(.claudeCode, "Claude Code", "Subscription, no key — adapter not written")
                 option(.anthropic(model: "claude-opus-5"), "Claude Opus 5", "Adapter not written")
                 option(.openAI(model: "gpt-5"), "GPT-5", "Adapter not written")
             }
@@ -308,19 +311,36 @@ struct BrainChip: View {
         .help(helpText)
     }
 
-    private var fallingBack: Bool { BotRunner.isFallingBack(bot) }
-    private var hasKey: Bool { CredentialStore.has("gemini") }
-    private var warns: Bool { fallingBack || !hasKey }
+    /// Whether the brain this bot is actually set to can answer.
+    ///
+    /// Asks about the bot's own brain rather than about Gemini. It used to warn whenever no
+    /// Gemini key existed, so a bot set to Claude Code with a working subscription showed a
+    /// warning triangle for a key it does not need and would never use.
+    private var unavailable: Bool {
+        switch bot.brain {
+        case .gemini:              return !CredentialStore.has("gemini")
+        case .claudeCLI:           return ClaudeCLIAdapter.locateBinary() == nil
+        case .anthropic, .openAI:  return true
+        }
+    }
+
+    private var warns: Bool { unavailable }
 
     /// Says what will actually answer, not what is selected. A control that reports a state
     /// the system is not in is worse than one that admits the gap.
-    private var label: String {
-        fallingBack ? "\(bot.brain.shortName) → Gemini" : bot.brain.shortName
-    }
+    private var label: String { bot.brain.shortName }
 
     private var helpText: String {
-        if fallingBack { return "No adapter for this model yet — Gemini answers instead" }
-        return hasKey ? "Model" : "This model has no key yet"
+        switch bot.brain {
+        case .gemini:
+            return CredentialStore.has("gemini") ? "Model" : "This model has no key yet"
+        case .claudeCLI:
+            return ClaudeCLIAdapter.locateBinary() == nil
+                ? "The claude command line tool is not installed"
+                : "Your Claude Code subscription — cannot drive the screen"
+        case .anthropic, .openAI:
+            return "No adapter for this model yet — pick another brain"
+        }
     }
 
     private func option(_ brain: BrainSpec, _ title: String, _ detail: String) -> some View {

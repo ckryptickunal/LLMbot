@@ -162,7 +162,12 @@ public enum BrainSpec: Codable, Hashable {
 
     case openAI(model: String)
 
-    /// The default brain: the signed-in `claude` CLI, which needs no API key.
+    /// The signed-in `claude` CLI, which needs no API key.
+    ///
+    /// Not the default, despite what this comment said for a long time: `Bot.brain` defaults to
+    /// Gemini, and deliberately so — Gemini is the only brain that can drive the screen, keyboard
+    /// and mouse, which is what this product is for. Claude Code is the better coding brain and
+    /// costs nothing extra on a subscription, so it is worth choosing per bot.
     public static var claudeCode: BrainSpec { .claudeCLI(model: nil) }
 
     public var displayName: String {

@@ -381,10 +381,15 @@ private struct ApprovalCard: View {
                     // is not one.
                     HStack(spacing: DS.Space.md) {
                         PrimaryButton("Allow once") { answer(.allowedOnce) }
-                        SecondaryButton("Always allow") { answer(.allowedAlways) }
+                        // The two "always" answers have different reach, and the buttons now say
+                        // so. An allow is written against this bot; a never is written for every
+                        // bot, because "do not ever do this" is a statement about the action
+                        // rather than about who asked. The old code wrote both globally and said
+                        // neither, so allowing one thing once quietly granted it roster-wide.
+                        SecondaryButton("Always, for this bot") { answer(.allowedAlways) }
                         Spacer(minLength: DS.Space.sm)
                         SecondaryButton("Deny", role: .destructive) { answer(.denied) }
-                        SecondaryButton("Never", role: .destructive) { answer(.deniedAlways) }
+                        SecondaryButton("Never, for any bot", role: .destructive) { answer(.deniedAlways) }
                     }
                 }
             }

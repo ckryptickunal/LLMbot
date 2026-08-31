@@ -245,11 +245,31 @@ final class BotRunner {
             // "Always" writes a rule, so the user is not asked the same thing twice. Both
             // directions: "never allow this" is as much an answer as "always allow this", and
             // a system that can only be loosened is not a permission system.
+            //
+            // Scoped to the bot whose chat it was answered in, not to the whole roster. It used
+            // to call addGlobalRule, so allowing one action once inside one bot's conversation
+            // silently granted it to every bot the user owned — including ones created later. The
+            // button says "Always allow" beside a named bot's message, and nothing on screen
+            // suggested it meant "always, for everyone", so the widest possible reading was the
+            // one the code took. `Store.addRule(_:to:)` already existed for this and had no
+            // callers at all.
+            //
+            // A deny is a different case and stays global on purpose: the user saying "never do
+            // this" is a statement about the action, and narrowing it to one bot would mean the
+            // next bot asks them the same question again.
             if answer.writesRule {
-                store.addGlobalRule(PermissionRule(
+                let rule = PermissionRule(
                     whenBotWantsTo: request.summary,
                     behaviour: answer == .allowedAlways ? .allowAutomatically : .neverAllow,
-                    createdFromPrompt: true))
+                    createdFromPrompt: true)
+                if answer == .allowedAlways, let botID = conversation.participants.first {
+                    store.addRule(rule, to: botID)
+                } else {
+                    // A channel has several participants and no single owner for the grant, so a
+                    // rule written there stays global rather than being attributed to whichever
+                    // bot happens to be listed first.
+                    store.addGlobalRule(rule)
+                }
             }
         }
 
