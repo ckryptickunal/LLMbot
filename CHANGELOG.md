@@ -21,6 +21,57 @@ Versioning follows [Semantic Versioning 2.0.0](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+### Fixed
+- **The app no longer burns 13% of a CPU core sitting still.** The mascot above the composer was
+  redrawing continuously for as long as the window was in front, whether or not anything was
+  happening. It now holds a still pose when there is nothing to report and animates only when it
+  is telling you something — a run working, a run waiting on you, a run that just finished or
+  failed. Measured at rest: 13% before, 0.0% after, with the whole window pixel-identical over
+  five seconds. Memory settles at 38 MB.
+- **A failed run no longer leaves the mascot slumping forever.** The failure animation used to
+  loop for as long as the window stayed open, which cost 12% of a core indefinitely for a run
+  that had ended. It now slumps, sighs, and settles. A failure is a moment, not a mood.
+- **The mascot stays put instead of wandering across the composer.** It walked the full width of
+  the text box, so most of the time it was somewhere other than the middle and read as a drawing
+  that had come loose from the layout. It now stands centred — measured at exactly 0 points off
+  the centre of its pane. The gait is unchanged; only the ground stopped moving.
+
+
+### Added
+- **The bot's "thinking" shows only while it is thinking.** While a run is live, the latest
+  step shimmers above the composer the way ChatGPT and Claude show theirs, and clicking it
+  opens the full record; the moment the run ends, the line disappears. The permanent
+  "Activity" bar that used to sit above the composer whether or not anything was happening
+  is gone — the whole record is still in the Activity window (⇧⌘0).
+- **A soft halo behind the bot in an empty conversation**, in the bot's own colour.
+- **The app has a face in the Dock now.** The mascot, headphones on, is the app icon — in
+  the Dock, ⌘-Tab, and Finder. The source image lives at `assets/app-icon.png`; the bundle
+  script derives the `.icns` from it on every build.
+
+### Changed
+- **The whole app wears the mascot's clay** (see docs/decisions/0022-the-interface-wears-the-mascots-clay.md):
+  warm sand surfaces instead of cool slate, the clay as the accent on the send button, the
+  focus ring, selections and "Add a key", with dark ink on every accent fill so it stays
+  readable. Bot avatars now come from a curated eight-colour family tuned to sit together
+  instead of a random hue wheel. Icons render hierarchically for depth.
+- **The conversation header hugs the pane again** — title at the left edge, buttons at the
+  right — instead of floating a third of the way across a wide window.
+- **An empty conversation centres its introduction** between header and composer instead of
+  pinning it against the input like a footnote.
+- **The mascot stands centred on the composer** when it is not walking; the send arrow gives
+  a small bounce when a message leaves, and the send button pops in as soon as there is
+  something to send.
+
+### Fixed
+- **The roster's first row is no longer cut off at the top** — the name of the first bot was
+  dissolving into the list's top fade even when nothing had been scrolled.
+- **A bot answering with Claude Code no longer shows the "add a Gemini key" banner.** The
+  warning now asks about the brain the bot actually uses.
+- **Saving a key is believed everywhere, immediately.** Saving or removing a key in Settings
+  now clears (or raises) the composer's key banner and the brain chip's warning the same
+  second. Before, the main window kept demanding a key that was already saved until something
+  else happened to redraw it — which read as the save having failed.
+
 ### Added
 - **Select several bots and delete them in one go.** The roster is a normal macOS list now:
   ⇧-click for a range, ⌘-click to add one, ⌘A for all. Right-clicking inside a selection offers

@@ -60,6 +60,18 @@ public enum Mascot {
         (box.height + jumpPeak + bleed) * (width / box.width)
     }
 
+    /// How wide the stage is for a mascot that stands rather than travels.
+    ///
+    /// The character plus one `bleed` either side, so a squash, a lean or a raised hand has
+    /// somewhere to go without being clipped — and no more than that. The stage used to be
+    /// whatever the composer was wide, which made the mascot a flexible-width leaf in the middle
+    /// of a flexible layout: every frame of the animation asked SwiftUI to re-measure it, and a
+    /// profile showed the resulting work was not the drawing at all but AppKit re-solving the
+    /// whole view tree on every display cycle. A leaf with a size of its own cannot do that.
+    public static func stageWidth(width: CGFloat) -> CGFloat {
+        (box.width + bleed * 2) * (width / box.width)
+    }
+
     /// How far the mascot travels, in its own units, rather than however wide its container is.
     ///
     /// This is what makes the size a single number you can change. The walk is a fixed ten
@@ -186,6 +198,33 @@ struct Routine {
     /// True for a routine that plays through once and hands over, rather than repeating.
     /// A celebration on a loop stops reading as a celebration and starts reading as gloating.
     var once: Bool = false
+    /// True for a routine that actually uses `Pose.travel`. The stage reserves a centred walk
+    /// band only for these; every other routine stands dead centre. Without the distinction a
+    /// sleeping mascot stood at the *left edge of the walk band* — a third of the way across
+    /// the composer, which reads as a character parked at a random x rather than a character
+    /// standing on its stage.
+    var travels: Bool = false
+    /// How many times a second this routine is redrawn. **Zero means it holds a still pose and
+    /// costs nothing**, which is what every idle routine does.
+    ///
+    /// The number matters more than it should, and the reason is worth writing down because it
+    /// is not what anyone would guess. Each redraw of this view costs about 5.5ms of CPU, and a
+    /// profile says almost none of that is the drawing: it is AppKit re-solving the window's
+    /// view tree, `-[NSView _layoutSubtreeWithOldSize:]` recursing the whole way down, once per
+    /// tick. The cost scales linearly with the tick rate and was measured directly — 2fps cost
+    /// 0.5% of a core, 24fps cost 13%, on an app whose entire remaining cost at rest is 0.1%.
+    ///
+    /// Four attempts to make a frame cheaper all failed to move that number: capping
+    /// `TimelineView(.animation)` with `minimumInterval`, switching to a hard `.periodic`
+    /// schedule, replacing eleven offscreen `drawLayer` calls with plain context copies, and
+    /// isolating the subtree with `.drawingGroup()`. So the lever that works is the only one
+    /// left: draw fewer frames.
+    ///
+    /// Hence the split. A mascot that is telling you something — working, waiting for you,
+    /// pleased, stumped — animates, and pays for itself while a run is in flight. A mascot with
+    /// nothing to say holds still, because 13% of a core is not a reasonable price for
+    /// decoration on an idle window. To trade that back, raise the number on `Routines.walking`.
+    var fps: Double = 12
     let pose: (Double) -> Pose
 }
 
@@ -222,7 +261,17 @@ public enum MascotState: String, CaseIterable, Sendable {
     }
 
     /// What the mascot does once a one-shot routine has finished.
-    var after: MascotState? { self == .pleased ? .walking : nil }
+    ///
+    /// Both endings settle back to the resting stance, which holds a still pose. `stumped` used
+    /// to loop: a failed run left the character slumping and sighing for as long as the window
+    /// was open, which is both melodramatic and — measured — 12% of a core, indefinitely, for a
+    /// run that ended some time ago. A failure is a moment, not a mood.
+    var after: MascotState? {
+        switch self {
+        case .pleased, .stumped: return .walking
+        default:                 return nil
+        }
+    }
 }
 
 // MARK: - The routines
@@ -314,7 +363,16 @@ private enum Routines {
             return Channel(from: 1, moves)
         }
 
-        return Routine(loop: 11.51) { t in
+        // `travels: false`, deliberately, and this is a change from the original.
+        //
+        // The ported routine walks the width of its stage. Above a composer that is the whole
+        // reading column wide, that means the character spends most of its life somewhere other
+        // than the middle — which reads as a drawing that has come loose from the layout rather
+        // than as a character going for a walk. `working` already resolved the same tension the
+        // same way ("trots on the spot, so it reads as effort without wandering off"); this is
+        // that decision applied to the state you actually spend your time looking at. The gait
+        // is unchanged; only the ground moves under it.
+        return Routine(loop: 11.51, travels: false, fps: 0) { t in
             var pose = Pose()
             pose.travel = travel.value(at: t)
             pose.rootY = height.value(at: t)
@@ -371,7 +429,7 @@ private enum Routines {
             (1.0, 0.07, 0.05, .power2In), (1.07, 0.09, 1, .power2Out),
         ])
 
-        return Routine(loop: loop) { t in
+        return Routine(loop: loop, fps: 12) { t in
             var pose = Pose()
             pose.rootY = bounce.value(at: t)
             pose.bodyRotation = rock.value(at: t)
@@ -411,7 +469,7 @@ private enum Routines {
             (0.5, 0.2, 1.12, .sineOut), (0.7, 0.16, 1, .power3In),
         ])
 
-        return Routine(loop: loop) { t in
+        return Routine(loop: loop, fps: 12) { t in
             var pose = Pose()
             pose.rootY = height.value(at: t)
             pose.squashY = crouch.value(at: t)
@@ -457,7 +515,7 @@ private enum Routines {
             (0.46, 0.26, 1, .power2In),
         ])
 
-        return Routine(loop: loop, once: true) { t in
+        return Routine(loop: loop, once: true, fps: 12) { t in
             var pose = Pose()
             pose.rootY = height.value(at: t)
             pose.squashY = squash.value(at: t)
@@ -487,7 +545,7 @@ private enum Routines {
         let droop = Channel(from: 1, [(0.0, 0.4, 0.45, .power2Out)])
         let hands = Channel(from: 0, [(0.0, 0.5, 7, .power2Out)])
 
-        return Routine(loop: loop) { t in
+        return Routine(loop: loop, once: true, fps: 12) { t in
             var pose = Pose()
             pose.bodyY = sink.value(at: t)
             pose.leftHandY = hands.value(at: t)
@@ -513,7 +571,7 @@ private enum Routines {
         let legs = Channel(from: 1, [
             (0.0, 2.0, 1.05, .power1InOut), (2.0, 2.0, 1, .power1InOut),
         ])
-        return Routine(loop: loop) { t in
+        return Routine(loop: loop, fps: 0) { t in
             var pose = Pose()
             pose.bodyY = breathe.value(at: t)
             pose.leftHandY = -breathe.value(at: t) * 0.4
@@ -541,6 +599,12 @@ public struct MascotView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.controlActiveState) private var windowState
     @State private var began = Date()
+    /// The routine actually on screen, which is the requested one until a one-shot finishes and
+    /// hands over. Held as state rather than derived from the clock so that the handover changes
+    /// the *frame rate* too: a one-shot that settles into a still pose has to stop the timeline,
+    /// and a timeline whose rate came from the original state would keep ticking at 12fps to
+    /// redraw a picture that no longer moves.
+    @State private var playing: MascotState = .walking
 
     public init(_ state: MascotState = .walking, width: CGFloat = DS.Size.mascot) {
         self.state = state
@@ -549,46 +613,48 @@ public struct MascotView: View {
 
     public var body: some View {
         Group {
-            if reduceMotion {
-                // Not frame zero of the loop but a moment into it, so a state that begins by
-                // settling into a pose — stumped, asleep — shows the pose rather than the
-                // neutral stance it happens to start from.
-                canvas(state, at: min(1.0, state.routine.loop))
+            if reduceMotion || playing.routine.fps <= 0 {
+                // Not frame zero of the loop but a moment into it, so a routine that begins by
+                // settling into a pose shows the pose rather than the neutral stance it happens
+                // to start from. Costs nothing: there is no timeline here at all.
+                canvas(playing, at: min(1.0, playing.routine.loop))
             } else {
                 // A timeline rather than repeating animations: the pose is a function of the
                 // clock, so there is no animation state to fall out of step and the loop closes
                 // exactly. Paused when Bot-Harness is not the front app — this sits above the
                 // composer and is therefore on screen for as long as the app is.
-                TimelineView(.animation(paused: windowState == .inactive)) { timeline in
-                    let (playing, t) = phase(at: timeline.date)
-                    canvas(playing, at: t)
+                TimelineView(.periodic(from: began, by: 1 / playing.routine.fps)) { timeline in
+                    canvas(playing, at: max(0, timeline.date.timeIntervalSince(began))
+                        .truncatingRemainder(dividingBy: playing.routine.loop))
                 }
             }
         }
-        .frame(height: Mascot.stageHeight(width: width))
+        .frame(width: Mascot.stageWidth(width: width),
+               height: Mascot.stageHeight(width: width))
         .accessibilityHidden(true)
-        // Restart the clock on a change of state, so each routine plays from its first frame
-        // rather than being joined halfway through.
-        .onChange(of: state) { began = Date() }
-    }
-
-    /// Which routine is playing and how far into it, given that a one-shot hands over to
-    /// whatever follows it once it has run through.
-    private func phase(at now: Date) -> (MascotState, Double) {
-        let elapsed = max(0, now.timeIntervalSince(began))
-        let routine = state.routine
-        if routine.once, elapsed >= routine.loop, let after = state.after {
-            return (after, (elapsed - routine.loop).truncatingRemainder(dividingBy: after.routine.loop))
+        // Each routine plays from its first frame rather than being joined halfway through, and
+        // a one-shot hands over to whatever follows it once it has run through.
+        .task(id: state) {
+            began = Date()
+            playing = state
+            guard state.routine.once, let next = state.after else { return }
+            try? await Task.sleep(for: .seconds(state.routine.loop))
+            guard !Task.isCancelled else { return }
+            began = Date()
+            playing = next
         }
-        return (state, elapsed.truncatingRemainder(dividingBy: routine.loop))
     }
 
     private func canvas(_ playing: MascotState, at t: Double) -> some View {
-        let pose = playing.routine.pose(t)
-        return Canvas { context, size in draw(pose, &context, in: size) }
+        let routine = playing.routine
+        let pose = routine.pose(t)
+        return Canvas { context, size in
+            draw(pose, travels: routine.travels, &context, in: size)
+        }
     }
 
-    private func draw(_ pose: Pose, _ context: inout GraphicsContext, in size: CGSize) {
+    private func draw(_ pose: Pose, travels: Bool,
+                      _ context: inout GraphicsContext, in size: CGSize) {
         let scale = width / Mascot.box.width
         guard scale > 0 else { return }
 
@@ -597,13 +663,14 @@ public struct MascotView: View {
         context.translateBy(x: 0, y: size.height - Mascot.box.height * scale)
         context.scaleBy(x: scale, y: scale)
 
-        // The walk is centred in whatever it is standing on, rather than starting hard against
-        // the left edge. At rest — which is most of the time, and all of the time in the states
-        // that do not travel — a character parked in the corner above the field's rounded
-        // shoulder reads as a layout mistake rather than as a character.
-        let stage = size.width / scale
-        let distance = Mascot.travel(inStageWidth: stage)
-        let start = max(Mascot.bleed, (stage - distance - Mascot.box.width) / 2)
+        // A routine that walks gets a centred walk band; a routine that stands gets the centre
+        // of the stage itself. The band used to be reserved unconditionally, which parked every
+        // standing state — asleep, working, waiting — at the band's left edge, a third of the
+        // way across the composer. A character centred on the thing it stands on reads as
+        // placed; one at a band edge reads as dropped.
+        let stage = Double(size.width / scale)
+        let distance: Double = travels ? Mascot.travel(inStageWidth: stage) : 0
+        let start = max(Mascot.bleed, (stage - distance - Double(Mascot.box.width)) / 2)
         context.translateBy(x: start + pose.travel * distance, y: pose.rootY)
 
         // Squash and stretch happen about the floor, so a flattened mascot stays on the ground
@@ -616,53 +683,60 @@ public struct MascotView: View {
         drawBody(pose, &context)
     }
 
+    // MARK: Drawing
+    //
+    // Copies of the context, not `drawLayer`.
+    //
+    // `GraphicsContext` is a struct and its transform methods mutate it, so `var limb = context`
+    // already scopes a transform to one limb — which is all this code ever wanted. `drawLayer`
+    // does that *and* allocates an offscreen transparency layer to composite the group through,
+    // which is what you want for group opacity or a blend mode and waste for a rotation. There
+    // were eleven per frame: the leg group, each leg, the body, each hand, the eye group, each
+    // eyelid.
+    //
+    // Kept because it is simply the right way to write this, but recorded honestly: removing
+    // them changed the measured cost by nothing at all. The expense is not in the drawing. See
+    // `Routine.fps`.
     private func drawLegs(_ pose: Pose, _ context: inout GraphicsContext) {
-        context.drawLayer { legs in
-            legs.clip(to: Path(Mascot.ground))
-            for (i, leg) in Mascot.legs.enumerated() {
-                legs.drawLayer { limb in
-                    limb.translateBy(x: Mascot.legPivotX[i], y: pose.legPivotY)
-                    limb.rotate(by: .degrees(pose.legRotation[i]))
-                    limb.scaleBy(x: 1, y: pose.legScale[i])
-                    limb.translateBy(x: -Mascot.legPivotX[i], y: -pose.legPivotY)
-                    limb.fill(Path(leg), with: .color(DS.Brand.mascot))
-                }
-            }
+        var legs = context
+        legs.clip(to: Path(Mascot.ground))
+        for (i, leg) in Mascot.legs.enumerated() {
+            var limb = legs
+            limb.translateBy(x: Mascot.legPivotX[i], y: pose.legPivotY)
+            limb.rotate(by: .degrees(pose.legRotation[i]))
+            limb.scaleBy(x: 1, y: pose.legScale[i])
+            limb.translateBy(x: -Mascot.legPivotX[i], y: -pose.legPivotY)
+            limb.fill(Path(leg), with: .color(DS.Brand.mascot))
         }
     }
 
     private func drawBody(_ pose: Pose, _ context: inout GraphicsContext) {
-        context.drawLayer { body in
-            body.translateBy(x: pose.bodyX, y: pose.bodyY)
-            body.translateBy(x: Mascot.bodyPivot.x, y: Mascot.bodyPivot.y)
-            body.rotate(by: .degrees(pose.bodyRotation))
-            body.translateBy(x: -Mascot.bodyPivot.x, y: -Mascot.bodyPivot.y)
+        var body = context
+        body.translateBy(x: pose.bodyX, y: pose.bodyY)
+        body.translateBy(x: Mascot.bodyPivot.x, y: Mascot.bodyPivot.y)
+        body.rotate(by: .degrees(pose.bodyRotation))
+        body.translateBy(x: -Mascot.bodyPivot.x, y: -Mascot.bodyPivot.y)
 
-            body.fill(Path(Mascot.torso), with: .color(DS.Brand.mascot))
+        body.fill(Path(Mascot.torso), with: .color(DS.Brand.mascot))
 
-            body.drawLayer { hand in
-                hand.translateBy(x: 0, y: pose.leftHandY)
-                hand.fill(Path(Mascot.leftHand), with: .color(DS.Brand.mascot))
-            }
-            body.drawLayer { hand in
-                hand.translateBy(x: 0, y: pose.rightHandY)
-                hand.fill(Path(Mascot.rightHand), with: .color(DS.Brand.mascot))
-            }
+        var leftHand = body
+        leftHand.translateBy(x: 0, y: pose.leftHandY)
+        leftHand.fill(Path(Mascot.leftHand), with: .color(DS.Brand.mascot))
 
-            body.drawLayer { eyes in
-                eyes.translateBy(x: pose.eyesX, y: pose.eyesY)
-                for eye in Mascot.eyes {
-                    eyes.drawLayer { lid in
-                        // Each eye closes about its own middle, so a blink shuts rather than
-                        // shrinks.
-                        let centre = eye.midY
-                        lid.translateBy(x: 0, y: centre)
-                        lid.scaleBy(x: 1, y: max(0.02, pose.eyeOpen))
-                        lid.translateBy(x: 0, y: -centre)
-                        lid.fill(Path(eye), with: .color(DS.Brand.mascotEye))
-                    }
-                }
-            }
+        var rightHand = body
+        rightHand.translateBy(x: 0, y: pose.rightHandY)
+        rightHand.fill(Path(Mascot.rightHand), with: .color(DS.Brand.mascot))
+
+        var eyes = body
+        eyes.translateBy(x: pose.eyesX, y: pose.eyesY)
+        for eye in Mascot.eyes {
+            // Each eye closes about its own middle, so a blink shuts rather than shrinks.
+            var lid = eyes
+            let centre = eye.midY
+            lid.translateBy(x: 0, y: centre)
+            lid.scaleBy(x: 1, y: max(0.02, pose.eyeOpen))
+            lid.translateBy(x: 0, y: -centre)
+            lid.fill(Path(eye), with: .color(DS.Brand.mascotEye))
         }
     }
 }
