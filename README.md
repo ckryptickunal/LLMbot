@@ -88,8 +88,19 @@ dangerous. The mitigations are real but they are not magic:
 - **Natural-language rules** you write per bot, where *ask* always beats *allow* on conflict.
 - Content the agent reads from web pages, files and emails is treated as **data, never as
   instructions**. A page that tells a bot to do something does not get to.
-- **Every decision is written to disk** — every model call, tool call, approval and refusal —
-  so a run can be audited after the fact rather than taken on trust.
+- **Every bot is scoped to paths you choose**, and that scope applies to the terminal as well as
+  to the file tools. Both refuse to read or write outside it
+  ([ADR 0014](docs/decisions/0014-the-shell-honours-the-contract.md)).
+- **Every decision is written to disk** — every model call, tool call, approval and refusal — so a
+  run can be audited after the fact rather than taken on trust. The record is signed, so a bot
+  cannot quietly rewrite what it did
+  ([ADR 0017](docs/decisions/0017-the-trace-chain-is-keyed.md)).
+- **A stopped run stops**, and an action whose result was never confirmed is reported as uncertain
+  rather than silently repeated when you ask again
+  ([ADR 0016](docs/decisions/0016-effects-are-recorded-before-they-happen.md)).
+- **What a bot learns can never widen what it is allowed to do**, and anything it picked up from a
+  page it read is marked unverified when it recalls it
+  ([ADR 0015](docs/decisions/0015-memory-is-data-and-never-permission.md)).
 - API keys live in **one file only your account can read**
   (`~/Library/Application Support/Bot-Harness/credentials.json`, mode `0600`). They are never put
   in prompts, are redacted from traces before those are stored, and no bot can read the file —
