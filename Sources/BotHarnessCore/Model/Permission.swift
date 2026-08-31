@@ -167,6 +167,12 @@ public enum SafetyFloor: String, Codable, CaseIterable {
     /// Typing a password, API key, card number, or government ID into anything.
     case enteringCredentials
 
+    /// Sending data from this machine to another one — an upload, a copy to a remote host, a
+    /// socket. Separate from `runningUnreviewedCode`, which is the same tools pointed the other
+    /// way. This one is the exfiltration direction, and nothing watched it before: value
+    /// redaction cannot see a secret that leaves inside a request body.
+    case sendingDataOffTheMachine
+
     /// Reading the file this app keeps API keys in.
     ///
     /// Its own keys, specifically. A bot that can read them can spend the user's money on any
@@ -221,6 +227,7 @@ public enum SafetyFloor: String, Codable, CaseIterable {
         case .financialTransaction:          return "spends or moves money"
         case .enteringCredentials:           return "would enter a password or key"
         case .readingSecrets:                return "would read your stored API keys"
+        case .sendingDataOffTheMachine:      return "would send data to another machine"
         case .destructiveDelete:             return "deletes something outside the workspace"
         case .rewritingSharedHistory:        return "rewrites history other people depend on"
         case .sendingToNewRecipient:         return "sends a message to someone new"

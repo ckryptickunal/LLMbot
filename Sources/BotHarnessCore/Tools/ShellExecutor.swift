@@ -10,7 +10,112 @@ public actor ShellExecutor: CommandRunning {
 
     private var processes: [String: Running] = [:]
 
-    public init() {}
+    /// What this bot may touch. The shell used to have none, which meant the whole per-bot
+    /// readable/writable boundary evaporated the moment a bot ran `cat` instead of `files.read`.
+    private let authority: Authority
+
+    public init(authority: Authority = Authority()) { self.authority = authority }
+
+    // MARK: - Scope
+
+    /// Paths every bot may use regardless of its workspace, because refusing them refuses the
+    /// tooling itself rather than the bot's reach.
+    ///
+    /// `/tmp` and `TMPDIR` are here because compilers, package managers and `git` all stage work
+    /// there; the system prefixes are here because running `python3` or `node` at all means
+    /// reading them. This is an allowance for *machinery*, not for the user's data — nothing
+    /// under `~` is on it, and the deny floor is checked before it either way.
+    private static let systemReadable: [String] = [
+        "/usr/**", "/bin/**", "/sbin/**", "/opt/**", "/Library/**", "/System/**",
+        "/Applications/**", "/private/etc/**", "/etc/**", "/dev/**", "/proc/**",
+    ]
+    private static var scratchWritable: [String] {
+        ["/tmp/**", "/private/tmp/**", "/var/folders/**", "/private/var/folders/**",
+         "/dev/null", "/dev/stdout", "/dev/stderr",
+         NSTemporaryDirectory() + "**"]
+    }
+
+    /// Why a command was refused, or nil if it may run.
+    ///
+    /// Three separate questions, in order of how certain the answer is:
+    ///
+    /// 1. **The floor** — does anything in this command touch a path no bot may ever read? This
+    ///    is checked against parsed operands, against redirect targets, against the raw text (so
+    ///    `@$HOME/…` and other punctuation-wrapped forms are seen), and — for commands that copy
+    ///    or archive whole trees — against *containers* of a protected path, so `cp -r` of the
+    ///    parent directory is caught without ever naming the file.
+    /// 2. **Write scope** — does it write outside what the bot may write?
+    /// 3. **Read scope** — does it name an absolute path outside what the bot may read?
+    ///
+    /// What this is not: a sandbox. A path assembled at runtime (`P=$HOME; cat "$P/x"`) is
+    /// invisible to any amount of string work, and pretending otherwise would be the same
+    /// theatre the old guard was. Real containment needs the process to run under a profile that
+    /// cannot open the file at all; this is defence in depth in front of that, not a substitute.
+    func refusal(for command: String, cwd: String?) -> String? {
+        let parse = ShellCommandParser.parse(command)
+        let bulk = parse.commands.contains { Authority.bulkExecutables.contains($0.executable) }
+
+        // 1. The floor.
+        if let hit = Self.floorHit(parse, raw: command, bulk: bulk) {
+            return "`\(hit)` holds credentials, and no bot may read it. Nothing was run."
+        }
+
+        // 2. Writes.
+        for path in ShellFloor.pathsWrittenBy(parse) {
+            if let hit = PathGuard.denied(path, by: Authority.alwaysDeniedForWriting) {
+                return "`\(hit)` is the app's own record and must stay as written. Nothing was run."
+            }
+            if !Self.isWritable(path, authority: authority) {
+                return "this bot may only write inside its workspace, and `\(path)` is outside it. Nothing was run."
+            }
+        }
+
+        // 3. Reads. Only absolute paths are judged: a bare word is usually a pattern or a
+        //    workspace-relative name, and refusing those would refuse ordinary work.
+        for candidate in Self.namedPaths(parse) where candidate.hasPrefix("/") {
+            if !Self.isReadable(candidate, authority: authority) {
+                return "this bot may only read inside the paths you gave it, and `\(candidate)` is outside them. Nothing was run."
+            }
+        }
+        return nil
+    }
+
+    private static func floorHit(_ parse: ShellParse, raw: String, bulk: Bool) -> String? {
+        if let hit = ShellFloor.readsTheKeyStore(parse, raw: raw, bulk: bulk) { return hit }
+        return nil
+    }
+
+    private static func isReadable(_ path: String, authority: Authority) -> Bool {
+        if authority.readable.contains(where: { PathGuard.isInside(path, $0) }) { return true }
+        if authority.writable.contains(where: { PathGuard.isInside(path, $0) }) { return true }
+        if systemReadable.contains(where: { PathGuard.isInside(path, $0) }) { return true }
+        if scratchWritable.contains(where: { PathGuard.isInside(path, $0) }) { return true }
+        return false
+    }
+
+    private static func isWritable(_ path: String, authority: Authority) -> Bool {
+        if authority.writable.contains(where: { PathGuard.isInside(path, $0) }) { return true }
+        if scratchWritable.contains(where: { PathGuard.isInside(path, $0) }) { return true }
+        return false
+    }
+
+    /// Every operand and redirect target in the command, expanded. Flags, URLs and bare
+    /// non-path words are dropped — they are not paths and judging them produces false refusals.
+    static func namedPaths(_ parse: ShellParse) -> [String] {
+        var out: [String] = []
+        for command in parse.commands {
+            for argument in command.operands + command.redirects.map({ $0.target }) {
+                let value = argument.value
+                guard !value.isEmpty, !value.hasPrefix("-"), !value.contains("://") else { continue }
+                guard value.contains("/") || value.hasPrefix("~") || value.hasPrefix("$HOME") else { continue }
+                out.append(PathGuard.expand(value))
+            }
+        }
+        for redirect in parse.redirects where !redirect.target.value.isEmpty {
+            out.append(PathGuard.expand(redirect.target.value))
+        }
+        return out
+    }
 
     // MARK: - Secrets
 
@@ -38,9 +143,7 @@ public actor ShellExecutor: CommandRunning {
         case refused(String)
         public var errorDescription: String? {
             switch self {
-            case .refused(let pattern):
-                return "Refused: this command names \(pattern), which holds credentials and is "
-                     + "never readable by a bot. Nothing was started."
+            case .refused(let why): return "Refused: " + why
             }
         }
     }
@@ -107,17 +210,19 @@ public actor ShellExecutor: CommandRunning {
     }
 
     public func run(_ command: String, cwd: String?, timeout: TimeInterval) async -> CommandOutput {
-        if let pattern = Self.forbiddenPath(in: command) {
-            return CommandOutput(
-                exitCode: 126, stdout: "",
-                stderr: "Refused: this command names \(pattern), which holds credentials and is "
-                      + "never readable by a bot. Nothing was run.")
+        if let why = refusal(for: command, cwd: cwd) {
+            return CommandOutput(exitCode: 126, stdout: "", stderr: "Refused: " + why)
         }
 
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/bin/zsh")
-        process.arguments = ["-lc", command]
-        if let cwd { process.currentDirectoryURL = URL(fileURLWithPath: (cwd as NSString).expandingTildeInPath) }
+        // `-l` is deliberately gone. A login shell sources `.zprofile`/`.zshrc`, which on a
+        // developer's Mac exports API keys, tokens and cloud credentials into the environment —
+        // so `env` handed a bot every secret the user has, and no path guard was ever involved.
+        // `-c` keeps the user's PATH (inherited) without dumping their dotfile secrets.
+        process.arguments = ["-c", command]
+        process.environment = Self.sanitisedEnvironment()
+        if let cwd { process.currentDirectoryURL = URL(fileURLWithPath: PathGuard.expand(cwd)) }
 
         let out = Pipe(), err = Pipe()
         process.standardOutput = out
@@ -127,41 +232,133 @@ public actor ShellExecutor: CommandRunning {
             return CommandOutput(exitCode: 127, stdout: "", stderr: "could not start: \(error.localizedDescription)")
         }
 
-        // Read before waiting. A command that fills the 64KB pipe buffer while we wait for it
-        // to exit deadlocks — it blocks writing, we block waiting, neither moves.
-        let outData = try? out.fileHandleForReading.readToEnd()
-        let errData = try? err.fileHandleForReading.readToEnd()
+        // Drained on background threads rather than read to EOF on this one.
+        //
+        // The old code called `readToEnd()` before the timeout loop. That blocks until the pipe
+        // closes, which for anything long-lived means *never* — so the timeout below was dead
+        // code, `npm run dev` or `tail -f` hung the entire run forever, and the process was
+        // never reaped. Reading concurrently is also what keeps a chatty command from deadlocking
+        // on a full 64KB pipe buffer while we wait for it to exit.
+        let collector = OutputCollector()
+        out.fileHandleForReading.readabilityHandler = { handle in
+            let data = handle.availableData
+            if data.isEmpty { handle.readabilityHandler = nil } else { collector.appendOut(data) }
+        }
+        err.fileHandleForReading.readabilityHandler = { handle in
+            let data = handle.availableData
+            if data.isEmpty { handle.readabilityHandler = nil } else { collector.appendErr(data) }
+        }
 
         let deadline = Date().addingTimeInterval(timeout)
+        var cancelled = false
         while process.isRunning && Date() < deadline {
-            try? await Task.sleep(for: .milliseconds(50))
-        }
-        if process.isRunning {
-            process.terminate()
-            return guarded(CommandOutput(exitCode: 124,
-                                         stdout: string(outData),
-                                         stderr: "timed out after \(Int(timeout))s"))
+            if Task.isCancelled { cancelled = true; break }
+            try? await Task.sleep(for: .milliseconds(25))
         }
 
-        return guarded(CommandOutput(
-            exitCode: process.terminationStatus,
-            stdout: string(outData),
-            stderr: string(errData)
-        ))
+        let timedOut = process.isRunning && !cancelled
+        if process.isRunning {
+            // SIGTERM, a moment to exit cleanly, then SIGKILL. Terminating without the follow-up
+            // leaves anything that traps SIGTERM running after we have stopped watching it.
+            process.terminate()
+            let grace = Date().addingTimeInterval(2)
+            while process.isRunning && Date() < grace { try? await Task.sleep(for: .milliseconds(25)) }
+            if process.isRunning { Foundation.kill(process.processIdentifier, SIGKILL) }
+        }
+
+        out.fileHandleForReading.readabilityHandler = nil
+        err.fileHandleForReading.readabilityHandler = nil
+        try? out.fileHandleForReading.close()
+        try? err.fileHandleForReading.close()
+
+        if cancelled {
+            return guarded(CommandOutput(exitCode: 125, stdout: collector.stdout(),
+                                         stderr: "stopped"))
+        }
+        if timedOut {
+            return guarded(CommandOutput(exitCode: 124, stdout: collector.stdout(),
+                                         stderr: "timed out after \(Int(timeout))s"))
+        }
+        return guarded(CommandOutput(exitCode: process.terminationStatus,
+                                     stdout: collector.stdout(),
+                                     stderr: collector.stderr()))
+    }
+
+    /// The child's environment, with the user's own secrets removed.
+    ///
+    /// A developer's shell exports `OPENAI_API_KEY`, `AWS_SECRET_ACCESS_KEY`, `GITHUB_TOKEN` and
+    /// the rest. Those belong to the user, not to a bot, and `env` printed all of them. Anything
+    /// whose name looks like a credential is dropped; the redactor cannot help here because it
+    /// only knows the keys *this app* stores.
+    static func sanitisedEnvironment() -> [String: String] {
+        let markers = ["KEY", "TOKEN", "SECRET", "PASSWORD", "PASSWD", "CREDENTIAL",
+                       "AUTH", "SESSION", "COOKIE", "PRIVATE", "APIKEY", "ACCESS_KEY"]
+        var environment = ProcessInfo.processInfo.environment
+        for name in environment.keys {
+            let upper = name.uppercased()
+            if markers.contains(where: { upper.contains($0) }) { environment.removeValue(forKey: name) }
+        }
+        // Keep the shell usable.
+        environment["HOME"] = NSHomeDirectory()
+        return environment
+    }
+
+    /// Thread-safe accumulation for the two readability handlers, which fire off-actor.
+    final class OutputCollector: @unchecked Sendable {
+        private let lock = NSLock()
+        private var outData = Data(), errData = Data()
+        /// Bounded, so a runaway command cannot exhaust memory on a machine with 1.4 GB free.
+        private let cap = 4 * 1024 * 1024
+        private var truncated = false
+
+        func appendOut(_ d: Data) {
+            lock.lock(); defer { lock.unlock() }
+            if outData.count < cap { outData.append(d) } else { truncated = true }
+        }
+        func appendErr(_ d: Data) {
+            lock.lock(); defer { lock.unlock() }
+            if errData.count < cap { errData.append(d) } else { truncated = true }
+        }
+        func stdout() -> String {
+            lock.lock(); defer { lock.unlock() }
+            let text = String(data: outData, encoding: .utf8) ?? ""
+            return truncated ? text + "\n… output truncated at 4 MB" : text
+        }
+        func stderr() -> String {
+            lock.lock(); defer { lock.unlock() }
+            return String(data: errData, encoding: .utf8) ?? ""
+        }
     }
 
     // MARK: - Long-running
 
     /// Start something and keep working. Returns a handle to read from later.
     public func start(_ command: String, cwd: String?, name: String?) throws -> String {
-        if let pattern = Self.forbiddenPath(in: command) {
-            throw ShellError.refused(pattern)
+        if let why = refusal(for: command, cwd: cwd) { throw ShellError.refused(why) }
+
+        // A caller-supplied name that is already in use used to overwrite the map entry, which
+        // dropped the previous process's handle on the floor while it kept running — unreachable
+        // and unkillable for the rest of the session. Two `start`s named "dev" is not a strange
+        // thing for a model to do.
+        var handle = name ?? "proc-\(processes.count + 1)"
+        if let existing = processes[handle] {
+            if existing.isRunning {
+                throw ShellError.refused("a process called \"\(handle)\" is already running "
+                                       + "(\(existing.command)). Stop it first, or use another name.")
+            }
+            processes.removeValue(forKey: handle)
         }
-        let handle = name ?? "proc-\(processes.count + 1)"
+        // The generated form can collide too, once anything has been removed.
+        var suffix = processes.count + 1
+        while name == nil && processes[handle] != nil {
+            suffix += 1
+            handle = "proc-\(suffix)"
+        }
 
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/bin/zsh")
-        process.arguments = ["-lc", command]
+        process.arguments = ["-c", command]
+        process.environment = Self.sanitisedEnvironment()
         if let cwd { process.currentDirectoryURL = URL(fileURLWithPath: (cwd as NSString).expandingTildeInPath) }
 
         let out = Pipe(), err = Pipe()

@@ -367,9 +367,42 @@ public struct Authority: Codable, Hashable {
     public static let alwaysDenied: [String] = [
         "~/.ssh/**",
         "~/.aws/**",
+        "~/.gnupg/**",
+        "~/.netrc",
+        "~/.config/gh/**",
+        "~/.kube/config",
+        "~/.docker/config.json",
         "~/Library/Keychains/**",
+        "~/Library/Cookies/**",
         "~/Library/Application Support/Bot-Harness/credentials.json",
-        "~/Library/Application Support/Bot-Harness/credentials.json.tmp",
+        // The glob covers the app's own `credentials.json.tmp` and the `credentials.json.<rand>.tmp`
+        // files `scripts/set-key.sh` creates. Both are complete plaintext copies of every key, and
+        // a deny list can only protect what it can name — so the script was changed to use a
+        // predictable prefix rather than the list being changed to guess a random one.
+        "~/Library/Application Support/Bot-Harness/credentials.json.**",
+    ]
+
+    /// Paths no bot may ever *write*, though it may read them.
+    ///
+    /// Separate from `alwaysDenied` because the direction matters. A bot reading its own trace is
+    /// how it recovers from a mistake and is worth keeping; a bot *rewriting* its own trace makes
+    /// the record worthless.
+    ///
+    /// The chain is now keyed with an HMAC whose secret lives in the credential file, which is on
+    /// the read-deny list above — so a bot that edits a trace can no longer re-chain it to match,
+    /// and tampering is detected rather than merely inconvenienced. This ban is still worth
+    /// keeping: detecting destruction after the fact is not the same as preventing it, and a bot
+    /// that deletes its own record leaves nothing to verify.
+    public static let alwaysDeniedForWriting: [String] = [
+        "~/Library/Application Support/Bot-Harness/traces/**",
+        "~/Library/Application Support/Bot-Harness/state.json",
+    ]
+
+    /// Bulk commands widen a deny check to *containers* of a protected path, so archiving or
+    /// copying a whole tree cannot carry the keys out without ever naming them.
+    public static let bulkExecutables: Set<String> = [
+        "cp", "rsync", "ditto", "tar", "zip", "gzip", "gtar", "pax", "cpio",
+        "mv", "scp", "sftp", "rclone", "7z", "shutil",
     ]
 
     /// Named capabilities, e.g. "github.commit", "shell.exec", "browser.navigate".

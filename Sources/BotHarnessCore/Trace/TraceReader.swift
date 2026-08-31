@@ -19,13 +19,27 @@ public struct TraceReader: Sendable {
         public var startedAt: Date
         public var chain: TraceWriter.ChainStatus
 
+        /// How the chain was signed. `chain` alone cannot tell "intact" from "intact, but
+        /// written before there was anything to forge against", and presenting the second as
+        /// the first is the overstatement this field exists to prevent.
+        public var signing: TraceWriter.ChainReport.Signing
+        /// Whether `run.json` still carries the seal its writer put on it.
+        public var manifestSeal: TraceWriter.ManifestSeal
+
         /// Present when the run ended badly, so a list can show the reason without opening it.
         public var failureSummary: String?
     }
 
     public var root: URL
 
-    public init(root: URL = Paths.traces) { self.root = root }
+    /// Overrides the machine's chain key. Tests pass one so the suite never has to touch the
+    /// real credential file; the app leaves it nil and gets the key `TraceWriter` signed with.
+    public var chainKey: Data?
+
+    public init(root: URL = Paths.traces, chainKey: Data? = nil) {
+        self.root = root
+        self.chainKey = chainKey
+    }
 
     /// Every recorded run, newest first.
     public func runs(limit: Int = 100) -> [Run] {
@@ -42,17 +56,44 @@ public struct TraceReader: Sendable {
             let events = self.events(in: directory)
             let failure = events.last { $0.outcome == .failed || $0.kind == .runFinished && ($0.summary.hasPrefix("failed") || $0.summary.hasPrefix("escalated")) }
 
+            let report = TraceWriter.inspectChain(at: steps, chainKey: chainKey)
+            let seal = manifest.map { TraceWriter.verifyManifest($0, chainKey: chainKey) }
+                ?? TraceWriter.ManifestSeal.writtenBeforeSigning
+
             found.append(Run(
                 id: name,
                 directory: directory,
                 manifest: manifest,
                 stepCount: events.count,
                 startedAt: manifest?.startedAt ?? events.first?.at ?? Date.distantPast,
-                chain: TraceWriter.verifyChain(at: steps),
+                chain: chainStatus(report, seal: seal),
+                signing: report.signing,
+                manifestSeal: seal,
                 failureSummary: failure.map { $0.error ?? $0.summary }
             ))
         }
         return found.sorted { $0.startedAt > $1.startedAt }.prefix(limit).map { $0 }
+    }
+
+    /// Cross-check the two halves of the record against each other.
+    ///
+    /// The keyed chain closes the forgery a bare SHA-256 left open, but on its own it leaves one
+    /// move: strip the algorithm marker from every record, re-link the file with the public
+    /// SHA-256, and it reads as a trace from before signing existed — unremarkable rather than
+    /// altered. The manifest is what catches that. Its seal cannot be forged without the key, so
+    /// a run whose `run.json` still says "this was signed" while its steps claim to predate
+    /// signing has had its steps rewritten, and this is the only place that sees both facts at
+    /// once. Nothing stops the same attacker deleting `run.json` outright — but a run with no
+    /// manifest is visibly incomplete, which is the point.
+    private func chainStatus(_ report: TraceWriter.ChainReport,
+                             seal: TraceWriter.ManifestSeal) -> TraceWriter.ChainStatus {
+        if seal == .sealed, report.signing == .writtenBeforeSigning {
+            return .brokenAt(line: 1, reason: "re-written without the signature this run was sealed with")
+        }
+        if seal == .altered, case .intact = report.status {
+            return .brokenAt(line: 0, reason: "the run manifest no longer matches its seal")
+        }
+        return report.status
     }
 
     public func readManifest(_ directory: URL) -> TraceWriter.RunManifest? {

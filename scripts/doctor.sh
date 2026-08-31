@@ -45,16 +45,41 @@ else
 fi
 
 STORE="$HOME/Library/Application Support/Bot-Harness/credentials.json"
-if [[ -f "$STORE" ]] && grep -q '"gemini"' "$STORE" 2>/dev/null; then
-  ok "Gemini API key present ($STORE)"
-  MODE=$(stat -f "%OLp" "$STORE")
-  if [[ "$MODE" == "600" ]]; then
-    ok "credentials file is owner-only (mode $MODE)"
+STORE_DIR="${STORE:h}"
+
+# The rule the app applies, character for character: no group bits and no other bits, rather
+# than exactly 600. A 0400 file is stricter than we ask for, not broken, and doctor disagreeing
+# with CredentialStore.permissionsAreCorrect() about the word "correct" is how someone ends up
+# chmod-ing a stricter mode back to a looser one because a check told them to.
+owner_only() { (( ( 8#$(stat -f "%OLp" "$1") & 8#077 ) == 0 )) }
+
+if [[ -f "$STORE" ]]; then
+  if grep -q '"gemini"' "$STORE" 2>/dev/null; then
+    ok "Gemini API key present ($STORE)"
   else
-    warn "credentials file is mode $MODE, not 600 — fix with: chmod 600 \"$STORE\""
+    warn "no Gemini key — add it in the app (Cmd-,), or: scripts/set-key.sh gemini"
+  fi
+
+  if owner_only "$STORE"; then
+    ok "credentials file is owner-only (mode $(stat -f "%OLp" "$STORE"))"
+  else
+    warn "credentials file is mode $(stat -f "%OLp" "$STORE") — other accounts on this Mac can read your keys; fix with: chmod 600 \"$STORE\""
+  fi
+
+  if owner_only "$STORE_DIR"; then
+    ok "credentials folder is owner-only (mode $(stat -f "%OLp" "$STORE_DIR"))"
+  else
+    warn "credentials folder is mode $(stat -f "%OLp" "$STORE_DIR") — fix with: chmod 700 \"$STORE_DIR\""
   fi
 else
   warn "no Gemini key — add it in the app (Cmd-,), or: scripts/set-key.sh gemini"
+fi
+
+# A temporary left behind by a save that was killed is a second plaintext copy of every key,
+# which nothing rewrites and nobody would think to look for. The app reports it in Settings; this
+# catches the case where the app is not the thing running.
+if [[ -e "$STORE.tmp" ]]; then
+  warn "$STORE.tmp was left by an interrupted save and holds a copy of every key — remove it: rm \"$STORE.tmp\""
 fi
 
 print -P "\n%Boptional sidecars%b"

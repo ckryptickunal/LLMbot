@@ -22,6 +22,40 @@ import CryptoKit
 /// **Not photographing ourselves.** A capture that includes Bot-Harness' own window shows the
 /// agent a picture of itself deciding what to do, which is both wasteful and genuinely
 /// confusing to a model. `SCContentFilter` excludes this application.
+/// There is one Mac, so there is one of these that matters at a time.
+///
+/// `BotRunner` keeps a dictionary of concurrent runs and each one builds its own
+/// `ComputerExecutor`, but every executor posts to the same physical HID event tap and screenshots
+/// the same display. Two bots clicking at once do not each get their own desktop; they get one
+/// desktop with two sets of clicks interleaved into it, which is not slow or racy so much as
+/// nonsense — a click from bot A lands in a window bot B just brought forward.
+///
+/// This serialises the *use of the machine* so that a bot's look-decide-act sequence is not cut in
+/// half by another bot's. It deliberately does not try to be fair or to queue for long: a bot that
+/// cannot get the screen right now is told so, and can carry on with work that does not need it.
+public actor MachineLock {
+    public static let shared = MachineLock()
+
+    private var holder: String?
+    private var waiters: [CheckedContinuation<Void, Never>] = []
+
+    /// Run `body` with exclusive use of the screen, keyboard and mouse.
+    public func withExclusiveUse<T: Sendable>(by owner: String,
+                                              _ body: @Sendable () async throws -> T) async rethrows -> T {
+        while holder != nil, holder != owner {
+            await withCheckedContinuation { waiters.append($0) }
+        }
+        holder = owner
+        defer {
+            holder = nil
+            // One at a time: waking every waiter at once would let them all decide the machine is
+            // free and start typing over each other, which is the problem this exists to stop.
+            if !waiters.isEmpty { waiters.removeFirst().resume() }
+        }
+        return try await body()
+    }
+}
+
 public actor ComputerExecutor {
 
     /// The normalised coordinate space the model works in, per Gemini's documentation.
@@ -97,17 +131,41 @@ public actor ComputerExecutor {
 
     // MARK: - Observation
 
-    /// Capture the screen, excluding our own window.
+    /// Applications whose windows are never captured, whatever is on screen.
+    ///
+    /// A screenshot is the one channel in this app that no redactor can touch. Everything else a
+    /// bot reads is text, and text can be scrubbed for a known key value on its way to the trace
+    /// and to the model. Pixels cannot: a password manager window, a Keychain Access row or a
+    /// terminal with a token echoed in it is captured verbatim, written to the trace as a PNG,
+    /// and base64'd to a third-party model provider.
+    ///
+    /// Excluding these applications is not a complete answer — anything can be on screen — but it
+    /// removes the cases where the secret is the entire point of the window. The rest of the
+    /// answer is the capture toggle in Settings and the fact that the user sees every screenshot
+    /// in the transcript, which is what makes the exposure visible rather than silent.
+    private static let neverCaptured: Set<String> = [
+        "com.apple.keychainaccess",
+        "com.agilebits.onepassword7", "com.agilebits.onepassword", "com.1password.1password",
+        "com.bitwarden.desktop", "com.dashlane.Dashlane", "in.sinew.Enpass-Desktop",
+        "org.keepassxc.keepassxc", "com.lastpass.LastPass",
+        "com.apple.Passwords", "com.apple.systempreferences",
+    ]
+
+    /// Capture the screen, excluding our own window and anything holding a secret.
     public func screenshot(scaleTo maxWidth: Int = 1280) async throws -> Data {
         let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true)
         guard let display = content.displays.first else {
             throw ExecutorError.noDisplay
         }
 
-        let ourselves = content.applications.filter {
+        // Our own window is excluded because a screenshot of the app showing the last screenshot
+        // is a hall of mirrors; the credential apps are excluded because the image cannot be
+        // redacted afterwards.
+        let excluded = content.applications.filter {
             $0.bundleIdentifier == Bundle.main.bundleIdentifier
+                || Self.neverCaptured.contains($0.bundleIdentifier.lowercased())
         }
-        let filter = SCContentFilter(display: display, excludingApplications: ourselves, exceptingWindows: [])
+        let filter = SCContentFilter(display: display, excludingApplications: excluded, exceptingWindows: [])
 
         let config = SCStreamConfiguration()
         // Downscale at capture time rather than after. A full Retina frame is ~3600 px wide

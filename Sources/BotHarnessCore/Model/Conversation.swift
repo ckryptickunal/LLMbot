@@ -38,6 +38,20 @@ public struct Conversation: Identifiable, Codable, Hashable {
     /// stop two of them talking to each other forever. See `ChannelPolicy`.
     public var channelPolicy: ChannelPolicy = ChannelPolicy()
 
+    /// When the user last had this conversation open.
+    ///
+    /// Optional on purpose, in two senses: it is absent from every state file written before
+    /// this existed, and a conversation that has never been read is a real state rather than a
+    /// missing value. Drives the roster's unread mark — without it, a bot that answered while
+    /// you were reading a different one leaves no trace at all in the list.
+    public var lastReadAt: Date?
+
+    /// True when something has happened here since the user last looked.
+    public var isUnread: Bool {
+        guard let lastReadAt else { return !messages.isEmpty }
+        return lastActivity > lastReadAt
+    }
+
     public var isChannel: Bool { participants.count > 1 }
 }
 
@@ -184,6 +198,19 @@ public struct ToolActivity: Identifiable, Codable, Hashable {
 
     public enum Status: String, Codable, Hashable {
         case running, done, failed, refused, waitingForApproval
+
+        /// The app stopped while this was running, so nobody knows how it ended.
+        ///
+        /// Distinct from `failed` on purpose: a failure is a result, and this is the absence
+        /// of one. A card that still says "Running" after a relaunch asserts that work is
+        /// happening when the process that was doing it no longer exists.
+        case interrupted
+    }
+
+    /// True for a status that can still change on its own. Used to sweep work whose process
+    /// died — see `Store.reconcileInterruptedWork`.
+    public var isOpen: Bool {
+        status == .running || status == .waitingForApproval
     }
 }
 
@@ -255,6 +282,15 @@ public struct ApprovalRequest: Identifiable, Codable, Hashable {
         case allowedOnce
         case allowedAlways   // also writes a PermissionRule
         case denied
-        case deniedAlways
+        case deniedAlways    // also writes a PermissionRule
+        /// The run that asked this is gone, so the question can no longer be answered.
+        /// Recorded rather than deleted: the record of what was asked survives either way.
+        case expired
+
+        /// Whether answering this way permitted the action.
+        public var permitted: Bool { self == .allowedOnce || self == .allowedAlways }
+
+        /// Whether answering this way should also write a standing rule.
+        public var writesRule: Bool { self == .allowedAlways || self == .deniedAlways }
     }
 }

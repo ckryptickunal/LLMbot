@@ -4,18 +4,36 @@ import SwiftUI
 /// The roster.
 ///
 /// Rows are bots and channels, ordered by most recent activity. Each carries identity (avatar,
-/// name) and just enough of the last message to know whether it needs you — which is what
-/// makes a list of agents feel like a list of colleagues rather than a list of jobs.
+/// name), just enough of the last message to know whether it needs you, and — the part that was
+/// missing — a mark when it *does* need you.
+///
+/// **A `List` with a selection binding, not a stack of tap gestures.** That one choice supplies
+/// arrow-key navigation, type-to-select, a real focus ring, VoiceOver rows that announce
+/// themselves as selectable, working context menus, and the system's own selection material.
+/// The hand-rolled version had none of those, and painted its selection with an opaque fill
+/// that flattened the sidebar's vibrancy — the exact thing the design tokens forbid.
 struct Sidebar: View {
     @Environment(Store.self) private var store
+    @Environment(BotRunner.self) private var runner
     @Environment(UIState.self) private var ui
     @Environment(\.openWindow) private var openWindow
 
     @State private var query = ""
     @State private var library: LibrarySheet.Tab?
     @State private var accountOpen = false
+    @State private var createOpen = false
+    @State private var makingChannel = false
+    @State private var renaming: RenameTarget?
+    @State private var renameText = ""
+    @State private var pendingDeletion: Conversation?
+    /// Both are conditions the user cannot change from inside this app, so they are read when
+    /// the window comes back to the front rather than held as a live subscription.
+    @State private var keyFileIsExposed = false
+    @State private var computerGrants = ComputerExecutor.permissions
+    @FocusState private var searchFocused: Bool
 
     var body: some View {
+        @Bindable var store = store
         VStack(spacing: 0) {
             header
             search
@@ -26,26 +44,22 @@ struct Sidebar: View {
                     title: query.isEmpty ? "No bots yet" : "Nothing matches",
                     message: query.isEmpty
                         ? "Make one and tell it what you want done."
-                        : "Try a different word.",
-                    actionTitle: query.isEmpty ? "New bot" : nil,
-                    action: query.isEmpty ? { store.createBot(name: "New Bot") } : nil
+                        : "Try a different word, or clear the search.",
+                    actionTitle: query.isEmpty ? "New bot" : "Clear search",
+                    action: query.isEmpty ? { newBot() } : { query = "" }
                 )
                 .padding(.horizontal, DS.Space.lg)
                 Spacer()
             } else {
-                ScrollView {
-                    LazyVStack(spacing: DS.Space.hair) {
-                        // Deliberately not staggered. This list re-renders on every search
-                        // keystroke and every window resize, and an entrance animation on a
-                        // list that re-renders is an animation that hides content.
-                        ForEach(filtered) { conversation in
-                            SidebarRow(conversation: conversation)
-                                .onTapGesture { store.selection = conversation.id }
-                        }
+                List(selection: $store.selection) {
+                    ForEach(filtered) { conversation in
+                        SidebarRow(conversation: conversation, matching: query)
+                            .tag(conversation.id)
+                            .contextMenu { menu(for: conversation) }
                     }
-                    .padding(.horizontal, DS.Space.md)
-                    .padding(.top, DS.Space.xs)
                 }
+                .listStyle(.sidebar)
+                .scrollContentBackground(.hidden)
             }
 
             footer
@@ -53,19 +67,203 @@ struct Sidebar: View {
         // No background: the roster is the functional layer and inherits the window's
         // material, which is what makes it read as a native sidebar.
         .sheet(item: $library) { LibrarySheet(tab: $0) }
+        // Attached to the roster rather than to the popover that offers it: a sheet presented
+        // from inside a popover's own view tree races the popover's dismissal and sometimes
+        // never appears.
+        // The store is handed over explicitly rather than left to be inherited. A sheet is
+        // presented from a different part of the view hierarchy, and `@Environment(Store.self)`
+        // traps rather than degrades if it is not there — the same reason the Settings scene
+        // passes it in by hand.
+        .sheet(isPresented: $makingChannel) { NewChannelSheet().environment(store) }
+        // ⇧⌘N raises a counter rather than reaching into this view's state, because the menu bar
+        // is built where the scene is and the sheet belongs to the roster.
+        .onChange(of: ui.newChannelRequests) { makingChannel = true }
+        .onChange(of: ui.focusSearchRequests) { searchFocused = true }
+        // Opening a conversation is what marks it read. Doing it on selection rather than on
+        // scroll means the mark means "you looked at this", which is what a person expects.
+        .onChange(of: store.selection, initial: true) { _, id in
+            if let id { store.markRead(id) }
+        }
+        .confirmationDialog(
+            deletionTitle,
+            isPresented: Binding(get: { pendingDeletion != nil },
+                                 set: { if !$0 { pendingDeletion = nil } }),
+            presenting: pendingDeletion
+        ) { conversation in
+            Button("Delete", role: .destructive) { confirmDelete(conversation) }
+            Button("Cancel", role: .cancel) { pendingDeletion = nil }
+        } message: { conversation in
+            Text("This removes \(title(for: conversation)) and everything it has done. "
+               + "The trace of its past runs stays on disk. This cannot be undone.")
+        }
+        // Rename is an alert rather than an inline editable row on purpose: a list row that
+        // becomes a text field on a second click is the pattern Finder uses for files, and it
+        // fights arrow-key navigation in a list that also uses a selection binding.
+        //
+        // One alert for both kinds of row. Which object the name is stored on is this app's
+        // business, not the user's, so the item, the field and the buttons are the same either
+        // way and only the sentence underneath differs — because the promises differ.
+        .alert("Rename", isPresented: Binding(get: { renaming != nil },
+                                              set: { if !$0 { renaming = nil } }),
+               presenting: renaming) { target in
+            TextField("Name", text: $renameText)
+            Button("Rename") { commitRename(target) }
+            Button("Cancel", role: .cancel) { renaming = nil }
+        } message: { target in
+            Text(target.explanation)
+        }
     }
+
+    private var deletionTitle: String {
+        pendingDeletion.map { "Delete \(title(for: $0))?" } ?? "Delete?"
+    }
+
+    // MARK: Actions
+
+    private func newBot() {
+        store.createBot(name: "New Bot")
+        ui.focusComposer()
+    }
+
+    /// `menuItem` has already closed the popover by the time this runs, and the sheet hangs off
+    /// the roster rather than off the popover, so there is nothing here to sequence.
+    private func newChannel() {
+        makingChannel = true
+    }
+
+    /// Both kinds of row commit through the store, which owns the trimming, the refusal of a
+    /// blank name and — for a bot — the flag that stops it renaming itself back.
+    ///
+    /// None of that lives here on purpose: the test bundle links `BotHarnessCore` and not this
+    /// target, so a rule written in the view could only be checked by copying it into a test,
+    /// where it would go stale the first time one of the two paths changed.
+    private func commitRename(_ target: RenameTarget) {
+        let typed = renameText
+        renaming = nil
+        switch target {
+        case .bot(let bot):          store.renameBot(bot.id, to: typed)
+        case .room(let conversation): store.renameConversation(conversation.id, to: typed)
+        }
+    }
+
+    private func refreshStandingConditions() {
+        keyFileIsExposed = !CredentialStore.permissionsAreCorrect()
+        computerGrants = ComputerExecutor.permissions
+    }
+
+    private var computerConsentIsIncomplete: Bool {
+        !computerGrants.screenRecording || !computerGrants.accessibility
+    }
+
+    /// Stop the work before removing the thing it was working on.
+    ///
+    /// A loop left running against a deleted conversation writes into nothing, holds an
+    /// approval nobody can answer, and never stops. The runner is told first, then the store.
+    private func confirmDelete(_ conversation: Conversation) {
+        pendingDeletion = nil
+        runner.discard([conversation.id])
+        ui.discardDrafts(for: [conversation.id])
+        // `Store.isRoom` rather than `Conversation.isChannel`. A room that has lost members is
+        // down to one participant, and by the participant count it looks exactly like that
+        // bot's own chat — so this branch used to delete the bot, and the bot's separate
+        // thread, when the user asked to delete a room.
+        if let botID = conversation.participants.first, !Store.isRoom(conversation) {
+            let orphaned = store.deleteBot(botID)
+            runner.discard(orphaned)
+            ui.discardDrafts(for: orphaned)
+        } else {
+            store.deleteConversation(conversation.id)
+        }
+    }
+
+    @ViewBuilder private func menu(for conversation: Conversation) -> some View {
+        Button("Open") { store.selection = conversation.id }
+        // Every row can be renamed now. A bot's name is a field on the bot and a room's is
+        // `Conversation.title`; the store writes both, so the item reads the same in both menus
+        // and the alert it opens is the same alert. A channel used to be nameable only at the
+        // moment it was made, which meant a channel named by mistake was named that for ever.
+        if Store.isRoom(conversation) {
+            Button("Rename…") {
+                renameText = conversation.title ?? ""
+                renaming = .room(conversation)
+            }
+            members(of: conversation)
+        } else if let bot = store.bot(conversation.participants.first) {
+            Button("Rename…") { renameText = bot.name; renaming = .bot(bot) }
+        }
+        if runner.isRunning(conversation.id) {
+            Button("Stop Run") { runner.stop(conversation.id) }
+        }
+        Divider()
+        Button("Clear Messages") { store.clearMessages(in: conversation.id) }
+        Button(Store.isRoom(conversation) ? "Delete Channel" : "Delete Bot", role: .destructive) {
+            pendingDeletion = conversation
+        }
+    }
+
+    /// Who is in the room, changeable after the room was made.
+    ///
+    /// A menu of checkmarks rather than a second sheet: the decision is one bot at a time, and
+    /// a sheet would have to repeat the ordering rule the new-channel sheet already explains.
+    /// The bot that answers is marked here for the same reason it is marked there — removing it
+    /// hands the room to whoever is next, and that belongs in front of the click rather than
+    /// being discovered afterwards.
+    @ViewBuilder private func members(of conversation: Conversation) -> some View {
+        Menu("Members") {
+            ForEach(store.bots) { bot in
+                let isMember = conversation.participants.contains(bot.id)
+                Toggle(isOn: Binding(
+                    get: { isMember },
+                    set: { wanted in
+                        if wanted {
+                            store.addParticipant(bot.id, to: conversation.id)
+                        } else {
+                            store.removeParticipant(bot.id, from: conversation.id)
+                        }
+                    }
+                )) {
+                    Text(conversation.participants.first == bot.id
+                         ? "\(bot.name) — answers here"
+                         : bot.name)
+                }
+                // The last member cannot be removed: a room with nobody in it can never answer
+                // and there is nothing left to do with it but delete it. Disabled rather than
+                // silently refused on click, because a control that does nothing is exactly the
+                // dead end this pass exists to remove.
+                .disabled(isMember && conversation.participants.count == 1)
+            }
+        }
+    }
+
+    // MARK: Filtering
 
     private var filtered: [Conversation] {
         let all = store.sortedConversations
-        guard !query.isEmpty else { return all }
-        return all.filter { conversation in
-            if title(for: conversation).localizedCaseInsensitiveContains(query) { return true }
-            return conversation.messages.contains { message in
-                if case .text(let text) = message.body {
-                    return text.localizedCaseInsensitiveContains(query)
-                }
-                return false
-            }
+        let trimmed = query.trimmingCharacters(in: .whitespaces)
+        guard !trimmed.isEmpty else { return all }
+        return all.filter { matches(trimmed, $0) }
+    }
+
+    /// Searches everything the timeline can show, not only prose.
+    ///
+    /// Previously only `.text` bodies were searched, so a tool card, a notice or a failure —
+    /// most of what a working conversation contains — was unfindable.
+    private func matches(_ needle: String, _ conversation: Conversation) -> Bool {
+        if title(for: conversation).localizedCaseInsensitiveContains(needle) { return true }
+        if let bot = store.bot(conversation.participants.first),
+           bot.label.localizedCaseInsensitiveContains(needle) { return true }
+        return conversation.messages.contains { Self.searchText(of: $0).localizedCaseInsensitiveContains(needle) }
+    }
+
+    static func searchText(of message: Message) -> String {
+        switch message.body {
+        case .text(let t):       return t
+        case .toolUse(let a):    return a.summary + " " + a.detail
+        case .computer(let a):   return a.task
+        case .approval(let a):   return a.summary + " " + a.detail
+        case .notice(let n):     return n
+        case .failure(let f):    return f
+        case .screenshot(let s): return s.caption
         }
     }
 
@@ -75,29 +273,72 @@ struct Sidebar: View {
 
     // MARK: Pieces
 
+    /// The one place anything new is made.
+    ///
+    /// A popover rather than a bare button, because there are two things to make and channels
+    /// are the product's own idea. `Store.createChannel` existed with no caller at all: the
+    /// header, the keyboard and the empty state all made bots, so the differentiating object
+    /// was unreachable from the interface that is supposed to be its only interface.
+    ///
+    /// A popover rather than a `Menu` for the reason recorded on the account row below: `Menu`
+    /// insets its own label and there is no supported way to take those insets off, which
+    /// pushes the control off the column's edge.
     private var header: some View {
         HStack {
             Spacer()
-            IconButton("plus", filled: false, help: "New bot (⌘N)") {
-                store.createBot(name: "New Bot")
-                ui.focusComposer()
-            }
+            IconButton("plus", filled: false, help: "New bot or channel",
+                       accessibilityLabel: "New bot or channel") { createOpen.toggle() }
+                .popover(isPresented: $createOpen, arrowEdge: .bottom) { createMenu }
         }
         .padding(.horizontal, DS.Space.lg)
-
         .frame(height: DS.Size.rosterRow)
+    }
+
+    private var createMenu: some View {
+        VStack(alignment: .leading, spacing: DS.Space.hair) {
+            menuItem("person.crop.circle.badge.plus", "New bot", closing: $createOpen) {
+                newBot()
+            }
+            menuItem("person.2.badge.plus", "New channel…", closing: $createOpen) {
+                newChannel()
+            }
+            Text("A channel is one thread with several bots in it.")
+                .font(DS.Text.micro)
+                .foregroundStyle(DS.Ink.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(.horizontal, DS.Space.md)
+                .padding(.top, DS.Space.xs)
+        }
+        .padding(DS.Space.md)
+        .frame(minWidth: DS.Window.popoverMin)
     }
 
     private var search: some View {
         HStack(spacing: DS.Space.md) {
             Image(systemName: "magnifyingglass")
                 .font(DS.Text.glyphSmall)
-                .foregroundStyle(DS.Ink.tertiary)
+                .foregroundStyle(DS.Ink.secondary)
+                .accessibilityHidden(true)
             TextField("Search", text: $query)
                 .textFieldStyle(.plain)
                 .frame(minWidth: DS.Size.fieldMin / 2)
                 .font(DS.Text.callout)
                 .foregroundStyle(DS.Ink.primary)
+                .focused($searchFocused)
+                .accessibilityLabel("Search conversations")
+                // Escape clears rather than dismissing focus into nothing, which is what the
+                // field appearing to be stuck used to feel like.
+                .onExitCommand { if query.isEmpty { searchFocused = false } else { query = "" } }
+            if !query.isEmpty {
+                Button { query = "" } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .font(DS.Text.glyphSmall)
+                        .foregroundStyle(DS.Ink.secondary)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Clear search")
+                .help("Clear search")
+            }
         }
         .padding(.horizontal, DS.Space.md)
         .padding(.vertical, DS.Space.md)
@@ -108,6 +349,25 @@ struct Sidebar: View {
 
     private var footer: some View {
         VStack(spacing: 0) {
+            // The one condition in this app that is about the user's safety rather than their
+            // work, and it was legible in exactly one place: Settings → Providers, evaluated on
+            // the frame that pane appeared. A world-readable key file is not something anyone
+            // goes looking for, so it has to come to them. The roster footer is the only
+            // surface that is on screen whenever the app is.
+            if keyFileIsExposed {
+                StandingNotice(
+                    systemImage: "lock.open",
+                    title: "Your key file can be read by others",
+                    detail: "It should be readable only by you. A restore from a backup or a "
+                          + "sync tool can quietly change that.",
+                    actionTitle: "Lock it down",
+                    tint: DS.Status.failed.mark,
+                    action: repairKeyFilePermissions
+                )
+                .padding(.horizontal, DS.Space.lg)
+                .padding(.bottom, DS.Space.md)
+            }
+
             Hairline()
 
             Button { library = .connections } label: {
@@ -115,8 +375,14 @@ struct Sidebar: View {
             }
             .buttonStyle(.plain)
 
+            // The badge, not a second banner. The two macOS grants have a home already — the
+            // Computers tab, with the buttons that ask for them — so what was missing was not
+            // another explanation but any reason to go there.
             Button { library = .computers } label: {
-                footerRow("desktopcomputer", "Computers")
+                footerRow("desktopcomputer", "Computers",
+                          warning: computerConsentIsIncomplete
+                                 ? "Screen Recording or Accessibility has not been granted yet"
+                                 : nil)
             }
             .buttonStyle(.plain)
 
@@ -128,7 +394,7 @@ struct Sidebar: View {
             // with a negative padding is a number that goes wrong the moment the style
             // changes. A button that opens a popover is fully ours to align.
             Button { accountOpen.toggle() } label: {
-                footerRow("person.crop.circle", NSFullUserName())
+                footerRow("person.crop.circle", "This Mac")
             }
             .buttonStyle(.plain)
             .popover(isPresented: $accountOpen, arrowEdge: .top) {
@@ -136,51 +402,82 @@ struct Sidebar: View {
             }
         }
         .padding(.bottom, DS.Space.sm)
+        .refreshingOnActivation(refreshStandingConditions)
+    }
+
+    /// Tighten the mode back to owner-only, and re-ask rather than assume it worked.
+    ///
+    /// Done from a button and never silently: the file belongs to the user, and an app that
+    /// quietly changes permissions on files in the user's home directory is doing the thing
+    /// this notice is warning about.
+    private func repairKeyFilePermissions() {
+        CredentialStore.repairPermissions()
+        keyFileIsExposed = !CredentialStore.permissionsAreCorrect()
     }
 
     private var accountMenu: some View {
         VStack(alignment: .leading, spacing: DS.Space.hair) {
-            menuItem("gearshape", "Settings…") {
-                NSApp.sendAction(Selector(("showSettingsWindow:")), to: nil, from: nil)
+            SettingsLink {
+                menuLabel("gearshape", "Settings…")
             }
-            menuItem("sparkles", "Skills…") { library = .skills }
-            menuItem("clock.arrow.circlepath", "Activity…") { openWindow(id: "activity") }
+            .buttonStyle(.plain)
+            .hoverRow(shape: RoundedRectangle(cornerRadius: DS.Radius.xs))
+            .simultaneousGesture(TapGesture().onEnded { accountOpen = false })
+
+            menuItem("sparkles", "Skills…", closing: $accountOpen) { library = .skills }
+            menuItem("clock.arrow.circlepath", "Activity…", closing: $accountOpen) {
+                openWindow(id: "activity")
+            }
 
             Hairline().padding(.vertical, DS.Space.xs)
 
-            menuItem("folder", "Open trace folder") { NSWorkspace.shared.open(Paths.traces) }
-            menuItem("internaldrive", "Open data folder") { NSWorkspace.shared.open(Paths.root) }
+            menuItem("folder", "Open trace folder", closing: $accountOpen) {
+                NSWorkspace.shared.open(Paths.traces)
+            }
+            menuItem("internaldrive", "Open data folder", closing: $accountOpen) {
+                NSWorkspace.shared.open(Paths.root)
+            }
 
             Hairline().padding(.vertical, DS.Space.xs)
 
-            menuItem("power", "Quit Bot-Harness") { NSApp.terminate(nil) }
+            menuItem("power", "Quit Bot-Harness", closing: $accountOpen) { NSApp.terminate(nil) }
         }
         .padding(DS.Space.md)
         .frame(minWidth: DS.Window.popoverMin)
     }
 
-    private func menuItem(_ icon: String, _ title: String, action: @escaping () -> Void) -> some View {
+    private func menuLabel(_ icon: String, _ title: String) -> some View {
+        HStack(spacing: DS.Space.md) {
+            Image(systemName: icon)
+                .font(DS.Text.glyphSmall)
+                .foregroundStyle(DS.Ink.secondary)
+                .frame(width: DS.Space.lg)
+                .accessibilityHidden(true)
+            Text(title).font(DS.Text.caption).foregroundStyle(DS.Ink.primary)
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, DS.Space.md)
+        .frame(minHeight: DS.Size.hit)
+        .contentShape(Rectangle())
+    }
+
+    /// Which popover this item belongs to is a parameter rather than a captured property,
+    /// because there are now two of them and an item that closed the wrong one would leave a
+    /// menu hanging open over the sheet it had just presented.
+    private func menuItem(_ icon: String, _ title: String, closing: Binding<Bool>,
+                          action: @escaping () -> Void) -> some View {
         Button {
-            accountOpen = false
+            closing.wrappedValue = false
             action()
         } label: {
-            HStack(spacing: DS.Space.md) {
-                Image(systemName: icon)
-                    .font(DS.Text.glyphSmall)
-                    .foregroundStyle(DS.Ink.secondary)
-                    .frame(width: DS.Space.lg)
-                Text(title).font(DS.Text.caption).foregroundStyle(DS.Ink.primary)
-                Spacer(minLength: 0)
-            }
-            .padding(.horizontal, DS.Space.md)
-            .frame(minHeight: DS.Size.avatarRoster)
-            .contentShape(Rectangle())
+            menuLabel(icon, title)
         }
         .buttonStyle(.plain)
         .hoverRow(shape: RoundedRectangle(cornerRadius: DS.Radius.xs))
     }
 
-    private func footerRow(_ icon: String, _ label: String) -> some View {
+    private func footerRow(_ icon: String, _ label: String,
+                           warning: String? = nil) -> some View {
         HStack(spacing: DS.Space.md) {
             Image(systemName: icon)
                 .font(DS.Text.glyph)
@@ -188,15 +485,56 @@ struct Sidebar: View {
                 // A fixed gutter, so every label in the footer starts on the same pixel
                 // whatever the width of its icon.
                 .frame(width: DS.Space.xl, alignment: .center)
+                .accessibilityHidden(true)
             Text(label)
                 .font(DS.Text.callout)
                 .foregroundStyle(DS.Ink.primary)
             Spacer()
+            if warning != nil {
+                Circle()
+                    .fill(DS.Status.awaitingApproval.mark)
+                    .frame(width: DS.Size.statusDot, height: DS.Size.statusDot)
+                    .accessibilityHidden(true)
+            }
         }
         .padding(.horizontal, DS.Space.lg)
         .frame(height: DS.Size.hit + DS.Space.xs, alignment: .leading)
         .hoverRow(shape: RoundedRectangle(cornerRadius: DS.Radius.sm))
         .contentShape(Rectangle())
+        .help(warning ?? "")
+        // A coloured dot is not a status on its own — the app's own rule. VoiceOver and a
+        // greyscale screenshot both get the sentence instead.
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(warning.map { "\(label). \($0)" } ?? label)
+    }
+}
+
+// MARK: - What the rename alert is pointed at
+
+/// A bot's name lives on the bot and a room's lives on the conversation. That difference is
+/// this app's problem, not the user's, so it is absorbed here: one alert, one field, one pair
+/// of buttons, and only the sentence underneath changes — because a bot can rename itself after
+/// a run and a room cannot, and promising the wrong one would be a lie in either direction.
+private enum RenameTarget: Identifiable {
+    case bot(Bot)
+    case room(Conversation)
+
+    var id: UUID {
+        switch self {
+        case .bot(let bot):           return bot.id
+        case .room(let conversation): return conversation.id
+        }
+    }
+
+    var explanation: String {
+        switch self {
+        case .bot(let bot):
+            return "\(bot.name) will keep its description, its history and its folder. "
+                 + "A name you choose is yours — the bot will not write over it."
+        case .room(let conversation):
+            return "\(conversation.title ?? "This channel") will keep everyone in it and "
+                 + "everything said in it. Only the name in the roster changes."
+        }
     }
 }
 
@@ -204,7 +542,9 @@ struct Sidebar: View {
 
 private struct SidebarRow: View {
     @Environment(Store.self) private var store
+    @Environment(BotRunner.self) private var runner
     let conversation: Conversation
+    var matching: String = ""
 
     var body: some View {
         HStack(spacing: DS.Space.lg) {
@@ -216,56 +556,107 @@ private struct SidebarRow: View {
                         .foregroundStyle(DS.Ink.primary)
                         .lineLimit(1)
                     Spacer(minLength: DS.Space.xs)
-                    Text(relativeTime)
-                        .font(DS.Text.micro)
-                        .foregroundStyle(DS.Ink.tertiary)
-                        .fixedSize()
+                    if let state {
+                        // A word, not only a colour — the roster has to survive greyscale and
+                        // colour-blindness like every other status in the app.
+                        Text(state.word)
+                            .font(DS.Text.micro.weight(.semibold))
+                            .foregroundStyle(state.label)
+                            .fixedSize()
+                    } else {
+                        Text(relativeTime)
+                            .font(DS.Text.micro)
+                            .foregroundStyle(DS.Ink.secondary)
+                            .fixedSize()
+                    }
                 }
-                Text(preview)
-                    .font(DS.Text.callout)
-                    .foregroundStyle(DS.Ink.secondary)
-                    .lineLimit(1)
+                HStack(spacing: DS.Space.sm) {
+                    Text(preview)
+                        .font(DS.Text.callout)
+                        .foregroundStyle(DS.Ink.secondary)
+                        .lineLimit(1)
+                    Spacer(minLength: 0)
+                    if conversation.isUnread && state == nil {
+                        Circle()
+                            .fill(DS.Accent.live)
+                            .frame(width: DS.Size.statusDot, height: DS.Size.statusDot)
+                            .accessibilityHidden(true)
+                    }
+                }
             }
         }
         .dsInset(DS.Inset.row)
         // Avatar plus two lines. A fixed floor keeps the list on a rhythm whether a preview
         // is one line or empty.
         .frame(minHeight: DS.Size.rosterRow + DS.Space.xl, alignment: .leading)
-        .hoverRow(resting: isSelected ? DS.Surface.active : .clear)
         .contentShape(Rectangle())
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(accessibilityLabel)
+        .accessibilityAddTraits(.isButton)
     }
 
-    private var isSelected: Bool { store.selection == conversation.id }
+    /// What this conversation needs from the user right now, if anything.
+    ///
+    /// The roster's whole job in a delegate-and-glance product, and it had none of it: an
+    /// approval prompt rendered in exactly the muted style of an idle preview.
+    private var state: DS.Status? {
+        if runner.awaiting.values.contains(conversation.id) { return .awaitingApproval }
+        if runner.isRunning(conversation.id) { return .running }
+        return nil
+    }
 
     private var title: String {
         conversation.title ?? store.bot(conversation.participants.first)?.name ?? "Untitled"
     }
 
+    private var accessibilityLabel: String {
+        var parts = [title]
+        if let state { parts.append(state.word) }
+        else if conversation.isUnread { parts.append("unread") }
+        parts.append(preview)
+        parts.append(relativeTime)
+        return parts.joined(separator: ", ")
+    }
+
     /// Channels show stacked marks; a chat shows the bot's own.
     @ViewBuilder private var avatar: some View {
         if conversation.isChannel {
+            let members = Array(conversation.participants.prefix(3).enumerated())
             ZStack(alignment: .leading) {
-                ForEach(Array(conversation.participants.prefix(3).enumerated()), id: \.offset) { index, id in
+                ForEach(members, id: \.offset) { index, id in
                     if let member = store.bot(id) {
                         BotAvatar(bot: member, size: DS.Size.avatarRoster)
                             .overlay(Circle().stroke(DS.Surface.panel, lineWidth: 1.5))
-                            .offset(x: CGFloat(index) * (DS.Space.md))
+                            .offset(x: CGFloat(index) * DS.Space.md)
                     }
                 }
             }
-            .frame(width: DS.Size.avatarRoster + DS.Space.md, height: DS.Size.avatarRoster,
-                   alignment: .leading)
+            // Room for every avatar in the stack, not just the first two: the frame used to be
+            // one offset wide regardless of how many were drawn, so the third was clipped.
+            .frame(width: DS.Size.avatarRoster + CGFloat(max(0, members.count - 1)) * DS.Space.md,
+                   height: DS.Size.avatarRoster, alignment: .leading)
+            .accessibilityHidden(true)
         } else {
             if let bot = store.bot(conversation.participants.first) {
-                BotAvatar(bot: bot, size: DS.Size.avatarRoster)
+                BotAvatar(bot: bot, size: DS.Size.avatarRoster).accessibilityHidden(true)
             } else {
                 Circle().fill(DS.Tint.t3)
                     .frame(width: DS.Size.avatarRoster, height: DS.Size.avatarRoster)
+                    .accessibilityHidden(true)
             }
         }
     }
 
     private var preview: String {
+        // While searching, show the line that actually matched rather than the last message,
+        // which usually has nothing to do with why the row is on screen.
+        let needle = matching.trimmingCharacters(in: .whitespaces)
+        if !needle.isEmpty,
+           let hit = conversation.messages.last(where: {
+               Sidebar.searchText(of: $0).localizedCaseInsensitiveContains(needle)
+           }) {
+            return Sidebar.searchText(of: hit).replacingOccurrences(of: "\n", with: " ")
+        }
         guard let last = conversation.messages.last else { return "No messages yet" }
         switch last.body {
         case .text(let t):       return t.replacingOccurrences(of: "\n", with: " ")
@@ -279,8 +670,19 @@ private struct SidebarRow: View {
     }
 
     private var relativeTime: String {
-        let formatter = RelativeDateTimeFormatter()
-        formatter.unitsStyle = .abbreviated
-        return formatter.localizedString(for: conversation.lastActivity, relativeTo: Date())
+        // A conversation created microseconds ago is not in the future. Clamping removes the
+        // "in 0s" every freshly made bot used to show.
+        let now = Date()
+        let when = min(conversation.lastActivity, now)
+        if now.timeIntervalSince(when) < 45 { return "now" }
+        return Self.formatter.localizedString(for: when, relativeTo: now)
     }
+
+    /// One formatter for the whole roster. Allocating one per row per render is measurable on
+    /// a list that re-renders on every keystroke of search.
+    private static let formatter: RelativeDateTimeFormatter = {
+        let f = RelativeDateTimeFormatter()
+        f.unitsStyle = .abbreviated
+        return f
+    }()
 }

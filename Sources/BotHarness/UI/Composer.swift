@@ -1,5 +1,7 @@
+import AppKit
 import BotHarnessCore
 import SwiftUI
+import UniformTypeIdentifiers
 
 /// The composer.
 ///
@@ -17,6 +19,7 @@ struct Composer: View {
     let conversationID: UUID
     @Binding var draft: String
     @FocusState.Binding var focused: Bool
+    @State private var dropping = false
 
     var body: some View {
         VStack(spacing: DS.Space.md) {
@@ -33,17 +36,59 @@ struct Composer: View {
             // the field you are typing into is the thing you are already looking at, so it is
             // where "working", "needs you" and "that failed" cost nothing to notice.
             MascotView(mascotState)
+            if let blocker { preflight(blocker) }
             field
             controls
         }
         .padding(.bottom, DS.Space.lg)
     }
 
+    /// Why this bot cannot answer yet, if it cannot.
+    ///
+    /// Without this the first run of the app is: type a message, wait, get a failure bubble.
+    /// The only warning was a ten-point triangle inside a chip. Saying it before the send makes
+    /// the first minute a setup step instead of an error.
+    private var blocker: String? {
+        guard bot != nil else { return nil }
+        guard !CredentialStore.has("gemini") else { return nil }
+        return "This bot answers with Gemini, and there is no key saved yet."
+    }
+
+    private func preflight(_ message: String) -> some View {
+        HStack(spacing: DS.Space.md) {
+            Image(systemName: "key.horizontal")
+                .font(DS.Text.glyphSmall)
+                .foregroundStyle(DS.Status.running.mark)
+                .accessibilityHidden(true)
+            Text(message)
+                .font(DS.Text.caption)
+                .foregroundStyle(DS.Ink.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            Spacer(minLength: DS.Space.md)
+            SettingsLink { Text("Add a key").font(DS.Text.caption.weight(.medium)) }
+                .buttonStyle(PressableStyle())
+        }
+        .padding(.horizontal, DS.Space.lg)
+        .padding(.vertical, DS.Space.md)
+        .background(DS.Tint.t3, in: RoundedRectangle(cornerRadius: DS.Radius.md))
+        .accessibilityElement(children: .combine)
+    }
+
+    /// True while an input method is composing in the focused editor.
+    ///
+    /// `hasMarkedText()` is exactly the state where the characters on screen are a candidate
+    /// rather than committed text. A failed cast means no editor is focused, which is not a
+    /// composition, so the fallback is the ordinary path.
+    private var isComposing: Bool {
+        (NSApp.keyWindow?.firstResponder as? NSTextView)?.hasMarkedText() ?? false
+    }
+
     // MARK: Field
 
     private var field: some View {
         HStack(alignment: .bottom, spacing: DS.Space.lg) {
-            IconButton("plus", help: "Attach a file", action: attach)
+            IconButton("plus", help: "Attach a file",
+                       accessibilityLabel: "Attach a file", action: attach)
 
             TextField(placeholder, text: $draft, axis: .vertical)
                 .textFieldStyle(.plain)
@@ -54,11 +99,19 @@ struct Composer: View {
                 // a floor so a long attachment path cannot squeeze it to nothing.
                 .frame(minWidth: DS.Size.fieldMin, maxWidth: .infinity)
                 .focused($focused)
+                .accessibilityLabel(placeholder)
                 // A vertical-axis field consumes Return itself, so the key has to be caught
                 // before it reaches the editor. Shift-Return falls through and inserts a
                 // newline, which is what people expect from a chat box.
+                //
+                // The composition check is not optional. An input method — Japanese, Chinese,
+                // Korean, and every other one that composes — uses Return to *confirm* the
+                // candidate it is showing. Intercepting that sends a half-finished word and
+                // loses the rest, and the user has no way to tell what happened. While there
+                // is marked text the key belongs to the input method, not to us.
                 .onKeyPress(.return, phases: .down) { key in
                     if key.modifiers.contains(.shift) { return .ignored }
+                    if isComposing { return .ignored }
                     send()
                     return .handled
                 }
@@ -86,10 +139,26 @@ struct Composer: View {
                 .stroke(focused ? DS.Surface.borderStrong : .clear, lineWidth: DS.Size.hairline)
         )
         .dsAnimation(DS.Motion.instant, value: focused)
+        // Dropping a file on the composer is how a Mac user attaches one. Before this the only
+        // path was a button that pasted absolute paths as text, and dragging anything onto the
+        // window did nothing at all — in an app whose whole subject is files.
+        .onDrop(of: [.fileURL], isTargeted: $dropping) { providers in
+            attach(providers)
+            return true
+        }
+        .overlay {
+            if dropping {
+                RoundedRectangle(cornerRadius: DS.Radius.pill)
+                    .stroke(DS.Accent.live, style: StrokeStyle(lineWidth: 2, dash: [5, 4]))
+                    .allowsHitTesting(false)
+            }
+        }
+        .dsAnimation(DS.Motion.instant, value: dropping)
     }
 
     private var placeholder: String {
-        guard let name = bot?.name else { return "Ask anything" }
+        guard let name = bot?.name else { return "Message a bot" }
+        if runner.isRunning(conversationID) { return "\(name) is working — Stop to interrupt" }
         return "Message \(name)"
     }
 
@@ -107,12 +176,15 @@ struct Composer: View {
         case .finished: return .pleased
         default:        break
         }
-        guard store.conversation(conversationID) != nil else { return .asleep }
-        return .walking
+        guard let conversation = store.conversation(conversationID) else { return .asleep }
+        // Nothing has ever happened here. Asleep is the honest state, and it is the one moment
+        // the walk would be claiming activity that does not exist.
+        return conversation.messages.isEmpty ? .asleep : .walking
     }
 
     private var canSend: Bool {
         !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            && runner.canSend(in: conversationID)
     }
 
     // MARK: Buttons
@@ -129,6 +201,7 @@ struct Composer: View {
         .disabled(!canSend)
         .dsAnimation(DS.Motion.instant, value: canSend)
         .help("Send (Return)")
+        .accessibilityLabel("Send message")
     }
 
     private var stopButton: some View {
@@ -140,7 +213,8 @@ struct Composer: View {
                 .background(DS.Accent.live, in: Circle())
         }
         .buttonStyle(PressableStyle())
-        .help("Stop")
+        .help("Stop this run")
+        .accessibilityLabel("Stop this run")
     }
 
     // MARK: Controls
@@ -162,9 +236,30 @@ struct Composer: View {
 
     private func send() {
         let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !text.isEmpty else { return }
-        draft = ""
+        // The draft is only cleared once the runner has actually accepted it. Clearing first
+        // and then discovering the conversation was gone destroyed the message with nothing
+        // to show for it.
+        guard !text.isEmpty, runner.canSend(in: conversationID) else { return }
         runner.send(text, in: conversationID)
+        draft = ""
+    }
+
+    /// Add dropped files to the draft, one path per line.
+    private func attach(_ providers: [NSItemProvider]) {
+        for provider in providers {
+            _ = provider.loadObject(ofClass: URL.self) { url, _ in
+                guard let url else { return }
+                Task { @MainActor in
+                    append(paths: [url.path])
+                }
+            }
+        }
+    }
+
+    private func append(paths: [String]) {
+        guard !paths.isEmpty else { return }
+        draft += (draft.isEmpty ? "" : "\n") + paths.joined(separator: "\n")
+        focused = true
     }
 
     private func attach() {
@@ -173,8 +268,7 @@ struct Composer: View {
         panel.canChooseDirectories = true
         panel.prompt = "Attach"
         guard panel.runModal() == .OK, !panel.urls.isEmpty else { return }
-        draft += (draft.isEmpty ? "" : "\n") + panel.urls.map(\.path).joined(separator: "\n")
-        focused = true
+        append(paths: panel.urls.map(\.path))
     }
 }
 
@@ -205,7 +299,7 @@ struct BrainChip: View {
             }
         } label: {
             Chip(label, systemImage: warns ? "exclamationmark.triangle.fill" : "brain",
-                 tint: warns ? DS.Status.running.mark : DS.Ink.tertiary,
+                 tint: warns ? DS.Status.running.mark : DS.Ink.secondary,
                  showsChevron: true)
         }
         .menuStyle(.borderlessButton)

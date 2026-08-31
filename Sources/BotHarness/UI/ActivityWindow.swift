@@ -22,6 +22,12 @@ struct ActivityWindow: View {
         .frame(minWidth: DS.Window.activityMinWidth, minHeight: DS.Window.mainMinHeight)
         .background(DS.Surface.ground)
         .task { await reload() }
+        // A run that started while this window was open used to be invisible until someone
+        // pressed Reload. Coming back to the window is the moment to catch up.
+        .onReceive(NotificationCenter.default.publisher(
+            for: NSApplication.didBecomeActiveNotification)) { _ in
+            Task { await reload() }
+        }
     }
 
     private func reload() async {
@@ -49,7 +55,8 @@ struct ActivityWindow: View {
             HStack {
                 Text("Runs").font(DS.Text.callout.weight(.semibold)).foregroundStyle(DS.Ink.primary)
                 Spacer()
-                IconButton("arrow.clockwise", filled: false, help: "Reload") {
+                IconButton("arrow.clockwise", filled: false, help: "Reload",
+                           accessibilityLabel: "Reload runs") {
                     Task { await reload() }
                 }
             }
@@ -70,21 +77,35 @@ struct ActivityWindow: View {
                            message: "Every task a bot runs is recorded here.")
                 Spacer()
             } else {
-                ScrollView {
-                    LazyVStack(spacing: DS.Space.hair) {
-                        ForEach(runs) { run in
-                            runRow(run)
-                                .background(selected?.id == run.id ? DS.Tint.t5 : .clear,
-                                            in: RoundedRectangle(cornerRadius: DS.Radius.sm))
-                                .contentShape(Rectangle())
-                                .onTapGesture { Task { await select(run) } }
+                // A List, so the run history can be walked with the arrow keys, announces
+                // itself to VoiceOver, and paints its selection with the system's own
+                // material rather than a hand-rolled fill.
+                List(runs, selection: selectionBinding) { run in
+                    runRow(run)
+                        .tag(run.id)
+                        .contextMenu {
+                            Button("Reveal in Finder") {
+                                NSWorkspace.shared.activateFileViewerSelecting([run.directory])
+                            }
                         }
-                    }
-                    .padding(DS.Space.md)
                 }
+                .listStyle(.sidebar)
+                .scrollContentBackground(.hidden)
             }
         }
         .background(DS.Surface.panel)
+    }
+
+    /// Selecting by id rather than by value: a run is a snapshot, and comparing whole
+    /// snapshots breaks the moment a reload rebuilds them.
+    private var selectionBinding: Binding<String?> {
+        Binding(
+            get: { selected?.id },
+            set: { id in
+                guard let run = runs.first(where: { $0.id == id }) else { return }
+                Task { await select(run) }
+            }
+        )
     }
 
     private func runRow(_ run: TraceReader.Run) -> some View {
@@ -98,13 +119,18 @@ struct ActivityWindow: View {
                     .lineLimit(1)
             }
             HStack(spacing: DS.Space.md) {
+                // Never colour alone: the dot beside the title says how it ended, and this
+                // says the same thing in a word.
+                Text(outcomeWord(for: run))
+                    .font(DS.Text.micro.weight(.medium))
+                    .foregroundStyle(DS.Ink.secondary)
                 Text(run.startedAt, style: .relative)
-                    .font(DS.Text.micro).foregroundStyle(DS.Ink.tertiary)
+                    .font(DS.Text.micro).foregroundStyle(DS.Ink.secondary)
                 Text("\(run.stepCount) steps")
-                    .font(DS.Text.micro).foregroundStyle(DS.Ink.tertiary)
+                    .font(DS.Text.micro).foregroundStyle(DS.Ink.secondary)
                 if let cost = run.manifest?.totalCostUSD, cost > 0 {
                     Text(String(format: "$%.4f", cost))
-                        .font(DS.Text.micro).foregroundStyle(DS.Ink.tertiary)
+                        .font(DS.Text.micro).foregroundStyle(DS.Ink.secondary)
                 }
             }
             if let failure = run.failureSummary {
@@ -114,6 +140,26 @@ struct ActivityWindow: View {
         .padding(.horizontal, DS.Space.md)
         .padding(.vertical, DS.Space.md)
         .frame(maxWidth: .infinity, alignment: .leading)
+        .contentShape(Rectangle())
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(label(for: run))
+        .accessibilityAddTraits(.isButton)
+    }
+
+    /// Status as a word as well as a colour, for the list and for VoiceOver.
+    private func outcomeWord(for run: TraceReader.Run) -> String {
+        switch run.manifest?.outcome {
+        case .succeeded:  return "Done"
+        case .failed:     return "Failed"
+        case .timedOut:   return "Timed out"
+        case .refused:    return "Refused"
+        case .cancelled:  return "Stopped"
+        case .none:       return run.failureSummary == nil ? "Unfinished" : "Failed"
+        }
+    }
+
+    private func label(for run: TraceReader.Run) -> String {
+        "\(run.manifest?.goal ?? run.id). \(outcomeWord(for: run)). \(run.stepCount) steps."
     }
 
     private func colour(for run: TraceReader.Run) -> Color {
@@ -121,8 +167,8 @@ struct ActivityWindow: View {
         case .succeeded:          return DS.Status.done.mark
         case .failed, .timedOut:  return DS.Status.failed.mark
         case .refused:            return DS.Status.running.mark
-        case .cancelled:          return DS.Ink.tertiary
-        case .none:               return run.failureSummary == nil ? DS.Ink.tertiary : DS.Status.failed.mark
+        case .cancelled:          return DS.Ink.secondary
+        case .none:               return run.failureSummary == nil ? DS.Ink.secondary : DS.Status.failed.mark
         }
     }
 
@@ -141,7 +187,7 @@ struct ActivityWindow: View {
                 }
             }
         } else {
-            EmptyState(systemImage: "sidebar.left",
+            EmptyState(systemImage: "list.bullet.rectangle",
                        title: "Select a run",
                        message: "Pick one on the left to see every step it took.")
         }
@@ -160,7 +206,7 @@ struct ActivityWindow: View {
                         metadata("cost", String(format: "$%.4f", manifest.totalCostUSD))
                     }
                 }
-                chainBadge(run.chain)
+                chainBadge(run.chain, signing: run.signing)
                 Spacer()
                 SecondaryButton("Reveal in Finder") {
                     NSWorkspace.shared.activateFileViewerSelecting([run.directory])
@@ -180,20 +226,34 @@ struct ActivityWindow: View {
 
     private func metadata(_ name: String, _ value: String) -> some View {
         HStack(spacing: DS.Space.xs) {
-            Text(name).font(DS.Text.micro).foregroundStyle(DS.Ink.tertiary)
+            Text(name).font(DS.Text.micro).foregroundStyle(DS.Ink.secondary)
             Text(value).font(DS.Text.micro).foregroundStyle(DS.Ink.secondary)
         }
     }
 
     /// A hash chain nobody checks is decoration. This checks it every time a run is opened.
-    @ViewBuilder private func chainBadge(_ status: TraceWriter.ChainStatus) -> some View {
+    @ViewBuilder private func chainBadge(_ status: TraceWriter.ChainStatus,
+                                        signing: TraceWriter.ChainReport.Signing) -> some View {
         switch status {
         case .intact(let records):
+            // "Intact" alone would overclaim for two of these. A trace written before the chain
+            // was keyed is only proof that nobody edited it carelessly — the old scheme re-derived
+            // every hash with a public algorithm, so anything that could rewrite the file could
+            // rewrite the chain to match. Saying "intact" in green for that case tells the user
+            // the record is evidence when it is not.
             HStack(spacing: DS.Space.xs) {
-                Image(systemName: "lock.fill").font(DS.Text.glyphSmall)
-                Text("\(records) records intact").font(DS.Text.micro)
+                Image(systemName: signing == .signed ? "lock.fill" : "lock.open").font(DS.Text.glyphSmall)
+                switch signing {
+                case .signed, .empty:
+                    Text("\(records) records intact").font(DS.Text.micro)
+                case .writtenBeforeSigning:
+                    Text("\(records) records unaltered — written before chain signing").font(DS.Text.micro)
+                case .keyUnavailable:
+                    Text("\(records) records — signed with a key this machine does not have").font(DS.Text.micro)
+                }
             }
-            .foregroundStyle(DS.Status.done.mark)
+            .foregroundStyle(signing == .signed || signing == .empty
+                             ? DS.Status.done.mark : DS.Ink.secondary)
         case .brokenAt(let line, let reason):
             HStack(spacing: DS.Space.xs) {
                 Image(systemName: "lock.open.trianglebadge.exclamationmark").font(DS.Text.glyphSmall)
@@ -217,7 +277,7 @@ private struct StepRow: View {
             HStack(alignment: .top, spacing: DS.Space.md) {
                 Text("\(entry.seq)")
                     .font(DS.Text.monoSmall)
-                    .foregroundStyle(DS.Ink.tertiary)
+                    .foregroundStyle(DS.Ink.secondary)
                     .frame(width: DS.Space.xxl, alignment: .trailing)
 
                 Image(systemName: icon)
@@ -247,7 +307,7 @@ private struct StepRow: View {
                                 .font(DS.Text.micro)
                         }
                         .foregroundStyle(permission.outcome == "refused"
-                                         ? DS.Status.failed.mark : DS.Ink.tertiary)
+                                         ? DS.Status.failed.mark : DS.Ink.secondary)
                     }
 
                     if let error = entry.error, !error.isEmpty {
@@ -261,10 +321,10 @@ private struct StepRow: View {
 
                 if entry.tokens > 0 {
                     Text("\(entry.tokens) tok")
-                        .font(DS.Text.micro).foregroundStyle(DS.Ink.tertiary)
+                        .font(DS.Text.micro).foregroundStyle(DS.Ink.secondary)
                 }
                 Text(entry.at, format: .dateTime.hour().minute().second())
-                    .font(DS.Text.micro).foregroundStyle(DS.Ink.tertiary)
+                    .font(DS.Text.micro).foregroundStyle(DS.Ink.secondary)
             }
 
             if expanded {
@@ -285,7 +345,7 @@ private struct StepRow: View {
 
     private func block(_ title: String, _ text: String) -> some View {
         VStack(alignment: .leading, spacing: DS.Space.hair) {
-            Text(title).font(DS.Text.micro).foregroundStyle(DS.Ink.tertiary)
+            Text(title).font(DS.Text.micro).foregroundStyle(DS.Ink.secondary)
             Text(text)
                 .font(DS.Text.mono)
                 .foregroundStyle(DS.Ink.secondary)
@@ -326,6 +386,6 @@ private struct StepRow: View {
         if entry.permission?.outcome == "refused" { return DS.Status.failed.mark }
         if entry.kind == .stuckDetected { return DS.Status.running.mark }
         if entry.outcome == .succeeded { return DS.Status.done.mark }
-        return DS.Ink.tertiary
+        return DS.Ink.secondary
     }
 }

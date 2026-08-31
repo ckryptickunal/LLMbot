@@ -52,8 +52,6 @@ public enum DS {
         public static let border = Color(p3: 0.215, 0.226, 0.244)
         /// slate7 — field borders, and the composer border when focused.
         public static let borderStrong = Color(p3: 0.265, 0.280, 0.302)
-        /// slate8 — a hovered field border.
-        public static let borderHover = Color(hex: 0x5a6169)
     }
 
     // MARK: - Tint
@@ -97,11 +95,6 @@ public enum DS {
         /// Glyph washes and other non-text marks.
         public static let quaternary = Color.primary.opacity(0.098)
 
-        /// Fixed values, for anything that must reproduce identically years later: exported
-        /// PNGs, rendered traces. Semantic colours are correct on screen and wrong in a file
-        /// whose appearance must not depend on the reader's system settings.
-        public static let exportHigh = Color(hex: 0xedeef0)   // slate12
-        public static let exportLow = Color(hex: 0xb0b4ba)    // slate11
     }
 
     // MARK: - Accent
@@ -112,11 +105,7 @@ public enum DS {
         /// is a *different colour* from `systemBlue` (#0088FF).
         public static let live = Color(nsColor: .controlAccentColor)
 
-        /// A selected row while the window is not focused.
-        public static let unfocusedSelection = Color(nsColor: .unemphasizedSelectedContentBackgroundColor)
 
-        /// Radix blue9. For traces, exports and chart series — never live UI.
-        public static let fixed = Color(p3: 0.247, 0.556, 0.969)
     }
 
     // MARK: - Brand
@@ -244,10 +233,6 @@ public enum DS {
         public static let glyphSmall = Font.system(size: 10)
         public static let glyphBold = Font.system(size: 10, weight: .semibold)
 
-        /// The old nested scale, kept only so the compiler names any straggler that still
-        /// reaches for a half-point size. Delete once the sweep is provably complete.
-        @available(*, deprecated, message: "Use one of the five steps: body, title, callout, caption, micro.")
-        public enum Scale {}
     }
 
     // MARK: - Space
@@ -280,10 +265,6 @@ public enum DS {
         public static let xl: CGFloat = 16      // message bubbles, sheets
         public static let pill: CGFloat = 999
 
-        /// The nesting rule, as a function, so it is applied rather than remembered.
-        public static func inner(_ outer: CGFloat, padding: CGFloat) -> CGFloat {
-            max(xs, outer - padding)
-        }
     }
 
     // MARK: - Size
@@ -294,18 +275,21 @@ public enum DS {
 
     public enum Size {
         public static let iconButton: CGFloat = 24
-        public static let iconButtonLarge: CGFloat = 28
         public static let avatarRoster: CGFloat = 24
         public static let avatarInspector: CGFloat = 64
         public static let glyph: CGFloat = 12
         public static let glyphSmall: CGFloat = 10
         public static let statusDot: CGFloat = 6
 
-        /// The mascot, on its strip above the composer. Small enough that the strip reads as
-        /// part of the composer rather than as a panel of its own — the height that goes with
-        /// it is not a separate number, because the walk needs headroom for the jump: ask
-        /// `Mascot.stageHeight(width:)`.
-        public static let mascot: CGFloat = 44
+        /// The mascot, on its strip above the composer.
+        ///
+        /// **The only mascot number.** Everything else follows from it: the strip's height
+        /// comes from `Mascot.stageHeight(width:)`, because the walk needs headroom for the
+        /// jump that no separate constant should have to be kept in step with, and how far it
+        /// walks comes from `Mascot.travel(inStageWidth:)`, so the stride stays the right
+        /// length instead of stretching to whatever the composer happens to be. Change this
+        /// and the rest re-proportions itself.
+        public static let mascot: CGFloat = 22
 
         public static let denseRow: CGFloat = 24        // activity and trace rows
         public static let rosterRow: CGFloat = 28       // avatar plus two lines
@@ -330,7 +314,6 @@ public enum DS {
         public static let statusPillMin: CGFloat = 62
         /// Text control heights, so a field and a button beside it share a baseline.
         public static let controlHeight: CGFloat = 28
-        public static let controlHeightLarge: CGFloat = 34
         /// A field stops being usable below this and should truncate rather than shrink.
         public static let fieldMin: CGFloat = 120
         /// Bubbles and cards never get narrower than this; below it, text wraps to one word
@@ -339,7 +322,6 @@ public enum DS {
         public static let cardMin: CGFloat = 180
         /// Composer growth bounds.
         public static let composerMin: CGFloat = 36
-        public static let composerMax: CGFloat = 220
         /// Screenshot cards in the transcript.
         public static let screenshotMin: CGFloat = 200
         public static let screenshotMax: CGFloat = 460
@@ -455,19 +437,11 @@ public enum DS {
         public static let rowInsert = out(0.20)
         /// Inspector slide.
         public static let panel = Animation.timingCurve(0.77, 0, 0.175, 1, duration: 0.24)
-        /// Sheets and modals.
-        public static let sheet = Animation.timingCurve(0.32, 0.72, 0, 1, duration: 0.28)
-        /// Interruptible drags keep their velocity; a duration curve restarts from zero.
-        public static let drag = Animation.interactiveSpring(response: 0.15, dampingFraction: 0.86)
-        /// First run only.
-        public static let rare = Animation.snappy(duration: 0.40)
 
         /// First five items only; zero thereafter. A long staggered list is just slow.
         public static let stagger: Double = 0.035
         public static let staggerLimit = 5
 
-        /// Stream caret. Solid under reduced motion, and removed the moment the stream ends.
-        public static let caretPeriod: Double = 0.530
         /// No spinner may appear before this. Anything faster reads as a flicker, not progress.
         public static let spinnerDelay: Double = 0.400
         /// How long a transient confirmation stays before fading. Long enough to notice,

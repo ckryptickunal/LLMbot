@@ -1,3 +1,4 @@
+import AppKit
 import BotHarnessCore
 import Observation
 import SwiftUI
@@ -66,6 +67,9 @@ struct LibrarySheet: View {
             }
             Spacer()
             SecondaryButton("Done") { dismiss() }
+                // Escape closes it. A sheet whose only exit is one button is a sheet people
+                // feel trapped in, and it is a direct HIG violation.
+                .keyboardShortcut(.cancelAction)
         }
         .padding(.horizontal, DS.Space.lg)
         .padding(.vertical, DS.Space.lg)
@@ -185,21 +189,26 @@ private struct ConnectionRow: View {
                     if toolCount > 0 {
                         Text("\(toolCount) tools")
                             .font(DS.Text.micro)
-                            .foregroundStyle(DS.Ink.tertiary)
+                            .foregroundStyle(DS.Ink.secondary)
                     }
                 }
                 Text(detail)
                     .font(DS.Text.caption)
-                    .foregroundStyle(DS.Ink.tertiary)
+                    .foregroundStyle(DS.Ink.secondary)
                     .lineLimit(2)
             }
             Spacer(minLength: DS.Space.md)
             if let action = status.action {
                 SecondaryButton(action) {
-                    NSWorkspace.shared.open(URL(fileURLWithPath: NSHomeDirectory() + "/.claude.json"))
+                    // Reveal rather than open: dropping someone into a raw JSON file in
+                    // whatever app claims the extension, with no indication of what to change,
+                    // is not help. Showing them where it lives at least orients them.
+                    NSWorkspace.shared.activateFileViewerSelecting(
+                        [URL(fileURLWithPath: NSHomeDirectory() + "/.claude.json")])
                 }
+                .help("Shows the configuration file for connectors in the Finder")
             } else {
-                Text(status.displayName).font(DS.Text.micro).foregroundStyle(DS.Ink.tertiary)
+                Text(status.displayName).font(DS.Text.micro).foregroundStyle(DS.Ink.secondary)
             }
         }
         .padding(DS.Space.lg)
@@ -211,7 +220,7 @@ private struct ConnectionRow: View {
         case .healthy:                  return DS.Status.done.mark
         case .degraded:                 return DS.Status.running.mark
         case .needsAuth:                return DS.Status.waiting.mark
-        case .initializing, .offline:   return DS.Ink.tertiary
+        case .initializing, .offline:   return DS.Ink.secondary
         case .error:                    return DS.Status.failed.mark
         }
     }
@@ -257,7 +266,7 @@ private struct ComputersList: View {
                             Text("This Mac").font(DS.Text.body.weight(.semibold))
                                 .foregroundStyle(DS.Ink.primary)
                             Text("Your real files, browser sessions and apps")
-                                .font(DS.Text.caption).foregroundStyle(DS.Ink.tertiary)
+                                .font(DS.Text.caption).foregroundStyle(DS.Ink.secondary)
                         }
                         Spacer()
                         Circle().fill(DS.Status.done.mark)
@@ -277,15 +286,15 @@ private struct ComputersList: View {
                 HStack(spacing: DS.Space.lg) {
                     Image(systemName: "cube")
                         .font(DS.Text.glyph)
-                        .foregroundStyle(DS.Ink.tertiary)
+                        .foregroundStyle(DS.Ink.secondary)
                     VStack(alignment: .leading, spacing: 1) {
                         Text("Container").font(DS.Text.body.weight(.medium))
                             .foregroundStyle(DS.Ink.secondary)
                         Text("A throwaway machine that cannot touch your Mac")
-                            .font(DS.Text.caption).foregroundStyle(DS.Ink.tertiary)
+                            .font(DS.Text.caption).foregroundStyle(DS.Ink.secondary)
                     }
                     Spacer()
-                    Text("Soon").font(DS.Text.micro).foregroundStyle(DS.Ink.tertiary)
+                    Text("Soon").font(DS.Text.micro).foregroundStyle(DS.Ink.secondary)
                         .padding(.horizontal, DS.Space.md)
                         .padding(.vertical, DS.Space.hair)
                         .background(DS.Tint.t3, in: Capsule())
@@ -296,6 +305,13 @@ private struct ComputersList: View {
         }
         .dsInset(DS.Inset.pane)
         .onAppear { permissions = ComputerExecutor.permissions }
+        // Granting a permission happens in System Settings, which means leaving this app and
+        // coming back. Re-checking only on first appearance meant the row still said
+        // "not granted" after the user had just granted it.
+        .onReceive(NotificationCenter.default.publisher(
+            for: NSApplication.didBecomeActiveNotification)) { _ in
+            permissions = ComputerExecutor.permissions
+        }
     }
 
     private func permissionRow(_ title: String, _ why: String, granted: Bool, pane: String) -> some View {
@@ -305,7 +321,7 @@ private struct ComputersList: View {
                 .foregroundStyle(granted ? DS.Status.done.mark : DS.Status.running.mark)
             VStack(alignment: .leading, spacing: 1) {
                 Text(title).font(DS.Text.callout).foregroundStyle(DS.Ink.primary)
-                Text(why).font(DS.Text.micro).foregroundStyle(DS.Ink.tertiary)
+                Text(why).font(DS.Text.micro).foregroundStyle(DS.Ink.secondary)
             }
             Spacer()
             if !granted {

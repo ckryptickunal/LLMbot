@@ -21,6 +21,157 @@ Versioning follows [Semantic Versioning 2.0.0](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+### Security — the permission system now covers the shell
+
+- **A bot's workspace boundary applies to the terminal, not just to the file tools.** The shell
+  executor was built with no permissions at all, so any bot that preferred `cat` to the file tool
+  could read anything in your home directory regardless of what you had scoped it to. It now
+  refuses reads and writes outside the paths you gave it, with an allowance for system and
+  temporary directories so ordinary tooling still runs.
+- **An empty permission list now means "nothing", not "everything".** A bot created without
+  explicit paths previously had the run of the whole disk.
+- **`~/.SSH/id_rsa` no longer bypasses the guard on your private key.** Every path comparison was
+  case-sensitive while the disk is not, so changing one letter walked past the deny list. All path
+  matching now happens in one place, folds case, and compares whole path components.
+- **`curl --data-binary "@$HOME/…/credentials.json"` no longer uploads every key.** The old guard
+  only recognised `$HOME` at the very start of a word, so a single leading `@` defeated it.
+- **Copying the folder that holds your keys is caught even though it never names the file.**
+  `cp -r`, `tar`, `rsync` and friends are now matched against containers of a protected path.
+- **Uploading is recognised as leaving the machine.** There was a floor category for downloading
+  and running code and none for sending data out, so `curl -d`, `scp` and `nc` were unguarded.
+- **Commands no longer run in a login shell.** Your `.zshrc` exports real API keys and tokens, and
+  every command a bot ran inherited all of them — so `env` printed your secrets. The child
+  environment is now filtered.
+- **Search results are treated as untrusted.** `files.search` returns lines lifted out of files;
+  they arrived as plain tool output, so a document containing "SYSTEM: ignore your instructions"
+  reached the model as an instruction if grep found it rather than the file being opened.
+- **Web searches are redacted on the way out.** The query goes to a third party, so a bot holding
+  a key could simply search for it. Results now arrive wrapped as untrusted content too.
+- **Password managers and Keychain Access are never captured in a screenshot.** A screenshot is
+  the one channel no redactor can touch, and the image is written to the trace and sent to the
+  model provider.
+
+### Fixed — things that did not work at all
+
+- **Stop now stops.** The agent ran in a task the Stop button never reached, so after the
+  transcript said "Stopped." the bot kept calling the model and using your Mac. It now unwinds
+  between turns and between individual actions, and kills any process it started.
+- **A command that never exits no longer hangs the whole run.** Output was read to end-of-file
+  before the timeout was ever consulted, so the timeout was dead code and `npm run dev` or
+  `tail -f` blocked forever. Output is now drained continuously, the timeout is real, and a
+  process that ignores it is killed rather than left running.
+- **Bots can drive Safari and Chrome for real.** The four browser tools were advertised to the
+  model and had no implementation, so every call failed and the only way to use the web was
+  screenshots (see docs/decisions/0018).
+- **Git tools work.** `git.status`, `git.diff`, `git.commit` and `git.push` were advertised and
+  gated behind approval, but had no implementation — so the approval gate protected nothing.
+- **`test.run` works.** Advertised since the beginning and never implemented. Found only after
+  the eval meant to catch this class of bug was itself fixed: it matched "there is no tool
+  called" in lower case while the error says "There is no tool called", so it had never caught
+  anything.
+- **What a bot learns is actually saved.** `memory.save` collected notes into a per-run list that
+  was discarded when the run ended, while telling the model "Noted." each time. Memory is now
+  persisted, injected into later runs, searchable within the run that saved it, and can be
+  forgotten (see docs/decisions/0015).
+- **Channels can be created, and bots can be deleted.** Both existed in the data layer with no
+  way to reach them from the interface. ⌘N makes a bot, ⇧⌘N makes a channel, and a right-click on
+  a row offers Rename and Delete.
+- **The menu bar's New Bot command was restored** after being lost during a parallel edit.
+- **Two bots can no longer type over each other.** Concurrent runs each drove the same physical
+  keyboard and mouse; machine use is now serialised.
+- **A hung MCP server no longer hangs the run.** The timeout fired but left the waiting request
+  parked forever, so the task it belonged to never finished.
+- **MCP servers are shut down** instead of being left running. Nothing ever called `disconnect`,
+  and reopening the connections screen spawned a fresh set while orphaning the old ones.
+
+### Security — credentials and the record
+
+- **The key file is never briefly world-readable, and a crash cannot leave a copy behind.** It was
+  created with default permissions and tightened afterwards; a crash in that window left a
+  complete plaintext copy of every key readable by anyone, and nothing checked for it.
+- **Keys saved from the terminal are no longer destroyed by the next save in the app**, and a key
+  added while the app is open is now visible without reopening Settings.
+- **One odd value in the key file no longer hides every key** and then destroys them on the next
+  save. A file that cannot be parsed at all is now refused rather than overwritten.
+- **Keys stored under any name are redacted**, not only `gemini`, `anthropic` and `openai`.
+- **Keys are excluded from Time Machine.** They are stored in cleartext, so every backup was
+  carrying them off the machine.
+- **Settings tells the truth about a failed save.** A key that could not be written showed the
+  same green confirmation as one that was.
+- **The trace is genuinely tamper-evident.** Its hash chain used a public algorithm with no key,
+  so anything that could edit a record could re-chain the file to match — and the app displayed
+  the result in green as "intact". Records are now signed, older traces are labelled as predating
+  signing rather than passed off as verified, and `run.json` is redacted (see
+  docs/decisions/0017).
+- **A bot cannot rewrite its own trace**, and all of the app's directories are owner-only.
+
+### Added
+
+- **Repeated side effects are prevented across runs** (see docs/decisions/0016). If a run is
+  stopped or crashes after sending something, asking again does not send it twice — and an action
+  whose result was never confirmed is reported as uncertain rather than guessed either way.
+- **A bot cannot save a "lesson" that widens what it is allowed to do**, and anything it learned
+  from a page it read is marked unverified when recalled.
+
+
+### Security
+- **A permission you granted by mistake can now be taken back.** Settings → Permissions writes,
+  edits and removes rules; "Always allow this" on a prompt is no longer a one-way door. The
+  prompt also offers "Never", which was in the model and had no button.
+- **A bot's folder is visible and changeable.** It silently defaulted to your whole Desktop and
+  no screen said so, while the composer offered a mode called "works in its folder". Bot
+  settings now shows the folder, explains that anything outside it needs approval, and lets you
+  pick a different one.
+- **Work whose process is gone no longer claims to be running.** A tool card that said
+  "Running", a Computer card that said "Waiting for you", and an approval card with three live
+  buttons wired to a run that ended — all three now settle to an honest state at launch and at
+  Stop, and say what happened (see docs/decisions/0013-settle-work-whose-process-is-gone.md).
+
+### Fixed
+- **Typing into an empty app no longer destroys the message.** With no bot selected the column
+  showed a working-looking composer that silently discarded whatever you sent. It now shows an
+  empty state with a way to make a bot.
+- **Editing one bot's settings can no longer edit a different one.** The pane kept a private
+  copy that outlived the selection, so typing after switching bots wrote into the bot you left.
+- **Sending while a bot is working no longer starts a second, unstoppable run.**
+- **Quitting no longer loses the last fraction of a second.** Answering an approval and pressing
+  ⌘Q inside the save delay used to lose the answer.
+- **Bots can be deleted**, from the roster's context menu or from bot settings, after a
+  confirmation, cancelling their work first.
+- **You are told when a bot needs you**, even when the app is behind something else. The
+  per-bot notification switch was previously connected to nothing at all.
+- **Code from a bot stays runnable.** Fenced blocks kept their line breaks, get a Copy button,
+  and scroll rather than wrapping mid-command.
+- **The roster answers the glance questions**: which bot needs you, which is working, and what
+  you have not read. It also has arrow-key navigation, type-to-select and VoiceOver rows, as
+  does the run list in Activity.
+- **The transcript has a time axis** — day separators, message times on hover, tool durations —
+  and follows a streaming reply without yanking you away from history you are reading.
+- **A failed run offers Try again.** Messages, cards, screenshots and rows have context menus.
+- **Escape closes sheets. ⌘F finds. ⌥⌘1 and ⌥⌘2 show the roster and the panel. ⇧⌘0 opens Activity.**
+- **Return no longer sends mid-word for anyone using an input method.**
+- **Drafts stay with their conversation** instead of following you to the next bot.
+- **Files can be dropped on the composer.**
+- **Missing key is caught before you type, not after you wait** — the composer says so with a
+  link to add one.
+- **An unreadable state file says where your data went** instead of silently starting fresh.
+- **The Screen panel shows the last thing the bot actually looked at.**
+- Design-system self-violations: the roster uses the system's selection material; 25 pieces of
+  real text moved off the 2.2:1 decorative ink; the approval colour no longer collides with
+  "running"; the status pill uses the ramp built for it; the banned rounded font is gone; the
+  transcript's permanent phantom scrollbar and the "in 0s" timestamp are both fixed; unfilled
+  icon buttons respond to the cursor; Reduce Motion now reaches the spinner, skeleton and press
+  feedback. Fifteen unused tokens and three dead mechanisms removed.
+
+### Added — audit
+- **A full end-to-end UX/UI audit** (`docs/UX-AUDIT-2026-08-31.md`): ~90 findings across
+  critical data-loss paths (the composer can destroy a typed message; editing one bot's
+  settings can edit another; two runs can share one conversation), safety UX (rules cannot be
+  edited or revoked; approvals go silent when the app is in the background; the default
+  workspace is the whole Desktop and no surface says so), interaction gaps (no keyboard
+  access, no context menus, no timestamps, no retry), design-system self-violations, and dead
+  code. Findings only — nothing fixed in that session.
+
 ### Security
 - **API keys moved out of the macOS Keychain into an owner-only file.** They now live in
   `~/Library/Application Support/Bot-Harness/credentials.json` with mode `0600`, in a directory

@@ -380,7 +380,12 @@ enum EvalSuite {
             assertAfter: { _, outcome in
                 let missing = outcome.events.compactMap { event -> String? in
                     if case .toolFinished(_, let out, let ok) = event,
-                       !ok, out.contains("there is no tool called") {
+                       // Case-insensitive, and this is not a nitpick: the thrown message is
+                       // "There is no tool called X" with a capital T, so the lower-cased match
+                       // this used never fired. The one eval written to catch an advertised-but-
+                       // unimplemented tool was vacuous from the day it was added, which is
+                       // exactly how browser.* and git.* stayed dead while the suite read 100%.
+                       !ok, out.lowercased().contains("there is no tool called") {
                         return out
                     }
                     return nil

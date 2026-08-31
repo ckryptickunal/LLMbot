@@ -59,6 +59,24 @@ public enum Mascot {
     public static func stageHeight(width: CGFloat) -> CGFloat {
         (box.height + jumpPeak + bleed) * (width / box.width)
     }
+
+    /// How far the mascot travels, in its own units, rather than however wide its container is.
+    ///
+    /// This is what makes the size a single number you can change. The walk is a fixed ten
+    /// strides in a fixed 2.2 seconds, so if the distance were simply the width of whatever it
+    /// is standing on, then a smaller mascot in the same composer would take the same ten
+    /// strides across the same distance — each one carrying it several body-lengths, which
+    /// reads as skating rather than walking. Pinning the distance to the mascot's own size
+    /// keeps one stride at roughly two thirds of a body width whatever `DS.Size.mascot` says.
+    ///
+    /// Ten strides at 0.6 of a body width is the walking part; the walk is 55% of the journey
+    /// and the jump is the rest.
+    static let travelDistance: Double = 10 * (0.6 * box.width) / 0.55
+
+    /// The distance actually used: never more than the container can hold.
+    static func travel(inStageWidth stage: Double) -> Double {
+        min(max(0, stage - box.width - bleed * 2), travelDistance)
+    }
 }
 
 // MARK: - Easing
@@ -127,205 +145,450 @@ private struct Channel {
     }
 }
 
-// MARK: - The walk
+// MARK: - A pose
 
-/// The timeline: look left, look right, look down, hop, walk, look around again, crouch, jump,
-/// land, stand for a beat, start over.
-private enum Walk {
+/// Everything animated about the mascot, as one value per frame.
+///
+/// Routines below are written as scores over these fields, which is what keeps six behaviours
+/// from becoming six drawing functions that drift apart. The drawing code reads a `Pose` and
+/// knows nothing about which state produced it.
+struct Pose {
+    /// 0…1 along the stage. Only the walk moves.
+    var travel: Double = 0
+    var rootY: Double = 0
+    /// Squash and stretch, about the floor. Kept as two numbers rather than one with a derived
+    /// width, because how much a character widens as it flattens is a decision per routine.
+    var squashX: Double = 1
+    var squashY: Double = 1
 
-    /// Beats, in seconds from the top of the loop. These are not round numbers because they are
-    /// not chosen — they are the running sum of the source's durations and `delay`s, so any one
-    /// of them can be checked against it.
-    private static let leanLeft = 0.0
-    private static let leanRight = 1.9
-    private static let straighten = 3.5
-    private static let hop = 3.7
-    private static let step = 4.03           // legs switch to the hip pivot here
-    private static let planted = 6.23        // and back to the foot pivot here
-    private static let leanAgain = 6.53
-    private static let lookDown = 7.53
-    private static let stand = 8.83
-    private static let crouch = 9.43
-    private static let jump = 9.53
-    private static let land = 10.13
-    private static let settle = 10.38
+    var bodyX: Double = 0
+    var bodyY: Double = 0
+    var bodyRotation: Double = 0
 
-    /// The last second is the mascot standing still at the far side before the whole thing
-    /// snaps back and starts over. That snap is in the original too.
-    static let loop = 11.51
+    var leftHandY: Double = 0
+    var rightHandY: Double = 0
 
-    /// Ten steps of the walk cycle. Legs 1 and 3 lift together, then legs 2 and 4, every
-    /// 0.2 seconds — the diagonal gait of something with four legs and no knees.
-    private static let strides = 10
-    private static let stride = 0.2
+    var eyesX: Double = 0
+    var eyesY: Double = 0
+    /// 1 open, 0 shut. Scales each eye about its own centre, so a blink reads at any size —
+    /// which matters, because at 22 points a two-unit eye movement does not.
+    var eyeOpen: Double = 1
 
-    // MARK: Eyes
+    var legRotation: [Double] = [0, 0, 0, 0]
+    var legScale: [Double] = [1, 1, 1, 1]
+    /// Feet for leaning and hopping, hip for stepping. See `Mascot.footY` / `hipY`.
+    var legPivotY: Double = Mascot.footY
+}
 
-    static let eyesX = Channel(from: 0, [
-        (leanLeft,   0.4, -3, .power2Out),
-        (leanRight,  0.4,  4, .power2Out),
-        (straighten, 0.2,  0, .power2Out),
-        (step,       0.2,  4, .power2Out),
-        (stand,      0.4,  4, .power2Out),
-    ])
+/// One behaviour: how long it lasts, and the pose at any moment inside it.
+struct Routine {
+    let loop: Double
+    /// True for a routine that plays through once and hands over, rather than repeating.
+    /// A celebration on a loop stops reading as a celebration and starts reading as gloating.
+    var once: Bool = false
+    let pose: (Double) -> Pose
+}
 
-    static let eyesY = Channel(from: 0, [
-        (leanRight,  0.4, 12, .power2Out),
-        (straighten, 0.2, 23, .power2Out),   // looking at its own feet
-        (step,       0.2,  0, .power2Out),
-        (leanAgain,  0.4, 12, .power2Out),
-        (lookDown,   0.3, 23, .power2Out),   // checking the drop before the jump
-        (stand,      0.4,  0, .power2Out),
-    ])
+// MARK: - What the mascot can be doing
 
-    // MARK: Body
+/// The mascot's states, one per thing the app can be doing.
+///
+/// These are not decoration with different names. Each maps to something the runner actually
+/// reports, so a glance at the mascot answers "is it working, does it need me, did it finish" —
+/// which the design system lists as a requirement rather than a feature.
+public enum MascotState: String, CaseIterable, Sendable {
+    /// Nothing is happening. The ported original: looks around, walks, jumps.
+    case walking
+    /// A run is in progress. Trots on the spot, so it reads as effort without wandering off.
+    case working
+    /// A run is blocked on an approval. Hops to get your attention, then waits and blinks.
+    case waiting
+    /// A run just finished. One celebration jump.
+    case pleased
+    /// A run failed. Slumps, and sighs.
+    case stumped
+    /// Nothing selected, nothing to do. Eyes shut, breathing.
+    case asleep
 
-    static let bodyRotation = Channel(from: 0, [
-        (leanLeft,   0.4, -3, .power2Out),
-        (leanRight,  0.4,  3, .power2Out),
-        (straighten, 0.2,  0, .power2Out),
-        (leanAgain,  0.4,  3, .power2Out),
-        (stand,      0.4,  0, .power2Out),
-    ])
-
-    static let bodyX = Channel(from: 0, [
-        (leanLeft,   0.4, -3, .power2Out),
-        (leanRight,  0.4,  3, .power2Out),
-        (straighten, 0.2,  0, .power2Out),
-        (leanAgain,  0.4,  3, .power2Out),
-        (stand,      0.4,  0, .power2Out),
-    ])
-
-    static let bodyY = Channel(from: 0, [
-        (leanLeft,   0.4, -5, .power2Out),
-        (leanRight,  0.4, -5, .power2Out),
-        (straighten, 0.2,  0, .power2Out),
-        (leanAgain,  0.4, -5, .power2Out),
-        (stand,      0.4,  0, .power2Out),
-        (crouch,     0.1,  8, .power3In),    // the dip that gathers the jump
-        (jump,      0.42,  0, .sineOut),
-    ])
-
-    // MARK: Hands
-
-    static let handY = Channel(from: 0, [
-        (crouch,  0.1,  10, .power3In),
-        (jump,   0.42, -12, .sineOut),
-        (land,    0.2,   0, .power3In),
-        (settle, 0.05,   6, .power2In),      // overshoot on landing; without it the jump ends stiff
-        (10.43,  0.08,   0, .power2Out),
-    ])
-
-    // MARK: The whole character
-
-    /// How far along the stage the mascot is, 0 to 1. It walks a bit over half the way, then
-    /// jumps the rest — so the walk and the jump together cross exactly one screen's worth.
-    static let travel = Channel(from: 0, [
-        (step, 2.2, 0.55, .linear),
-        (jump, 0.85, 1.0, .power1InOut),
-    ])
-
-    /// Vertical. The small hop before the walk, then the jump: `sineOut` up and `power3In`
-    /// down, because equal easing in both directions reads as floating rather than falling.
-    static let height = Channel(from: 0, [
-        (hop,  0.18, -18, .power2Out),
-        (3.88, 0.15,   0, .power3In),
-        (jump, 0.42, -90, .sineOut),
-        (land,  0.2,   0, .power3In),
-    ])
-
-    // MARK: Legs
-
-    /// Each leg gets its own tilt and stretch, and the ones nearest the direction of the lean
-    /// take more of it. That asymmetry is most of what sells the weight.
-    private static let leanLeftTilt = [-7.0, -8, -8, -9]
-    private static let leanLeftStretch = [1.35, 1.3, 1.2, 1.15]
-    private static let leanRightTilt = [9.0, 8, 8, 7]
-    private static let leanRightStretch = [1.15, 1.2, 1.3, 1.35]
-
-    static let legRotation: [Channel] = (0..<4).map { i in
-        Channel(from: 0, [
-            (leanLeft,   0.4, leanLeftTilt[i],  .power2Out),
-            (leanRight,  0.4, leanRightTilt[i], .power2Out),
-            (straighten, 0.2, 0,                .power2Out),
-            (leanAgain,  0.4, leanRightTilt[i], .power2Out),
-            (stand,      0.4, 0,                .power2Out),
-        ])
-    }
-
-    static let legScale: [Channel] = (0..<4).map { i in
-        // Legs 1 and 3 lead; legs 2 and 4 come half a stride later.
-        let offset = (i % 2 == 0) ? 0.0 : stride / 2
-        var moves: [(at: Double, over: Double, to: Double, ease: Ease)] = [
-            (leanLeft,   0.4, leanLeftStretch[i],  .power2Out),
-            (leanRight,  0.4, leanRightStretch[i], .power2Out),
-            (straighten, 0.2, 1,                   .power2Out),
-        ]
-        for n in 0..<strides {
-            let down = step + offset + Double(n) * stride
-            moves.append((down, 0.1, 0.45, .power2Out))     // foot lifts toward the hip
-            moves.append((down + 0.1, 0.1, 1, .power2In))   // and plants again
+    var routine: Routine {
+        switch self {
+        case .walking: return Routines.walking
+        case .working: return Routines.working
+        case .waiting: return Routines.waiting
+        case .pleased: return Routines.pleased
+        case .stumped: return Routines.stumped
+        case .asleep:  return Routines.asleep
         }
-        moves.append((step + 2.1, 0.08, 1, .power2In))
-        moves.append((leanAgain, 0.4, leanRightStretch[i], .power2Out))
-        moves.append((stand, 0.4, 1, .power2Out))
-        return Channel(from: 1, moves)
     }
 
-    /// The anchor swap, which is a `.call()` in the original rather than a tween.
-    static func legPivotY(at t: Double) -> Double {
-        (t >= step && t < planted) ? Mascot.hipY : Mascot.footY
-    }
+    /// What the mascot does once a one-shot routine has finished.
+    var after: MascotState? { self == .pleased ? .walking : nil }
+}
+
+// MARK: - The routines
+
+private enum Routines {
+
+    // Amplitudes here are in the original's units, where the whole mascot is 107 wide. At the
+    // size this is drawn in the composer one unit is about a fifth of a point, so anything
+    // meant to be *seen* has to move the silhouette: legs, whole-body height, and the eyes
+    // opening and shutting. Small eye offsets are for the larger sizes.
+
+    // MARK: Walking — the ported original, unchanged
+
+    /// Look left, look right, look down, hop, walk, look around again, crouch, jump, land,
+    /// stand for a beat, start over. Transcribed from the source timeline; see the file header.
+    static let walking: Routine = {
+        let leanLeft = 0.0, leanRight = 1.9, straighten = 3.5, hop = 3.7
+        let step = 4.03, leanAgain = 6.53, lookDown = 7.53, stand = 8.83
+        let crouch = 9.43, jump = 9.53, land = 10.13, settle = 10.38
+        let planted = 6.23
+        let strides = 10, stride = 0.2
+
+        let eyesX = Channel(from: 0, [
+            (leanLeft, 0.4, -3, .power2Out), (leanRight, 0.4, 4, .power2Out),
+            (straighten, 0.2, 0, .power2Out), (step, 0.2, 4, .power2Out),
+            (stand, 0.4, 4, .power2Out),
+        ])
+        let eyesY = Channel(from: 0, [
+            (leanRight, 0.4, 12, .power2Out), (straighten, 0.2, 23, .power2Out),
+            (step, 0.2, 0, .power2Out), (leanAgain, 0.4, 12, .power2Out),
+            (lookDown, 0.3, 23, .power2Out), (stand, 0.4, 0, .power2Out),
+        ])
+        let bodyRotation = Channel(from: 0, [
+            (leanLeft, 0.4, -3, .power2Out), (leanRight, 0.4, 3, .power2Out),
+            (straighten, 0.2, 0, .power2Out), (leanAgain, 0.4, 3, .power2Out),
+            (stand, 0.4, 0, .power2Out),
+        ])
+        let bodyX = Channel(from: 0, [
+            (leanLeft, 0.4, -3, .power2Out), (leanRight, 0.4, 3, .power2Out),
+            (straighten, 0.2, 0, .power2Out), (leanAgain, 0.4, 3, .power2Out),
+            (stand, 0.4, 0, .power2Out),
+        ])
+        let bodyY = Channel(from: 0, [
+            (leanLeft, 0.4, -5, .power2Out), (leanRight, 0.4, -5, .power2Out),
+            (straighten, 0.2, 0, .power2Out), (leanAgain, 0.4, -5, .power2Out),
+            (stand, 0.4, 0, .power2Out), (crouch, 0.1, 8, .power3In),
+            (jump, 0.42, 0, .sineOut),
+        ])
+        let handY = Channel(from: 0, [
+            (crouch, 0.1, 10, .power3In), (jump, 0.42, -12, .sineOut),
+            (land, 0.2, 0, .power3In), (settle, 0.05, 6, .power2In),
+            (10.43, 0.08, 0, .power2Out),
+        ])
+        let travel = Channel(from: 0, [
+            (step, 2.2, 0.55, .linear), (jump, 0.85, 1.0, .power1InOut),
+        ])
+        let height = Channel(from: 0, [
+            (hop, 0.18, -18, .power2Out), (3.88, 0.15, 0, .power3In),
+            (jump, 0.42, -90, .sineOut), (land, 0.2, 0, .power3In),
+        ])
+
+        let leanLeftTilt = [-7.0, -8, -8, -9], leanLeftStretch = [1.35, 1.3, 1.2, 1.15]
+        let leanRightTilt = [9.0, 8, 8, 7], leanRightStretch = [1.15, 1.2, 1.3, 1.35]
+
+        let legRotation: [Channel] = (0..<4).map { i in
+            Channel(from: 0, [
+                (leanLeft, 0.4, leanLeftTilt[i], .power2Out),
+                (leanRight, 0.4, leanRightTilt[i], .power2Out),
+                (straighten, 0.2, 0, .power2Out),
+                (leanAgain, 0.4, leanRightTilt[i], .power2Out),
+                (stand, 0.4, 0, .power2Out),
+            ])
+        }
+        let legScale: [Channel] = (0..<4).map { i in
+            let offset = (i % 2 == 0) ? 0.0 : stride / 2
+            var moves: [(at: Double, over: Double, to: Double, ease: Ease)] = [
+                (leanLeft, 0.4, leanLeftStretch[i], .power2Out),
+                (leanRight, 0.4, leanRightStretch[i], .power2Out),
+                (straighten, 0.2, 1, .power2Out),
+            ]
+            for n in 0..<strides {
+                let down = step + offset + Double(n) * stride
+                moves.append((down, 0.1, 0.45, .power2Out))
+                moves.append((down + 0.1, 0.1, 1, .power2In))
+            }
+            moves.append((step + 2.1, 0.08, 1, .power2In))
+            moves.append((leanAgain, 0.4, leanRightStretch[i], .power2Out))
+            moves.append((stand, 0.4, 1, .power2Out))
+            return Channel(from: 1, moves)
+        }
+
+        return Routine(loop: 11.51) { t in
+            var pose = Pose()
+            pose.travel = travel.value(at: t)
+            pose.rootY = height.value(at: t)
+            pose.bodyX = bodyX.value(at: t)
+            pose.bodyY = bodyY.value(at: t)
+            pose.bodyRotation = bodyRotation.value(at: t)
+            pose.leftHandY = handY.value(at: t)
+            pose.rightHandY = pose.leftHandY
+            pose.eyesX = eyesX.value(at: t)
+            pose.eyesY = eyesY.value(at: t)
+            pose.legRotation = legRotation.map { $0.value(at: t) }
+            pose.legScale = legScale.map { $0.value(at: t) }
+            pose.legPivotY = (t >= step && t < planted) ? Mascot.hipY : Mascot.footY
+            return pose
+        }
+    }()
+
+    // MARK: Working — a trot on the spot
+
+    /// Twelve strides in place, with the body rocking over them and one blink.
+    ///
+    /// It deliberately does not travel. A run can last minutes, and something crossing the
+    /// composer over and over is a thing you end up watching instead of the work.
+    static let working: Routine = {
+        let loop = 2.4, stride = 0.2, strides = 12
+
+        let legScale: [Channel] = (0..<4).map { i in
+            let offset = (i % 2 == 0) ? 0.0 : stride / 2
+            var moves: [(at: Double, over: Double, to: Double, ease: Ease)] = []
+            for n in 0..<strides {
+                let down = offset + Double(n) * stride
+                guard down + 0.2 <= loop else { break }
+                moves.append((down, 0.1, 0.5, .power2Out))
+                moves.append((down + 0.1, 0.1, 1, .power2In))
+            }
+            return Channel(from: 1, moves)
+        }
+        // A trot bounces once per stride pair, which is what stops the legs looking detached
+        // from the body.
+        let bounce = Channel(from: 0, {
+            var moves: [(at: Double, over: Double, to: Double, ease: Ease)] = []
+            var t = 0.0
+            while t + stride <= loop {
+                moves.append((t, stride / 2, -7, .sineOut))
+                moves.append((t + stride / 2, stride / 2, 0, .power2In))
+                t += stride
+            }
+            return moves
+        }())
+        let rock = Channel(from: -5, [
+            (0.0, 1.2, 5, .power1InOut), (1.2, 1.2, -5, .power1InOut),
+        ])
+        let blink = Channel(from: 1, [
+            (1.0, 0.07, 0.05, .power2In), (1.07, 0.09, 1, .power2Out),
+        ])
+
+        return Routine(loop: loop) { t in
+            var pose = Pose()
+            pose.rootY = bounce.value(at: t)
+            pose.bodyRotation = rock.value(at: t)
+            pose.eyeOpen = blink.value(at: t)
+            pose.legScale = legScale.map { $0.value(at: t) }
+            pose.legPivotY = Mascot.hipY          // stepping, so the foot leaves the ground
+            return pose
+        }
+    }()
+
+    // MARK: Waiting — two hops, then patience
+
+    /// The one state that has to be noticed. Two hops in the first second, then it stands and
+    /// blinks. An animation that keeps hopping forever is one people learn to ignore; two hops
+    /// and stillness is a thing that asked once and is now waiting for you.
+    static let waiting: Routine = {
+        let loop = 3.4
+        func hop(at t: Double) -> [(at: Double, over: Double, to: Double, ease: Ease)] {
+            [(t, 0.2, -16, .sineOut), (t + 0.2, 0.16, 0, .power3In)]
+        }
+        let height = Channel(from: 0, hop(at: 0.0) + hop(at: 0.5))
+        let crouch = Channel(from: 1, [
+            (0.36, 0.06, 0.86, .power2In), (0.42, 0.08, 1, .power2Out),
+            (0.86, 0.06, 0.86, .power2In), (0.92, 0.08, 1, .power2Out),
+        ])
+        let hands = Channel(from: 0, [
+            (0.0, 0.2, -7, .sineOut), (0.2, 0.16, 0, .power3In),
+            (0.5, 0.2, -7, .sineOut), (0.7, 0.16, 0, .power3In),
+        ])
+        // Looking up at you, and blinking twice while it waits.
+        let blink = Channel(from: 1, [
+            (1.6, 0.07, 0.05, .power2In), (1.67, 0.09, 1, .power2Out),
+            (2.7, 0.07, 0.05, .power2In), (2.77, 0.09, 1, .power2Out),
+        ])
+        let legs = Channel(from: 1, [
+            (0.0, 0.2, 1.12, .sineOut), (0.2, 0.16, 1, .power3In),
+            (0.5, 0.2, 1.12, .sineOut), (0.7, 0.16, 1, .power3In),
+        ])
+
+        return Routine(loop: loop) { t in
+            var pose = Pose()
+            pose.rootY = height.value(at: t)
+            pose.squashY = crouch.value(at: t)
+            pose.squashX = 1 + (1 - pose.squashY) * 0.5
+            pose.leftHandY = hands.value(at: t)
+            pose.rightHandY = pose.leftHandY
+            pose.eyesY = -3
+            pose.eyeOpen = blink.value(at: t)
+            pose.legScale = Array(repeating: legs.value(at: t), count: 4)
+            return pose
+        }
+    }()
+
+    // MARK: Pleased — it finished
+
+    /// One big jump with a squint, a small second bounce, then still. Two beats, because one
+    /// reads as a glitch and three reads as gloating.
+    static let pleased: Routine = {
+        let loop = 2.8
+        let height = Channel(from: 0, [
+            (0.14, 0.32, -42, .sineOut), (0.46, 0.26, 0, .power3In),
+            (0.86, 0.18, -15, .sineOut), (1.04, 0.16, 0, .power3In),
+        ])
+        let squash = Channel(from: 1, [
+            (0.0, 0.14, 0.78, .power3In),      // gather
+            (0.14, 0.2, 1.12, .power2Out),     // stretch off the ground
+            (0.46, 0.26, 1, .power2In),
+            (0.72, 0.08, 0.84, .power2In),     // land
+            (0.8, 0.14, 1, .power2Out),
+        ])
+        let hands = Channel(from: 0, [
+            (0.0, 0.14, 8, .power3In), (0.14, 0.32, -18, .sineOut),
+            (0.46, 0.26, 0, .power3In), (0.86, 0.18, -8, .sineOut),
+            (1.04, 0.16, 0, .power3In),
+        ])
+        // Eyes shut at the top of the jump. A squint is the whole expression, and it is the
+        // only part of this that survives being drawn 22 points wide.
+        let squint = Channel(from: 1, [
+            (0.16, 0.1, 0.1, .power2Out), (0.62, 0.14, 1, .power2Out),
+        ])
+        let legs = Channel(from: 1, [
+            (0.0, 0.14, 0.7, .power3In), (0.14, 0.24, 1.1, .sineOut),
+            (0.46, 0.26, 1, .power2In),
+        ])
+
+        return Routine(loop: loop, once: true) { t in
+            var pose = Pose()
+            pose.rootY = height.value(at: t)
+            pose.squashY = squash.value(at: t)
+            pose.squashX = 1 + (1 - pose.squashY) * 0.6
+            pose.leftHandY = hands.value(at: t)
+            pose.rightHandY = pose.leftHandY
+            pose.eyeOpen = squint.value(at: t)
+            pose.legScale = Array(repeating: legs.value(at: t), count: 4)
+            return pose
+        }
+    }()
+
+    // MARK: Stumped — it failed
+
+    /// Sinks, splays its legs, half-closes its eyes, and sighs once. Nothing about this asks
+    /// for attention: the error message is doing that job, and a mascot competing with it would
+    /// be the wrong kind of charming.
+    static let stumped: Routine = {
+        let loop = 3.2
+        let sink = Channel(from: 0, [
+            (0.0, 0.5, 9, .power2Out),
+            (1.2, 0.7, 12, .power1InOut), (1.9, 0.8, 9, .power1InOut),   // the sigh
+        ])
+        let legs = Channel(from: 1, [(0.0, 0.5, 0.72, .power2Out)])
+        let splay = [-7.0, -3, 3, 7]
+        let splayIn = Channel(from: 0, [(0.0, 0.5, 1, .power2Out)])
+        let droop = Channel(from: 1, [(0.0, 0.4, 0.45, .power2Out)])
+        let hands = Channel(from: 0, [(0.0, 0.5, 7, .power2Out)])
+
+        return Routine(loop: loop) { t in
+            var pose = Pose()
+            pose.bodyY = sink.value(at: t)
+            pose.leftHandY = hands.value(at: t)
+            pose.rightHandY = pose.leftHandY
+            pose.eyesY = 4
+            pose.eyeOpen = droop.value(at: t)
+            let amount = splayIn.value(at: t)
+            pose.legRotation = splay.map { $0 * amount }
+            pose.legScale = Array(repeating: legs.value(at: t), count: 4)
+            return pose
+        }
+    }()
+
+    // MARK: Asleep — nothing to do
+
+    /// Eyes shut, and the whole body breathing. Slow enough that it is not something you catch
+    /// out of the corner of your eye while reading.
+    static let asleep: Routine = {
+        let loop = 4.0
+        let breathe = Channel(from: 0, [
+            (0.0, 2.0, -4, .power1InOut), (2.0, 2.0, 0, .power1InOut),
+        ])
+        let legs = Channel(from: 1, [
+            (0.0, 2.0, 1.05, .power1InOut), (2.0, 2.0, 1, .power1InOut),
+        ])
+        return Routine(loop: loop) { t in
+            var pose = Pose()
+            pose.bodyY = breathe.value(at: t)
+            pose.leftHandY = -breathe.value(at: t) * 0.4
+            pose.rightHandY = pose.leftHandY
+            pose.eyeOpen = 0.1
+            pose.eyesY = 3
+            pose.legScale = Array(repeating: legs.value(at: t), count: 4)
+            return pose
+        }
+    }()
 }
 
 // MARK: - The view
 
-/// The mascot, walking across whatever width it is given.
+/// The mascot, doing whatever the app is doing.
 ///
-/// It wants the full width of its container and `Mascot.stageHeight(width:)` of height; the
-/// floor is the bottom edge. Under Reduce Motion it stands still, because for a walk there is
-/// no version of the movement that is safe to keep — the movement is the whole thing.
-public struct WalkingMascot: View {
+/// It wants the full width of its container; the floor is the bottom edge and the height comes
+/// from `Mascot.stageHeight(width:)`. Under Reduce Motion it holds a still pose, because for
+/// these routines there is no version of the movement that is safe to keep — the movement is
+/// the whole thing.
+public struct MascotView: View {
+    private let state: MascotState
     private let width: CGFloat
+
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.controlActiveState) private var windowState
     @State private var began = Date()
 
-    /// The default is the size it takes on the strip above the composer.
-    public init(width: CGFloat = DS.Size.mascot) {
+    public init(_ state: MascotState = .walking, width: CGFloat = DS.Size.mascot) {
+        self.state = state
         self.width = width
     }
 
     public var body: some View {
         Group {
             if reduceMotion {
-                canvas(at: 0)
+                // Not frame zero of the loop but a moment into it, so a state that begins by
+                // settling into a pose — stumped, asleep — shows the pose rather than the
+                // neutral stance it happens to start from.
+                canvas(state, at: min(1.0, state.routine.loop))
             } else {
                 // A timeline rather than repeating animations: the pose is a function of the
-                // clock, so there is no animation state to fall out of step, and the loop
-                // closes exactly.
-                //
-                // Paused when the window is not the front one. This sits above the composer
-                // and is therefore on screen for as long as the app is, which in this app
-                // means all day — redrawing it at the display's refresh rate behind someone
-                // else's window is spending a laptop's battery on a picture nobody is looking
-                // at. Because the pose is computed from the clock rather than accumulated,
-                // resuming lands on the right frame with no visible seam.
+                // clock, so there is no animation state to fall out of step and the loop closes
+                // exactly. Paused when Bot-Harness is not the front app — this sits above the
+                // composer and is therefore on screen for as long as the app is.
                 TimelineView(.animation(paused: windowState == .inactive)) { timeline in
-                    canvas(at: timeline.date.timeIntervalSince(began)
-                        .truncatingRemainder(dividingBy: Walk.loop))
+                    let (playing, t) = phase(at: timeline.date)
+                    canvas(playing, at: t)
                 }
             }
         }
         .frame(height: Mascot.stageHeight(width: width))
         .accessibilityHidden(true)
+        // Restart the clock on a change of state, so each routine plays from its first frame
+        // rather than being joined halfway through.
+        .onChange(of: state) { began = Date() }
     }
 
-    private func canvas(at t: Double) -> some View {
-        Canvas { context, size in draw(&context, in: size, at: t) }
+    /// Which routine is playing and how far into it, given that a one-shot hands over to
+    /// whatever follows it once it has run through.
+    private func phase(at now: Date) -> (MascotState, Double) {
+        let elapsed = max(0, now.timeIntervalSince(began))
+        let routine = state.routine
+        if routine.once, elapsed >= routine.loop, let after = state.after {
+            return (after, (elapsed - routine.loop).truncatingRemainder(dividingBy: after.routine.loop))
+        }
+        return (state, elapsed.truncatingRemainder(dividingBy: routine.loop))
     }
 
-    private func draw(_ context: inout GraphicsContext, in size: CGSize, at t: Double) {
+    private func canvas(_ playing: MascotState, at t: Double) -> some View {
+        let pose = playing.routine.pose(t)
+        return Canvas { context, size in draw(pose, &context, in: size) }
+    }
+
+    private func draw(_ pose: Pose, _ context: inout GraphicsContext, in size: CGSize) {
         let scale = width / Mascot.box.width
         guard scale > 0 else { return }
 
@@ -334,51 +597,70 @@ public struct WalkingMascot: View {
         context.translateBy(x: 0, y: size.height - Mascot.box.height * scale)
         context.scaleBy(x: scale, y: scale)
 
+        // The walk is centred in whatever it is standing on, rather than starting hard against
+        // the left edge. At rest — which is most of the time, and all of the time in the states
+        // that do not travel — a character parked in the corner above the field's rounded
+        // shoulder reads as a layout mistake rather than as a character.
         let stage = size.width / scale
-        let distance = max(0, stage - Mascot.box.width - Mascot.bleed * 2)
+        let distance = Mascot.travel(inStageWidth: stage)
+        let start = max(Mascot.bleed, (stage - distance - Mascot.box.width) / 2)
+        context.translateBy(x: start + pose.travel * distance, y: pose.rootY)
 
-        context.translateBy(x: Mascot.bleed + Walk.travel.value(at: t) * distance,
-                            y: Walk.height.value(at: t))
+        // Squash and stretch happen about the floor, so a flattened mascot stays on the ground
+        // instead of sinking through it.
+        context.translateBy(x: Mascot.box.width / 2, y: Mascot.box.height)
+        context.scaleBy(x: pose.squashX, y: pose.squashY)
+        context.translateBy(x: -Mascot.box.width / 2, y: -Mascot.box.height)
 
-        drawLegs(&context, at: t)
-        drawBody(&context, at: t)
+        drawLegs(pose, &context)
+        drawBody(pose, &context)
     }
 
-    private func drawLegs(_ context: inout GraphicsContext, at t: Double) {
-        let pivotY = Walk.legPivotY(at: t)
+    private func drawLegs(_ pose: Pose, _ context: inout GraphicsContext) {
         context.drawLayer { legs in
             legs.clip(to: Path(Mascot.ground))
             for (i, leg) in Mascot.legs.enumerated() {
                 legs.drawLayer { limb in
-                    limb.translateBy(x: Mascot.legPivotX[i], y: pivotY)
-                    limb.rotate(by: .degrees(Walk.legRotation[i].value(at: t)))
-                    limb.scaleBy(x: 1, y: Walk.legScale[i].value(at: t))
-                    limb.translateBy(x: -Mascot.legPivotX[i], y: -pivotY)
+                    limb.translateBy(x: Mascot.legPivotX[i], y: pose.legPivotY)
+                    limb.rotate(by: .degrees(pose.legRotation[i]))
+                    limb.scaleBy(x: 1, y: pose.legScale[i])
+                    limb.translateBy(x: -Mascot.legPivotX[i], y: -pose.legPivotY)
                     limb.fill(Path(leg), with: .color(DS.Brand.mascot))
                 }
             }
         }
     }
 
-    private func drawBody(_ context: inout GraphicsContext, at t: Double) {
+    private func drawBody(_ pose: Pose, _ context: inout GraphicsContext) {
         context.drawLayer { body in
-            body.translateBy(x: Walk.bodyX.value(at: t), y: Walk.bodyY.value(at: t))
+            body.translateBy(x: pose.bodyX, y: pose.bodyY)
             body.translateBy(x: Mascot.bodyPivot.x, y: Mascot.bodyPivot.y)
-            body.rotate(by: .degrees(Walk.bodyRotation.value(at: t)))
+            body.rotate(by: .degrees(pose.bodyRotation))
             body.translateBy(x: -Mascot.bodyPivot.x, y: -Mascot.bodyPivot.y)
 
             body.fill(Path(Mascot.torso), with: .color(DS.Brand.mascot))
 
-            body.drawLayer { hands in
-                hands.translateBy(x: 0, y: Walk.handY.value(at: t))
-                hands.fill(Path(Mascot.leftHand), with: .color(DS.Brand.mascot))
-                hands.fill(Path(Mascot.rightHand), with: .color(DS.Brand.mascot))
+            body.drawLayer { hand in
+                hand.translateBy(x: 0, y: pose.leftHandY)
+                hand.fill(Path(Mascot.leftHand), with: .color(DS.Brand.mascot))
+            }
+            body.drawLayer { hand in
+                hand.translateBy(x: 0, y: pose.rightHandY)
+                hand.fill(Path(Mascot.rightHand), with: .color(DS.Brand.mascot))
             }
 
             body.drawLayer { eyes in
-                eyes.translateBy(x: Walk.eyesX.value(at: t), y: Walk.eyesY.value(at: t))
+                eyes.translateBy(x: pose.eyesX, y: pose.eyesY)
                 for eye in Mascot.eyes {
-                    eyes.fill(Path(eye), with: .color(DS.Brand.mascotEye))
+                    eyes.drawLayer { lid in
+                        // Each eye closes about its own middle, so a blink shuts rather than
+                        // shrinks.
+                        let centre = eye.midY
+                        lid.translateBy(x: 0, y: centre)
+                        lid.scaleBy(x: 1, y: max(0.02, pose.eyeOpen))
+                        lid.translateBy(x: 0, y: -centre)
+                        lid.fill(Path(eye), with: .color(DS.Brand.mascotEye))
+                    }
                 }
             }
         }

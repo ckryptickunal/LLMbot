@@ -59,13 +59,19 @@ struct SettingsView: View {
 ///    and never to a path any bot is allowed to read. The copy below says plainly that they are
 ///    on disk, because they are; a settings screen that oversells its own security is worse than
 ///    one that admits what it is.
-/// 3. **The brain that needs no key is listed first**, because the fastest path to a working
-///    app is the one requiring nothing at all.
+/// 3. **The brain that actually answers is listed first.** This used to be Claude Code, on the
+///    reasoning that the fastest path to a working app is the one requiring nothing at all —
+///    which would be right if it worked. `BotRunner.brain(for:)` returns a Gemini adapter for
+///    every case, so following this screen and adding no key produced a bot that failed on its
+///    first message with no clue why. Ordering by what is true beats ordering by what is easy.
 struct ProviderSettings: View {
     @State private var present: [String: Bool] = [:]
     @State private var claudeCLIPath: String?
     @State private var justSaved: String?
-    @State private var permissionsDrifted = false
+    @State private var permissionProblems: [String] = []
+    /// Why the last save or delete did not happen. Previously a failed write showed the same
+    /// green "Saved" as a successful one, so a key the user believed was stored was not.
+    @State private var writeFailure: String?
 
     var body: some View {
         ScrollView {
@@ -76,34 +82,58 @@ struct ProviderSettings: View {
                     .lineSpacing(DS.Text.bodyLineSpacing)
                     .fixedSize(horizontal: false, vertical: true)
 
-                if permissionsDrifted {
-                    ErrorState("Your key file is readable by other accounts on this Mac. "
-                             + "It should be readable only by you — a backup restore or a sync tool can change that.") {
+                // The reasons come from the store rather than being one hardcoded sentence.
+                // There are three different problems it can report — a wide file mode, a wide
+                // folder mode, and a leftover temporary file holding a complete copy of every
+                // key — and a banner that always says "readable by other accounts" is simply
+                // wrong for two of them. A security warning that names the wrong cause teaches
+                // people to dismiss security warnings.
+                if !permissionProblems.isEmpty {
+                    ErrorState(permissionProblems.joined(separator: " ")) {
                         CredentialStore.repairPermissions()
-                        permissionsDrifted = !CredentialStore.permissionsAreCorrect()
+                        permissionProblems = CredentialStore.permissionProblems()
                     }
                 }
 
-                claudeCodeRow
-                Hairline()
+                if let failure = writeFailure {
+                    ErrorState(failure)
+                }
+
+                // The whole app is inert without this one key, so the screen says so before it
+                // says anything else. Previously the first thing here was a green tick beside a
+                // brain that cannot answer, which told a new user they were finished.
+                if !(present["gemini"] ?? false) {
+                    StandingNotice(
+                        systemImage: "key.horizontal",
+                        title: "No brain is set up yet",
+                        detail: "Add a Google Gemini key below. It is the only one that answers "
+                              + "today — the others are stored for when their adapters exist.",
+                        actionTitle: "Where do I get one?",
+                        tint: DS.Status.waiting.mark,
+                        action: openGeminiKeyPage
+                    )
+                }
 
                 KeyField(provider: "gemini", title: "Google Gemini",
-                         detail: "Drives the computer — screen, keyboard and mouse. Get a key at aistudio.google.com.",
+                         detail: "The brain every bot answers with today, and what drives the computer — screen, keyboard and mouse. Keys are free at aistudio.google.com.",
                          placeholder: "AIza…", isPresent: present["gemini"] ?? false,
                          onSave: { save("gemini", $0) }, onRemove: { remove("gemini") })
 
                 KeyField(provider: "anthropic", title: "Anthropic",
-                         detail: "Only needed if you have an API key. A Claude Code subscription is handled above instead.",
+                         detail: "Stored for later. No bot answers with it yet, so a key here changes nothing until the adapter is written.",
                          placeholder: "sk-ant-…", isPresent: present["anthropic"] ?? false,
                          onSave: { save("anthropic", $0) }, onRemove: { remove("anthropic") })
 
                 KeyField(provider: "openai", title: "OpenAI",
-                         detail: "Optional. Available as an additional brain for bots that want it.",
+                         detail: "Stored for later, on the same terms as Anthropic above.",
                          placeholder: "sk-…", isPresent: present["openai"] ?? false,
                          onSave: { save("openai", $0) }, onRemove: { remove("openai") })
 
+                Hairline()
+                claudeCodeRow
+
                 if let justSaved {
-                    Label("Saved \(justSaved).", systemImage: "checkmark.circle.fill")
+                    Label("Saved your \(justSaved) key.", systemImage: "checkmark.circle.fill")
                         .font(DS.Text.caption)
                         .foregroundStyle(DS.Status.done.mark)
                         .transition(.opacity)
@@ -114,45 +144,84 @@ struct ProviderSettings: View {
         .task { refresh() }
     }
 
+    /// Claude Code, described as what it is today rather than what it is meant to be.
+    ///
+    /// It carried a green tick and "Signed in and ready — no API key needed", and `Bot.swift`
+    /// still documents the CLI as the first-class brain that lets someone with no key use this
+    /// app. Both are the intent. Neither is the code: `BotRunner.brain(for:)` returns a Gemini
+    /// adapter for every `BrainSpec`, so a bot set to Claude Code answers with Gemini, and a
+    /// user who added no key because this row said they were ready got silence.
+    ///
+    /// A tick is a claim. Until the adapter exists this row shows the same "Soon" chip the
+    /// Container environment uses, and says the same thing the composer's brain chip already
+    /// says — "adapter not written" — so the two places never disagree.
     private var claudeCodeRow: some View {
         HStack(alignment: .top, spacing: DS.Space.lg) {
-            Image(systemName: claudeCLIPath == nil ? "xmark.circle" : "checkmark.circle.fill")
-                .foregroundStyle(claudeCLIPath == nil ? DS.Ink.secondary : DS.Status.done.mark)
+            Image(systemName: "clock")
+                .foregroundStyle(DS.Ink.secondary)
                 .font(DS.Text.glyph)
             VStack(alignment: .leading, spacing: DS.Space.hair) {
-                Text("Claude Code")
-                    .font(DS.Text.body.weight(.semibold))
-                    .foregroundStyle(DS.Ink.primary)
+                HStack(spacing: DS.Space.md) {
+                    Text("Claude Code")
+                        .font(DS.Text.body.weight(.semibold))
+                        .foregroundStyle(DS.Ink.primary)
+                    Text("Soon")
+                        .font(DS.Text.micro)
+                        .foregroundStyle(DS.Ink.secondary)
+                        .padding(.horizontal, DS.Space.md)
+                        .padding(.vertical, DS.Space.hair)
+                        .background(DS.Tint.t3, in: Capsule())
+                }
+                Text("Meant to make a Claude Code subscription a brain with no API key. The "
+                   + "adapter that speaks to the CLI is not written yet, so a bot set to Claude "
+                   + "Code answers with Gemini instead.")
+                    .font(DS.Text.caption)
+                    .foregroundStyle(DS.Ink.secondary)
+                    .lineSpacing(DS.Text.bodyLineSpacing)
+                    .fixedSize(horizontal: false, vertical: true)
                 if let path = claudeCLIPath {
-                    Text("Signed in and ready — no API key needed. Billed to your subscription.")
-                        .font(DS.Text.caption)
-                        .foregroundStyle(DS.Ink.secondary)
-                    Text(path)
+                    // Still worth showing: it is the one fact on this row that is checked
+                    // against the disk rather than asserted.
+                    Text("Found on this Mac at \(path)")
                         .font(DS.Text.monoSmall)
-                        .foregroundStyle(DS.Ink.tertiary)
-                } else {
-                    Text("Not found. Install the Claude Code CLI to use your subscription as a brain.")
-                        .font(DS.Text.caption)
                         .foregroundStyle(DS.Ink.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
             }
             Spacer()
         }
+        .accessibilityElement(children: .combine)
+    }
+
+    /// Where a Gemini key comes from. The only external link on this screen, and it exists
+    /// because "add a key" is not actionable advice if you do not know where keys live.
+    private func openGeminiKeyPage() {
+        guard let url = URL(string: "https://aistudio.google.com/apikey") else { return }
+        NSWorkspace.shared.open(url)
     }
 
     private func refresh() {
         CredentialStore.reload()
         for provider in ["gemini", "anthropic", "openai"] { present[provider] = CredentialStore.has(provider) }
         claudeCLIPath = Self.findClaudeCLI()
-        permissionsDrifted = !CredentialStore.permissionsAreCorrect()
+        permissionProblems = CredentialStore.permissionProblems()
     }
 
     private func save(_ provider: String, _ value: String) {
         let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
-        CredentialStore.set(trimmed, account: provider)
+        // The result is checked. A write can genuinely fail — a full disk, a file someone
+        // hand-edited into something that is not a JSON object, a lock another process holds —
+        // and confirming a save that did not happen is worse than reporting the failure, because
+        // the user walks away believing their key is stored.
+        guard CredentialStore.set(trimmed, account: provider) else {
+            writeFailure = CredentialStore.lastWriteFailure
+                ?? "That key could not be saved. \(CredentialStore.location) is not writable."
+            return
+        }
+        writeFailure = nil
         present[provider] = CredentialStore.has(provider)
-        withAnimation(DS.Motion.instant) { justSaved = provider }
+        withAnimation(DS.Motion.instant) { justSaved = Self.displayName(provider) }
         Task {
             try? await Task.sleep(for: .seconds(DS.Motion.confirmationDwell))
             withAnimation(DS.Motion.instant) { justSaved = nil }
@@ -161,7 +230,21 @@ struct ProviderSettings: View {
 
     private func remove(_ provider: String) {
         CredentialStore.delete(provider)
-        present[provider] = false
+        // Re-read rather than assuming. A delete that failed leaves the key on disk, and showing
+        // it as gone means the user thinks they revoked something they did not.
+        present[provider] = CredentialStore.has(provider)
+        writeFailure = present[provider] == true
+            ? (CredentialStore.lastWriteFailure ?? "That key could not be removed.")
+            : nil
+    }
+
+    static func displayName(_ provider: String) -> String {
+        switch provider {
+        case "gemini":    return "Google Gemini"
+        case "anthropic": return "Anthropic"
+        case "openai":    return "OpenAI"
+        default:          return provider
+        }
     }
 
     /// The CLI is usually outside a GUI app's inherited PATH, so look where it installs rather
@@ -209,7 +292,7 @@ private struct KeyField: View {
                 HStack(spacing: DS.Space.md) {
                     Text("••••••••••••••••••••••••")
                         .font(DS.Text.monoSmall)
-                        .foregroundStyle(DS.Ink.tertiary)
+                        .foregroundStyle(DS.Ink.secondary)
                     Spacer()
                     SecondaryButton("Replace") { replacing = true; entry = "" }
                     SecondaryButton("Remove", role: .destructive, action: onRemove)
@@ -247,6 +330,8 @@ private struct KeyField: View {
 
 struct PermissionSettings: View {
     @Environment(Store.self) private var store
+    @State private var newRule = ""
+    @State private var newBehaviour: PermissionRule.Behaviour = .askFirst
 
     var body: some View {
         ScrollView {
@@ -257,7 +342,22 @@ struct PermissionSettings: View {
                     .lineSpacing(DS.Text.bodyLineSpacing)
                     .fixedSize(horizontal: false, vertical: true)
 
-                ForEach(store.globalRules) { RuleRow(rule: $0) }
+                // Writing a rule, which the copy above has always instructed people to do and
+                // which nothing in the interface allowed. Without it the only way a rule could
+                // ever be created was clicking "Always allow" on a prompt — and the only way to
+                // remove one was editing the state file by hand.
+                composer
+
+                if store.globalRules.isEmpty {
+                    Text("No rules yet. Every action falls back to the built-in list below and "
+                       + "to how much each bot is allowed to decide.")
+                        .font(DS.Text.caption)
+                        .foregroundStyle(DS.Ink.secondary)
+                } else {
+                    ForEach(store.globalRules) { rule in
+                        RuleRow(rule: rule)
+                    }
+                }
 
                 Hairline()
 
@@ -282,7 +382,7 @@ struct PermissionSettings: View {
                             Spacer()
                             Text(floor.floorBehaviour == .neverAllow ? "never" : "asks")
                                 .font(DS.Text.micro)
-                                .foregroundStyle(DS.Ink.tertiary)
+                                .foregroundStyle(DS.Ink.secondary)
                         }
                     }
                 }
@@ -290,10 +390,58 @@ struct PermissionSettings: View {
             .dsInset(DS.Inset.pane)
         }
     }
+
+    private var composer: some View {
+        VStack(alignment: .leading, spacing: DS.Space.md) {
+            SectionLabel("Add a rule")
+            HStack(spacing: DS.Space.md) {
+                Text("When a bot wants to")
+                    .font(DS.Text.caption)
+                    .foregroundStyle(DS.Ink.secondary)
+                    .fixedSize()
+                TextField("send a message on my behalf", text: $newRule)
+                    .textFieldStyle(.plain)
+                    .font(DS.Text.callout)
+                    .foregroundStyle(DS.Ink.primary)
+                    .padding(.horizontal, DS.Space.md)
+                    .frame(minWidth: DS.Size.fieldMin, minHeight: DS.Size.controlHeight)
+                    .background(DS.Tint.t3, in: RoundedRectangle(cornerRadius: DS.Radius.sm))
+                    .onSubmit(add)
+                    .accessibilityLabel("What the bot might want to do")
+            }
+            HStack(spacing: DS.Space.md) {
+                Picker("", selection: $newBehaviour) {
+                    ForEach(PermissionRule.Behaviour.allCases, id: \.self) { behaviour in
+                        Text(behaviour.displayName).tag(behaviour)
+                    }
+                }
+                .labelsHidden()
+                .fixedSize()
+                .accessibilityLabel("What should happen")
+                Spacer()
+                PrimaryButton("Add rule",
+                              isEnabled: !newRule.trimmingCharacters(in: .whitespaces).isEmpty,
+                              action: add)
+            }
+        }
+        .padding(DS.Space.lg)
+        .background(DS.Surface.raised, in: RoundedRectangle(cornerRadius: DS.Radius.md))
+    }
+
+    private func add() {
+        let text = newRule.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty else { return }
+        store.addGlobalRule(PermissionRule(whenBotWantsTo: text, behaviour: newBehaviour))
+        newRule = ""
+        newBehaviour = .askFirst
+    }
 }
 
 private struct RuleRow: View {
+    @Environment(Store.self) private var store
     let rule: PermissionRule
+    @State private var editing = false
+    @State private var text = ""
 
     var body: some View {
         HStack(alignment: .top, spacing: DS.Space.lg) {
@@ -301,19 +449,81 @@ private struct RuleRow: View {
                 .foregroundStyle(colour)
                 .font(DS.Text.glyph)
                 .frame(width: DS.Space.xl)
-            VStack(alignment: .leading, spacing: DS.Space.hair) {
-                Text("When a bot wants to " + rule.whenBotWantsTo)
-                    .font(DS.Text.callout)
-                    .foregroundStyle(DS.Ink.primary)
-                Text(rule.behaviour.displayName)
-                    .font(DS.Text.caption)
-                    .foregroundStyle(DS.Ink.secondary)
+                .accessibilityHidden(true)
+
+            if editing {
+                VStack(alignment: .leading, spacing: DS.Space.md) {
+                    TextField("What the bot might want to do", text: $text)
+                        .textFieldStyle(.plain)
+                        .font(DS.Text.callout)
+                        .foregroundStyle(DS.Ink.primary)
+                        .padding(.horizontal, DS.Space.md)
+                        .frame(minHeight: DS.Size.controlHeight)
+                        .background(DS.Surface.ground, in: RoundedRectangle(cornerRadius: DS.Radius.sm))
+                        .onSubmit(commit)
+                    HStack(spacing: DS.Space.md) {
+                        Picker("", selection: behaviourBinding) {
+                            ForEach(PermissionRule.Behaviour.allCases, id: \.self) {
+                                Text($0.displayName).tag($0)
+                            }
+                        }
+                        .labelsHidden()
+                        .fixedSize()
+                        .accessibilityLabel("What should happen")
+                        Spacer()
+                        SecondaryButton("Cancel") { editing = false }
+                            .keyboardShortcut(.cancelAction)
+                        PrimaryButton("Save", action: commit)
+                    }
+                }
+            } else {
+                VStack(alignment: .leading, spacing: DS.Space.hair) {
+                    Text("When a bot wants to " + rule.whenBotWantsTo)
+                        .font(DS.Text.callout)
+                        .foregroundStyle(DS.Ink.primary)
+                        .fixedSize(horizontal: false, vertical: true)
+                    HStack(spacing: DS.Space.sm) {
+                        Text(rule.behaviour.displayName)
+                            .font(DS.Text.caption)
+                            .foregroundStyle(DS.Ink.secondary)
+                        if rule.createdFromPrompt {
+                            Text("added from a prompt")
+                                .font(DS.Text.micro)
+                                .foregroundStyle(DS.Ink.secondary)
+                                .padding(.horizontal, DS.Space.sm)
+                                .padding(.vertical, DS.Space.hair)
+                                .background(DS.Tint.t3, in: Capsule())
+                        }
+                    }
+                }
+                Spacer()
+                SecondaryButton("Edit") { text = rule.whenBotWantsTo; editing = true }
+                SecondaryButton("Remove", role: .destructive) {
+                    store.deleteGlobalRule(rule.id)
+                }
             }
-            Spacer()
         }
         .padding(DS.Space.lg)
         .frame(minHeight: DS.Size.settingsRow, alignment: .leading)
         .background(DS.Tint.t3, in: RoundedRectangle(cornerRadius: DS.Radius.sm))
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("Rule: when a bot wants to \(rule.whenBotWantsTo), \(rule.behaviour.displayName)")
+    }
+
+    private var behaviourBinding: Binding<PermissionRule.Behaviour> {
+        Binding(
+            get: { rule.behaviour },
+            set: { var updated = rule; updated.behaviour = $0; store.updateGlobalRule(updated) }
+        )
+    }
+
+    private func commit() {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { editing = false; return }
+        var updated = rule
+        updated.whenBotWantsTo = trimmed
+        store.updateGlobalRule(updated)
+        editing = false
     }
 
     private var icon: String {
@@ -327,7 +537,7 @@ private struct RuleRow: View {
     private var colour: Color {
         switch rule.behaviour {
         case .allowAutomatically: return DS.Status.done.mark
-        case .askFirst:           return DS.Status.running.mark
+        case .askFirst:           return DS.Status.awaitingApproval.mark
         case .neverAllow:         return DS.Status.failed.mark
         }
     }
@@ -353,7 +563,7 @@ struct AboutSettings: View {
 
             Text("Everything this app records is written where you can read it without this app: JSON for state, JSONL for traces, PNG for screenshots.")
                 .font(DS.Text.caption)
-                .foregroundStyle(DS.Ink.tertiary)
+                .foregroundStyle(DS.Ink.secondary)
                 .lineSpacing(DS.Text.bodyLineSpacing)
                 .fixedSize(horizontal: false, vertical: true)
         }

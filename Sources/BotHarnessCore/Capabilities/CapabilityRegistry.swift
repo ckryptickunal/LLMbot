@@ -48,6 +48,11 @@ public actor CapabilityRegistry {
     }
 
     public func register(_ provider: any CapabilityProvider) {
+        // Replacing a provider used to drop the old one on the floor with its child process
+        // still running. Anything already here is disconnected first.
+        if let existing = providers[provider.id] as? MCPProvider {
+            Task { await existing.disconnect() }
+        }
         providers[provider.id] = provider
     }
 
@@ -75,6 +80,29 @@ public actor CapabilityRegistry {
     }
 
     // MARK: Reading
+
+    /// Shut every provider down and forget it.
+    ///
+    /// `disconnect()` existed on both `MCPProvider` and `MCPClient` and had **zero callers**:
+    /// not at the end of a run, not on stop, and not on quit. Every stdio MCP server this app
+    /// spawned outlived it, and the Connections screen re-spawned a whole set each time it was
+    /// opened, orphaning the previous ones. On a machine with 1.4 GB free that is not a tidiness
+    /// problem, it is the machine filling up with abandoned node processes.
+    public func shutdown() async {
+        for (_, provider) in providers {
+            if let mcp = provider as? MCPProvider { await mcp.disconnect() }
+        }
+        providers.removeAll()
+        healthCache.removeAll()
+        loaded.removeAll()
+    }
+
+    /// Disconnect one provider without forgetting it, so re-discovery does not leave the old
+    /// process behind.
+    public func disconnect(_ providerID: String) async {
+        if let mcp = providers[providerID] as? MCPProvider { await mcp.disconnect() }
+        healthCache.removeValue(forKey: providerID)
+    }
 
     public func all() -> [Capability] { capabilities.values.sorted { $0.id < $1.id } }
     public func capability(_ id: String) -> Capability? { capabilities[id] }

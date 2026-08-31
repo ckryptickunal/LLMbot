@@ -34,7 +34,7 @@ public enum ShellFloor {
         let checks: [(ShellParse) -> Outcome?] = [
             privilegeEscalation, diskDestruction, remoteCode,
             { credentialFiles($0, raw: command) },
-            systemConfiguration, sharedHistory,
+            networkEgress, systemConfiguration, sharedHistory,
         ]
         for check in checks {
             if let outcome = check(parse) { return outcome }
@@ -130,37 +130,64 @@ public enum ShellFloor {
     /// common name — Google client secrets use it, and plenty of projects have one — so a
     /// name-only check would refuse ordinary work in someone's own repository, which is both
     /// wrong and the kind of false alarm that teaches people to ignore the guard.
-    public static func readsTheKeyStore(_ parse: ShellParse, raw: String? = nil) -> String? {
-        // Checked against the raw text as well as the parsed operands, because the store's path
-        // contains a space — "Application Support" — and an unquoted spelling splits into two
-        // operands that individually match nothing. A shell would fail to open that path too,
-        // but "it happens not to work" is not a guarantee, and the next path on this list may
-        // not have a space in it.
+    public static func readsTheKeyStore(_ parse: ShellParse, raw: String? = nil,
+                                        bulk: Bool? = nil) -> String? {
+        let isBulk = bulk ?? parse.commands.contains { Authority.bulkExecutables.contains($0.executable) }
+
+        // The raw text is scanned as well as the parsed operands, for two reasons. The store's
+        // path contains a space — "Application Support" — so an unquoted spelling splits into
+        // operands that individually match nothing. And a path can be wrapped in punctuation the
+        // parser keeps attached: `curl --data-binary "@$HOME/…/credentials.json"` produced an
+        // operand of `@$HOME/…`, which the old prefix-only expansion never resolved. That single
+        // `@` was enough to upload every key.
         if let raw {
-            let unescaped = raw.replacingOccurrences(of: "\\ ", with: " ")
-                               .replacingOccurrences(of: "\"", with: "")
-                               .replacingOccurrences(of: "'", with: "")
-            for pattern in Authority.alwaysDenied.map({ expand($0) }) {
-                let stem = pattern.hasSuffix("/**") ? String(pattern.dropLast(3)) : pattern
-                if unescaped.contains(stem) { return stem }
+            for pattern in Authority.alwaysDenied {
+                if PathGuard.mentions(raw, pattern) { return PathGuard.stem(of: pattern) }
             }
         }
 
-        let floor = Authority.alwaysDenied.map { expand($0) }
         var candidates: [String] = []
         for command in parse.commands {
-            candidates += command.operands.map { expand($0.value) }
-            candidates += command.redirects.map { expand($0.target.value) }
+            candidates += command.operands.map { PathGuard.expand($0.value) }
+            candidates += command.redirects.map { PathGuard.expand($0.target.value) }
         }
-        candidates += parse.redirects.map { expand($0.target.value) }
+        candidates += parse.redirects.map { PathGuard.expand($0.target.value) }
 
         for candidate in candidates {
-            for pattern in floor {
-                if pattern.hasSuffix("/**") {
-                    if candidate.hasPrefix(String(pattern.dropLast(2))) { return candidate }
-                } else if candidate == pattern || candidate.hasPrefix(pattern + "/") {
-                    return candidate
-                }
+            // `bulk` widens this to containers, so `cp -r "$HOME/Library/Application Support/
+            // Bot-Harness" /tmp/x` is caught even though it never names the credential file.
+            if let hit = PathGuard.denied(candidate, by: Authority.alwaysDenied, bulk: isBulk) {
+                return hit
+            }
+        }
+        return nil
+    }
+
+    /// The paths a command writes to. Exposed so the shell executor can hold writes to the same
+    /// boundary the file tool does.
+    public static func pathsWrittenBy(_ parse: ShellParse) -> [String] { writtenPaths(parse) }
+
+    /// Sending data off the machine.
+    ///
+    /// `remoteCode` already catches *downloading* code and running it. This is the other
+    /// direction, which nothing watched: once a bot holds a secret, `curl --data-binary @file`,
+    /// `nc`, `scp` and friends put it on someone else's server, and value-redaction cannot help
+    /// because the bytes leave in a request body rather than in output the app ever sees.
+    private static func networkEgress(_ parse: ShellParse) -> Outcome? {
+        let uploaders: Set<String> = ["curl", "wget", "nc", "netcat", "ncat", "scp", "sftp",
+                                      "rsync", "ftp", "telnet", "rclone", "aws", "gcloud", "az"]
+        let uploadFlags = ["-d", "--data", "--data-binary", "--data-raw", "--data-urlencode",
+                           "-F", "--form", "-T", "--upload-file", "--post-file", "-u", "--user"]
+
+        for command in parse.commands where uploaders.contains(command.executable) {
+            let raw = ([command.executableRaw] + command.arguments.map { $0.raw }).joined(separator: " ")
+            let sendsBody = uploadFlags.contains { raw.contains($0) } || raw.contains("@")
+            // `scp`/`rsync`/`nc` are transfers by nature; curl and wget only when they carry a body.
+            let inherentlyOutbound = ["scp", "sftp", "nc", "netcat", "ncat", "ftp", "rclone"]
+                .contains(command.executable)
+            if sendsBody || inherentlyOutbound {
+                return .floor(.sendingDataOffTheMachine,
+                              because: "`\(command.executable)` would send data to another machine")
             }
         }
         return nil

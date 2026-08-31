@@ -118,39 +118,9 @@ public struct DelayedSpinner: View {
 }
 
 // MARK: - Staggered entrance
-
-/// Fade-and-rise for items entering a list together.
-///
-/// Only the first `staggerLimit` items are delayed; everything after enters immediately, since
-/// a fully staggered long list is not elegant, it is slow.
-///
-/// **This is for one-time entrances only, and it must never be used on a list that re-renders.**
-/// The first version started at `opacity 0` and revealed itself from a `.task`. SwiftUI resets
-/// `@State` whenever a row's identity is rebuilt, so every drag-resize of the window reset every
-/// row to invisible and the roster's text vanished mid-drag. A decorative animation that can
-/// hide real content is not a trade worth making.
-///
-/// It now fades *from* 0.001 rather than 0 and settles within one frame if the task never runs,
-/// so the worst case is a row that appears instantly rather than one that never appears.
-public struct Staggered: ViewModifier {
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    let index: Int
-    @State private var shown = false
-
-    public func body(content: Content) -> some View {
-        content
-            .opacity(shown ? 1 : 0.001)
-            .offset(y: shown || reduceMotion ? 0 : 3)
-            .onAppear {
-                let step = min(index, DS.Motion.staggerLimit)
-                guard step > 0, !reduceMotion else { shown = true; return }
-                withAnimation(DS.Motion.rowInsert.delay(Double(step) * DS.Motion.stagger)) {
-                    shown = true
-                }
-            }
-    }
-}
-
-public extension View {
-    func staggered(_ index: Int) -> some View { modifier(Staggered(index: index)) }
-}
+//
+// Removed rather than kept. It was defined, documented at length, and attached to nothing —
+// and the note explaining why it must never touch a re-rendering list is the reason it had no
+// safe home here: the roster re-renders on every keystroke of search and on every window
+// resize, and the transcript re-renders on every streamed token. If a one-time entrance is
+// ever wanted, it belongs next to the surface that earns it, with that constraint restated.

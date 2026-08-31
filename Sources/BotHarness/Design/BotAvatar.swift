@@ -22,7 +22,11 @@ public struct BotAvatar: View {
             .frame(width: size, height: size)
             .overlay {
                 Text(monogram)
-                    .font(.system(size: size * 0.42, weight: .semibold, design: .rounded))
+                    // Not `.rounded`: the type tokens ban it outright — it has no macOS
+                    // precedent and reads instantly as non-native — and a monogram is the one
+                    // place a stray typeface is most visible, since it sits beside the
+                    // system-font name it belongs to.
+                    .font(.system(size: size * 0.42, weight: .semibold))
                     // Dark ink on a saturated fill, rather than white: at these sizes white on
                     // a mid-tone reads as a smudge.
                     .foregroundStyle(.black.opacity(0.62))

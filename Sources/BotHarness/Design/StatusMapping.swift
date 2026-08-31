@@ -12,6 +12,7 @@ extension ToolActivity.Status {
         case .done:               return .done
         case .failed, .refused:   return .failed
         case .waitingForApproval: return .waiting
+        case .interrupted:        return .idle
         }
     }
 
@@ -22,6 +23,7 @@ extension ToolActivity.Status {
         case .failed:             return "Failed"
         case .refused:            return "Refused"
         case .waitingForApproval: return "Needs approval"
+        case .interrupted:        return "Interrupted"
         }
     }
 }

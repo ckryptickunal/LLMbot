@@ -19,7 +19,7 @@ public actor FileExecutor {
     /// the workspace pointing at `~/.ssh` is a hole straight through the boundary, and it is
     /// exactly the kind of thing that looks like a clever workaround to a model.
     private func resolve(_ path: String, forWriting: Bool) throws -> URL {
-        let expanded = (path as NSString).expandingTildeInPath
+        let expanded = PathGuard.expand(path)
         let url = URL(fileURLWithPath: expanded).standardizedFileURL
         let real = URL(fileURLWithPath: (url.path as NSString).resolvingSymlinksInPath)
 
@@ -27,14 +27,26 @@ public actor FileExecutor {
         // is decodable from `state.json`, so a document written before a path joined the floor
         // would otherwise decode into an Authority that silently permits it — which is exactly
         // how a saved file from last week becomes today's hole.
-        for pattern in Authority.alwaysDenied where matches(real.path, pattern) {
-            throw FileError.denied(real.path, "it holds credentials, and no bot may read it")
+        if let hit = PathGuard.denied(real.path, by: Authority.alwaysDenied) {
+            throw FileError.denied(real.path, "`\(hit)` holds credentials, and no bot may read it")
         }
-        for pattern in authority.denied where matches(real.path, pattern) {
-            throw FileError.denied(real.path, "it is on the never-allowed list")
+        if forWriting, let hit = PathGuard.denied(real.path, by: Authority.alwaysDeniedForWriting) {
+            throw FileError.denied(real.path, "`\(hit)` is the app's own record and must stay as written")
         }
+        if let hit = PathGuard.denied(real.path, by: authority.denied) {
+            throw FileError.denied(real.path, "`\(hit)` is on the never-allowed list")
+        }
+
         let allowed = forWriting ? authority.writable : authority.readable
-        guard allowed.isEmpty || allowed.contains(where: { matches(real.path, $0) }) else {
+        guard !allowed.isEmpty else {
+            // An empty list used to mean "allow everything", which made the default `Authority()`
+            // a key to the whole disk. It now means "nothing was granted", because a permission
+            // system whose empty state is total access is not a permission system.
+            throw FileError.denied(real.path, forWriting
+                ? "this bot has no writable paths"
+                : "this bot has no readable paths")
+        }
+        guard allowed.contains(where: { PathGuard.isInside(real.path, $0) }) else {
             throw FileError.denied(real.path, forWriting
                 ? "this bot may only write inside its workspace"
                 : "this bot may only read inside the paths you gave it")
@@ -42,13 +54,14 @@ public actor FileExecutor {
         return real
     }
 
-    /// Glob matching for authority patterns: `~/Desktop/jewel/**`.
-    private func matches(_ path: String, _ pattern: String) -> Bool {
-        let expanded = (pattern as NSString).expandingTildeInPath
-        if expanded.hasSuffix("/**") {
-            return path.hasPrefix(String(expanded.dropLast(2)))
-        }
-        return path == expanded || path.hasPrefix(expanded + "/")
+    /// Check a path against the contract without touching it.
+    ///
+    /// For tools that reach the filesystem by some route other than this type — `files.search`
+    /// and `files.glob` shell out to `rg` and `find` — so the boundary is stated explicitly at
+    /// the call site rather than relying on the shell guard happening to catch it. Two guards
+    /// agreeing is the point; one guard by accident is not.
+    public func assertReadable(_ path: String) throws -> String {
+        try resolve(path, forWriting: false).path
     }
 
     // MARK: - Operations

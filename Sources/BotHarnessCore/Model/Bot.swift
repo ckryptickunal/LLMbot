@@ -77,8 +77,19 @@ public struct Bot: Identifiable, Codable, Hashable {
     public var defaultAutonomy: Autonomy = .confirmBeforeChange
 
     /// The directory this bot treats as home. File and shell tools are scoped to it unless
-    /// a permission rule widens that.
+    /// a permission rule widens that. Nil means `Bot.defaultWorkspace`.
     public var workspace: URL?
+
+    /// Where a bot works when nobody has said otherwise.
+    ///
+    /// Defined once, here, because the agent runtime and the settings pane both need it and a
+    /// bot whose displayed scope differs from its real one is worse than one that shows none.
+    public static var defaultWorkspace: URL {
+        URL(fileURLWithPath: NSHomeDirectory()).appendingPathComponent("Desktop")
+    }
+
+    /// The folder this bot may actually change.
+    public var effectiveWorkspace: URL { workspace ?? Bot.defaultWorkspace }
 
     /// Identifiers of the plugins this bot may reach for. A subset of what is installed;
     /// giving every bot every tool is how you get a bot that does the wrong thing well.
@@ -208,13 +219,36 @@ public struct Avatar: Codable, Hashable {
 /// beats a similarity search they cannot inspect.
 public struct MemoryNote: Identifiable, Codable, Hashable {
 
+    /// Where a note came from, which decides how much weight it may carry.
+    ///
+    /// The distinction is the whole safety story of memory. A lesson is a durable instruction
+    /// injected into every future run, so a note derived from a web page the bot happened to read
+    /// is an attacker writing into the bot's standing orders. `.observed` notes are kept as
+    /// hearsay and labelled as such when injected; only the user can promote one.
+    public enum Provenance: String, Codable, Hashable {
+        /// The user said it, or confirmed it.
+        case user
+        /// The bot concluded it from its own tool results within a run.
+        case run
+        /// It came from content the bot read — a page, a document, a command's output.
+        case observed
+    }
+
     /// Memberwise initialiser, public so the app and tests can build one.
-    public init(id: UUID = UUID(), text: String, reason: String = "", learnedAt: Date = Date(), confirmedByUser: Bool = false) {
+    public init(id: UUID = UUID(), text: String, reason: String = "", learnedAt: Date = Date(),
+                confirmedByUser: Bool = false, provenance: Provenance = .run,
+                scope: String = "", sourceRun: String = "", supersedes: UUID? = nil,
+                expiresAt: Date? = nil) {
         self.id = id
         self.text = text
         self.reason = reason
         self.learnedAt = learnedAt
         self.confirmedByUser = confirmedByUser
+        self.provenance = provenance
+        self.scope = scope
+        self.sourceRun = sourceRun
+        self.supersedes = supersedes
+        self.expiresAt = expiresAt
     }
     public var id: UUID = UUID()
     public var text: String
@@ -223,4 +257,38 @@ public struct MemoryNote: Identifiable, Codable, Hashable {
     public var learnedAt: Date = Date()
     /// Set when the user edits or confirms a note the bot wrote.
     public var confirmedByUser: Bool = false
+
+    /// How much this note is allowed to be trusted. See `Provenance`.
+    public var provenance: Provenance = .run
+    /// Where it applies — a workspace path, usually. Empty means everywhere this bot goes.
+    /// Present so a lesson learned in one repository does not silently steer work in another.
+    public var scope: String = ""
+    /// The trace this came from, so a surprising lesson can be traced back to the run that
+    /// produced it. A memory you cannot audit is one you cannot safely delete.
+    public var sourceRun: String = ""
+    /// The note this replaces. Superseding rather than appending is what keeps memory from
+    /// growing without bound and from holding two contradictory facts at once.
+    public var supersedes: UUID?
+    /// When this stops being trusted. Facts about a moving target go stale silently otherwise.
+    public var expiresAt: Date?
+
+    public var isExpired: Bool { expiresAt.map { $0 < Date() } ?? false }
+
+    /// Decoded leniently, because `state.json` on a real machine already holds notes written
+    /// before these fields existed. Synthesised `Codable` would throw on the missing keys and
+    /// take the user's whole document down with it — a schema change must never cost someone
+    /// their bots.
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decodeIfPresent(UUID.self, forKey: .id) ?? UUID()
+        text = try c.decode(String.self, forKey: .text)
+        reason = try c.decodeIfPresent(String.self, forKey: .reason) ?? ""
+        learnedAt = try c.decodeIfPresent(Date.self, forKey: .learnedAt) ?? Date()
+        confirmedByUser = try c.decodeIfPresent(Bool.self, forKey: .confirmedByUser) ?? false
+        provenance = try c.decodeIfPresent(Provenance.self, forKey: .provenance) ?? .run
+        scope = try c.decodeIfPresent(String.self, forKey: .scope) ?? ""
+        sourceRun = try c.decodeIfPresent(String.self, forKey: .sourceRun) ?? ""
+        supersedes = try c.decodeIfPresent(UUID.self, forKey: .supersedes)
+        expiresAt = try c.decodeIfPresent(Date.self, forKey: .expiresAt)
+    }
 }

@@ -213,9 +213,21 @@ public actor MCPClient {
                     try await Task.sleep(for: .seconds(timeout))
                     throw MCPError.timedOut(method)
                 }
-                guard let first = try await group.next() else { throw MCPError.noResponse }
-                group.cancelAll()
-                return first
+                do {
+                    guard let first = try await group.next() else { throw MCPError.noResponse }
+                    group.cancelAll()
+                    return first
+                } catch {
+                    // The timeout won. `cancelAll` does not reach the waiting child: it is parked
+                    // on a `CheckedContinuation` that only `receive` can resume, and a hung server
+                    // never sends the line that would. The task group then waits forever for that
+                    // child, so a single unresponsive MCP server hung the whole run rather than
+                    // failing after `timeout` seconds. Failing the continuation by hand is what
+                    // lets the group actually unwind.
+                    await self.failPending(id: id, with: error)
+                    group.cancelAll()
+                    throw error
+                }
             }
 
         case .http(let url, let headers):
@@ -269,6 +281,12 @@ public actor MCPClient {
         self.process = process
         self.toServer = stdin.fileHandleForWriting
         self.fromServer = stdout.fileHandleForReading
+    }
+
+    /// Resume a request that will never get an answer, so its task can finish.
+    private func failPending(id: Int, with error: Error) {
+        guard let continuation = pending.removeValue(forKey: id) else { return }
+        continuation.resume(throwing: error)
     }
 
     private func awaitResponse(id: Int, sending body: Data) async throws -> [String: Any] {

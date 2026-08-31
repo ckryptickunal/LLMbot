@@ -13,6 +13,7 @@ import SwiftUI
 /// on" means, and inventing the rest would be inventing text.
 struct ActivityInspector: View {
     @Environment(BotRunner.self) private var runner
+    @Environment(\.openWindow) private var openWindow
     let conversationID: UUID
 
     @AppStorage("activity.expanded") private var expanded = false
@@ -27,6 +28,26 @@ struct ActivityInspector: View {
                 if expanded {
                     Hairline()
                     stream
+                    Hairline()
+                    // This stream is a peek at the current run; the Activity window is the
+                    // whole record, with every past run and every argument. Nothing connected
+                    // the two, and the window was reachable only from a popover in the roster.
+                    Button { openWindow(id: "activity") } label: {
+                        HStack(spacing: DS.Space.sm) {
+                            Image(systemName: "clock.arrow.circlepath")
+                                .font(DS.Text.glyphSmall)
+                                .accessibilityHidden(true)
+                            Text("Open the full record (⇧⌘0)")
+                                .font(DS.Text.caption)
+                            Spacer()
+                        }
+                        .foregroundStyle(DS.Ink.secondary)
+                        .padding(.horizontal, DS.Space.lg)
+                        .frame(minHeight: DS.Size.hit)
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .hoverRow(shape: RoundedRectangle(cornerRadius: DS.Radius.sm))
                 }
             }
             .background(DS.Surface.raised, in: RoundedRectangle(cornerRadius: DS.Radius.lg))
@@ -48,8 +69,9 @@ struct ActivityInspector: View {
             HStack(spacing: DS.Space.md) {
                 Image(systemName: "chevron.right")
                     .font(DS.Text.glyphSmall)
-                    .foregroundStyle(DS.Ink.tertiary)
+                    .foregroundStyle(DS.Ink.secondary)
                     .rotationEffect(.degrees(expanded ? 90 : 0))
+                    .accessibilityHidden(true)
 
                 if isRunning {
                     DelayedSpinner(size: DS.Size.glyph)
@@ -63,7 +85,7 @@ struct ActivityInspector: View {
                 if let latest = steps.last, !expanded, isRunning {
                     Text("· \(latest.text)")
                         .font(DS.Text.caption)
-                        .foregroundStyle(DS.Ink.tertiary)
+                        .foregroundStyle(DS.Ink.secondary)
                         .lineLimit(1)
                 }
 
@@ -71,7 +93,7 @@ struct ActivityInspector: View {
 
                 Text("\(steps.count)")
                     .font(DS.Text.monoSmall)
-                    .foregroundStyle(DS.Ink.tertiary)
+                    .foregroundStyle(DS.Ink.secondary)
             }
             .padding(.horizontal, DS.Space.lg)
             .frame(minHeight: DS.Size.hit)
@@ -79,6 +101,8 @@ struct ActivityInspector: View {
         }
         .buttonStyle(.plain)
         .help(expanded ? "Hide what it is doing" : "Show what it is doing")
+        .accessibilityLabel(isRunning ? "Working. \(steps.count) steps" : "Activity. \(steps.count) steps")
+        .accessibilityHint(expanded ? "Collapse" : "Expand")
     }
 
     // MARK: Stream
@@ -108,6 +132,7 @@ struct ActivityInspector: View {
                 .font(DS.Text.glyphSmall)
                 .foregroundStyle(tint(step.kind))
                 .frame(width: DS.Space.lg, height: DS.Space.lg)
+                .accessibilityHidden(true)
 
             VStack(alignment: .leading, spacing: 1) {
                 Text(step.text)
@@ -116,7 +141,7 @@ struct ActivityInspector: View {
                 if let detail = step.detail, !detail.isEmpty {
                     Text(detail)
                         .font(DS.Text.monoSmall)
-                        .foregroundStyle(DS.Ink.tertiary)
+                        .foregroundStyle(DS.Ink.secondary)
                         .lineLimit(3)
                         .textSelection(.enabled)
                 }
@@ -126,18 +151,22 @@ struct ActivityInspector: View {
 
             Text(step.at, format: .dateTime.hour().minute().second())
                 .font(DS.Text.monoSmall)
-                .foregroundStyle(DS.Ink.tertiary.opacity(0.7))
+                .foregroundStyle(DS.Ink.secondary)
         }
     }
 
     private func tint(_ kind: BotRunner.LiveStep.Kind) -> Color {
         switch kind {
         case .thinking:  return DS.Status.waiting.mark
-        case .observing: return DS.Ink.tertiary
+        case .observing: return DS.Ink.secondary
         case .tool:      return DS.Status.running.mark
         case .result:    return DS.Status.done.mark
         case .verifying: return DS.Status.waiting.mark
-        case .approval:  return DS.Status.running.mark
+        // The one colour rule with a real cost if broken, stated in the tokens: `running` and
+        // `awaitingApproval` must never share a colour. "Working" and "blocked on you" are the
+        // two states in this app that must not be confused, and this row was painting the
+        // second in the first's exact amber.
+        case .approval:  return DS.Status.awaitingApproval.mark
         case .finished:  return DS.Status.done.mark
         case .failed:    return DS.Status.failed.mark
         }

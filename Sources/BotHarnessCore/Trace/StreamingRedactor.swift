@@ -26,10 +26,18 @@ public struct StreamingRedactor {
     private let longest: Int
     private var buffer = ""
 
+    /// The shortest value worth matching literally.
+    ///
+    /// Eight characters is a judgement, not a measurement: below it a stored value is not a key
+    /// any provider issues — it is a placeholder, a truncated paste, or a mistake — while a short
+    /// run of characters is very likely to occur in ordinary prose, and redacting it would blank
+    /// words out of the model's own output. Above it the trade goes the other way: a false
+    /// «redacted» costs a reader one confusing line, and a missed key is permanent, because the
+    /// trace is hash-chained and cannot be edited afterwards.
+    private static let shortestWorthMatching = 8
+
     public init(secrets: [String]) {
-        // Very short values would match ordinary prose, so they are not worth redacting and
-        // would ruin the output if they were.
-        let usable = secrets.filter { $0.count >= 8 }
+        let usable = secrets.filter { $0.count >= Self.shortestWorthMatching }
         self.secrets = usable.sorted { $0.count > $1.count }
         self.longest = usable.map(\.count).max() ?? 0
     }
@@ -84,7 +92,13 @@ public struct StreamingRedactor {
     /// a base URL or a refresh token has no recognisable shape.
     public static func forRun(extra: [String] = []) -> StreamingRedactor {
         var values: [String] = extra
-        for account in ["gemini", "anthropic", "openai"] {
+        // Every account in the store, not a fixed list of three. `CredentialStore` accepts any
+        // name and `scripts/set-key.sh` documents its argument as `<gemini|anthropic|openai|...>`,
+        // so a key stored as "openrouter" or "groq" used to stream through untouched — into a
+        // trace that is append-only and hash-chained, where it could not be removed afterwards.
+        // That is the compensating control ADR 0012 leans on hardest, and it was covering three
+        // names out of an open set.
+        for account in CredentialStore.accounts() {
             if let value = CredentialStore.get(account) { values.append(value) }
         }
         return StreamingRedactor(secrets: values)

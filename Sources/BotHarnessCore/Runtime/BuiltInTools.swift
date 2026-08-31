@@ -262,5 +262,11 @@ extension ToolRegistry {
             summary: "Record something worth remembering next time, with why it mattered.",
             schema: #"{"type":"object","properties":{"text":{"type":"string"},"reason":{"type":"string"}},"required":["text"]}"#,
             capability: "memory.write", floorCategory: nil, keywords: ["remember this", "note", "learned"]),
+
+        ToolDescriptor(
+            id: "memory.forget", domain: .memory, surface: .api,
+            summary: "Drop a note that turned out to be wrong or is no longer true.",
+            schema: #"{"type":"object","properties":{"query":{"type":"string"}},"required":["query"]}"#,
+            capability: "memory.write", floorCategory: nil, keywords: ["forget", "wrong", "no longer"]),
     ]
 }

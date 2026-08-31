@@ -78,8 +78,19 @@ final class BotRunner {
 
     // MARK: - Start
 
+    /// Whether a message can be sent right now. The composer asks before enabling Return.
+    ///
+    /// A conversation runs one loop at a time. Without this, sending mid-run replaced the loop
+    /// and task handles while the first loop kept running: two loops interleaving messages into
+    /// one transcript, Stop reaching only the newer one, and the first one's completion nilling
+    /// out the second one's handles on its way out.
+    func canSend(in conversationID: UUID) -> Bool {
+        !isRunning(conversationID) && store.conversation(conversationID) != nil
+    }
+
     func send(_ text: String, in conversationID: UUID) {
-        guard let conversation = store.conversation(conversationID),
+        guard canSend(in: conversationID),
+              let conversation = store.conversation(conversationID),
               let bot = store.bot(conversation.participants.first)
         else { return }
 
@@ -99,21 +110,128 @@ final class BotRunner {
             for await event in await loop.run(goal: text) {
                 await self?.handle(event, bot: bot, conversationID: conversationID)
             }
+            // Persist what the run learned. Until now `memoryLearned()` existed and had zero
+            // callers, so every note a bot saved was collected into a per-run array and thrown
+            // away when the loop was deallocated — the model was told "Noted." and nothing was.
+            await self?.persistMemory(from: loop, botID: bot.id)
             self?.tasks[conversationID] = nil
             self?.loops[conversationID] = nil
         }
+    }
+
+    /// Fold a finished run's notes into the bot the user actually keeps.
+    ///
+    /// Deliberately does not merge blindly: a note that supersedes an earlier one removes it, a
+    /// note the run asked to forget is dropped, and exact duplicates are collapsed. Appending
+    /// without this is how a memory list becomes a hundred restatements of the same fact and
+    /// stops being something anyone reads.
+    private func persistMemory(from loop: AgentLoop, botID: UUID) async {
+        let changes = await loop.memoryChanges()
+        guard !changes.learned.isEmpty || !changes.forgotten.isEmpty else { return }
+        guard var bot = store.bot(botID) else { return }
+
+        bot.memory.removeAll { changes.forgotten.contains($0.id) }
+        let superseded = Set(changes.learned.compactMap { $0.supersedes })
+        bot.memory.removeAll { superseded.contains($0.id) }
+
+        for note in changes.learned {
+            let already = bot.memory.contains {
+                $0.text.caseInsensitiveCompare(note.text) == .orderedSame
+            }
+            if !already { bot.memory.append(note) }
+        }
+        // A cap, because nothing else bounds this. The user can see and delete notes, but a bot
+        // that saves one a run would otherwise grow its own prompt forever.
+        if bot.memory.count > 200 {
+            bot.memory = Array(bot.memory.suffix(200))
+        }
+        store.update(bot)
     }
 
     func stop(_ conversationID: UUID) {
         tasks[conversationID]?.cancel()
         tasks[conversationID] = nil
         loops[conversationID] = nil
+        settleOpenWork(in: conversationID)
         store.append(Message(body: .notice("Stopped.")), to: conversationID)
+    }
+
+    /// Everything a stopped or vanished run leaves behind.
+    ///
+    /// Cancelling the task stops the work; it does not correct the record of it. Without this,
+    /// a stopped run leaves tool cards saying "Running" for ever, an approval card whose
+    /// buttons are wired to a loop that no longer exists, and an `awaiting` entry that keeps
+    /// the composer's mascot hopping for an answer nobody can give.
+    private func settleOpenWork(in conversationID: UUID) {
+        for (messageID, id) in awaiting where id == conversationID {
+            awaiting.removeValue(forKey: messageID)
+        }
+        guard let conversation = store.conversation(conversationID) else { return }
+        for message in conversation.messages {
+            switch message.body {
+            case .toolUse(var activity) where activity.isOpen:
+                activity.status = .interrupted
+                activity.finishedAt = Date()
+                var updated = message
+                updated.body = .toolUse(activity)
+                store.replace(updated, in: conversationID)
+
+            case .computer(var activity) where activity.status == .running
+                                           || activity.status == .waitingForApproval:
+                activity.status = .interrupted
+                activity.awaitingHuman = false
+                activity.finishedAt = Date()
+                var updated = message
+                updated.body = .computer(activity)
+                store.replace(updated, in: conversationID)
+
+            case .approval(var request) where request.answer == nil:
+                request.answer = .expired
+                request.answeredAt = Date()
+                var updated = message
+                updated.body = .approval(request)
+                store.replace(updated, in: conversationID)
+
+            default:
+                break
+            }
+        }
+    }
+
+    /// Tear down everything belonging to conversations that are being deleted.
+    ///
+    /// Called before the store removes them. A loop left running against a deleted
+    /// conversation writes into nothing and never stops.
+    func discard(_ conversationIDs: [UUID]) {
+        for id in conversationIDs {
+            tasks[id]?.cancel()
+            tasks[id] = nil
+            loops[id] = nil
+            live[id] = nil
+            for (messageID, owner) in awaiting where owner == id {
+                awaiting.removeValue(forKey: messageID)
+            }
+        }
+    }
+
+    /// The last thing the user actually asked for, for the retry button on a failure.
+    func lastUserRequest(in conversationID: UUID) -> String? {
+        guard let conversation = store.conversation(conversationID) else { return nil }
+        for message in conversation.messages.reversed() where message.author == nil {
+            if case .text(let text) = message.body, !text.isEmpty { return text }
+        }
+        return nil
     }
 
     /// The user answered an approval card.
     func answer(_ answer: ApprovalRequest.Answer, for messageID: UUID, in conversationID: UUID) {
-        guard let loop = loops[conversationID] else { return }
+        // The run may be gone — the app was relaunched, or the user pressed Stop. The card
+        // must still resolve, because the alternative is three enabled buttons that do
+        // nothing at all and can never be dismissed.
+        guard let loop = loops[conversationID] else {
+            settleOpenWork(in: conversationID)
+            return
+        }
 
         if var conversation = store.conversation(conversationID),
            let index = conversation.messages.firstIndex(where: { $0.id == messageID }),
@@ -124,8 +242,10 @@ final class BotRunner {
             message.body = .approval(request)
             store.replace(message, in: conversationID)
 
-            // "Always" writes a rule, so the user is not asked the same thing twice.
-            if answer == .allowedAlways || answer == .deniedAlways {
+            // "Always" writes a rule, so the user is not asked the same thing twice. Both
+            // directions: "never allow this" is as much an answer as "always allow this", and
+            // a system that can only be loosened is not a permission system.
+            if answer.writesRule {
                 store.addGlobalRule(PermissionRule(
                     whenBotWantsTo: request.summary,
                     behaviour: answer == .allowedAlways ? .allowAutomatically : .neverAllow,
@@ -194,9 +314,12 @@ final class BotRunner {
             let message = Message(author: bot.id, body: .approval(request))
             store.append(message, to: id)
             awaiting[message.id] = id
+            notify(.needsApproval, request.summary, bot: bot, in: id)
 
         case .finished(let closure, let closingNote):
             if closure == .succeeded { Task { await self.maybeSelfDescribe(bot: bot, in: id) } }
+            notify(closure == .succeeded ? .finished : .failed,
+                   closingNote.isEmpty ? closure.rawValue : closingNote, bot: bot, in: id)
             note(closure == .succeeded ? .finished : .failed,
                  closure == .succeeded ? "Done" : closure.rawValue,
                  detail: closingNote.isEmpty ? nil : String(closingNote.prefix(200)), in: id)
@@ -218,7 +341,16 @@ final class BotRunner {
         case .failed(let message):
             note(.failed, "Failed", detail: message, in: id)
             store.append(Message(author: bot.id, body: .failure(message)), to: id)
+            notify(.failed, message, bot: bot, in: id)
         }
+    }
+
+    /// Notify, unless the user is demonstrably already watching this conversation.
+    private func notify(_ kind: Notifier.Kind, _ body: String, bot: Bot, in id: UUID) {
+        guard bot.notifies,
+              !Notifier.isWatching(id, selection: store.selection)
+        else { return }
+        Notifier.post(kind, body: "\(bot.name): \(body)", conversationID: id)
     }
 
     // MARK: - The bot writing itself
@@ -262,7 +394,12 @@ final class BotRunner {
                 existing: updated.persona.isEmpty ? nil : updated.persona))],
             tools: [])),
            let text = reply.text,
-           let persona = SelfDescription.tidy(text, maxLength: 600) {
+           let persona = SelfDescription.tidy(text, maxLength: 600),
+           // A description that talks about permissions is not a description. Keeping the old one
+           // is the safe failure here: a persona is injected into every future system prompt, so
+           // accepting "never asks before deleting" would write a permission into the bot's own
+           // standing orders without the user ever seeing a dialog.
+           SelfDescription.isAcceptable(persona) {
             updated.persona = persona
             updated.describedAtTurn = conversation.messages.filter { $0.author == nil }.count
         }
@@ -298,7 +435,7 @@ final class BotRunner {
 
         contract.autonomy = bot.defaultAutonomy
 
-        let workspace = bot.workspace?.path ?? NSHomeDirectory() + "/Desktop"
+        let workspace = bot.effectiveWorkspace.path
         contract.authority = Authority(
             readable: [workspace + "/**", NSHomeDirectory() + "/Desktop/**"],
             writable: [workspace + "/**"],

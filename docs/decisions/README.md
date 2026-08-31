@@ -45,3 +45,9 @@ in `CHANGELOG.md` instead.
 | [0010](0010-radix-colour-over-a-macos-override-layer.md) | Radix Colors for surfaces, macOS semantics for everything the OS owns | accepted | 2026-08-30 |
 | [0011](0011-existence-checks-must-not-touch-the-acl.md) | Credential existence checks never touch the keychain ACL | superseded by 0012 | 2026-08-30 |
 | [0012](0012-credentials-live-in-an-owner-only-file.md) | Credentials live in an owner-only file, not the Keychain | accepted | 2026-08-30 |
+| [0013](0013-settle-work-whose-process-is-gone.md) | Settle work whose process is gone, at launch and at stop | accepted | 2026-08-31 |
+| [0014](0014-the-shell-honours-the-contract.md) | The shell honours the contract, and one matcher decides every path question | accepted | 2026-08-31 |
+| [0015](0015-memory-is-data-and-never-permission.md) | Memory is data, never permission, and it carries where it came from | accepted | 2026-08-31 |
+| [0016](0016-effects-are-recorded-before-they-happen.md) | Effects are recorded before they happen, and "uncertain" is a real answer | accepted | 2026-08-31 |
+| [0017](0017-the-trace-chain-is-keyed.md) | The trace chain is keyed, and the key lives beside the API keys | accepted | 2026-08-31 |
+| [0018](0018-the-browser-is-driven-through-applescript.md) | The browser is driven through AppleScript, not a debugging port | accepted | 2026-08-31 |

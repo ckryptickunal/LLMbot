@@ -18,11 +18,17 @@ public struct PressableStyle: ButtonStyle {
     public var scale: CGFloat = DS.Motion.pressScale
     public init(scale: CGFloat = DS.Motion.pressScale) { self.scale = scale }
 
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
     public func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .scaleEffect(configuration.isPressed ? scale : 1)
+            // Under Reduce Motion the press still reads — the dim stays, the scale goes. That
+            // is the distinction the setting draws: less movement, not less feedback.
+            .scaleEffect(configuration.isPressed && !reduceMotion ? scale : 1)
             .opacity(configuration.isPressed ? 0.82 : 1)
-            .animation(DS.Motion.press, value: configuration.isPressed)
+            .animation(DS.Motion.gated(DS.Motion.press, reduceMotion: reduceMotion,
+                                       opacityOnly: true),
+                       value: configuration.isPressed)
     }
 }
 
@@ -34,6 +40,7 @@ public struct IconButton: View {
     var filled = true
     var tint: Color = DS.Ink.secondary
     var help: String?
+    var accessibilityLabel: String?
     var isLoading = false
     let action: () -> Void
 
@@ -42,18 +49,22 @@ public struct IconButton: View {
     public init(_ systemName: String, size: CGFloat = DS.Size.iconButton,
                 glyph: CGFloat = DS.Size.glyph, filled: Bool = true,
                 tint: Color = DS.Ink.secondary, help: String? = nil,
+                accessibilityLabel: String? = nil,
                 isLoading: Bool = false, action: @escaping () -> Void) {
         self.systemName = systemName; self.size = size; self.glyph = glyph
         self.filled = filled; self.tint = tint; self.help = help
+        self.accessibilityLabel = accessibilityLabel
         self.isLoading = isLoading; self.action = action
     }
 
     public var body: some View {
         Button(action: action) {
             ZStack {
-                if filled {
-                    Circle().fill(hovering ? DS.Tint.t4 : DS.Tint.t3)
-                }
+                // Every variant responds to the cursor, not only the filled one. The unfilled
+                // variant is what every header control in the app uses, and it tracked hover
+                // and then drew nothing with it — a toolbar that ignores the pointer reads as
+                // a picture of a toolbar.
+                Circle().fill(background)
                 if isLoading {
                     Spinner(size: glyph)
                 } else {
@@ -73,6 +84,20 @@ public struct IconButton: View {
         .onHover { hovering = $0 }
         .dsAnimation(DS.Motion.instant, value: hovering)
         .help(help ?? "")
+        // A symbol name is not a label. Without this VoiceOver announces the send button as
+        // "arrow.up", which is the name of a glyph rather than the name of an action.
+        .accessibilityLabel(accessibilityLabel ?? help ?? humanisedName)
+    }
+
+    private var background: Color {
+        if filled { return hovering ? DS.Tint.t4 : DS.Tint.t3 }
+        return hovering ? DS.Tint.t3 : .clear
+    }
+
+    /// Last resort only: turns `sidebar.trailing` into "sidebar trailing", which is poor but
+    /// still better than the raw symbol name.
+    private var humanisedName: String {
+        systemName.replacingOccurrences(of: ".", with: " ")
     }
 }
 
@@ -106,9 +131,10 @@ public struct PrimaryButton: View {
             .fixedSize(horizontal: true, vertical: false)
             .background(isEnabled ? DS.Accent.live : DS.Tint.t3,
                         in: RoundedRectangle(cornerRadius: DS.Radius.md))
-            // Content changes size when it swaps to a spinner; blur bridges the two states so
-            // the eye reads one control changing rather than two controls swapping.
-            .animation(DS.Motion.instant, value: isLoading)
+            // Content changes size when it swaps to a spinner; a crossfade bridges the two
+            // states so the eye reads one control changing rather than two swapping. Opacity
+            // only, so it survives Reduce Motion intact.
+            .motion(DS.Motion.instant, value: isLoading, opacityOnly: true)
         }
         .buttonStyle(PressableStyle())
         .disabled(!isEnabled || isLoading)
@@ -202,15 +228,20 @@ public struct Chip: View {
             if let systemImage {
                 Image(systemName: systemImage).font(.system(size: 9)).foregroundStyle(tint)
             }
-            Text(text).font(DS.Text.caption).foregroundStyle(DS.Ink.secondary)
+            // The label takes the tint too. A chip whose icon is amber and whose words are
+            // grey does not read as a warning, and the warning was the whole point of tinting.
+            Text(text).font(DS.Text.caption).foregroundStyle(tint)
             if showsChevron {
                 Image(systemName: "chevron.down")
                     .font(.system(size: 7, weight: .semibold))
-                    .foregroundStyle(DS.Ink.tertiary)
+                    .foregroundStyle(DS.Ink.secondary)
+                    .accessibilityHidden(true)
             }
         }
         .padding(.horizontal, DS.Space.md)
-        .frame(minHeight: DS.Size.glyph, maxHeight: DS.Size.controlHeight)  // cap: chips never grow with their row
+        // A menu target below the app's own 28-point floor is one people miss; chips are
+        // menus, not decorations.
+        .frame(height: DS.Size.hit)
         // Truncate rather than compress: a chip that shrinks makes the row beside it jump.
         .fixedSize(horizontal: true, vertical: false)
         .background(DS.Tint.t3, in: Capsule())
@@ -240,15 +271,34 @@ public struct StatusPill: View {
 
     public var body: some View {
         HStack(spacing: DS.Space.sm) {
-            Circle().fill(state.tint).frame(width: DS.Size.statusDot, height: DS.Size.statusDot)
-            Text(label).font(DS.Text.micro.weight(.medium)).foregroundStyle(DS.Ink.secondary)
+            // Glyph, word and colour together. `DS.Status` was authored with a contrast-checked
+            // mark, label and chip per state and the pill used none of it — a grey capsule with
+            // secondary text, which is the one presentation that cannot be read at a glance.
+            Image(systemName: status.glyph)
+                .font(.system(size: 8, weight: .semibold))
+                .foregroundStyle(status.mark)
+                .accessibilityHidden(true)
+            Text(label).font(DS.Text.micro.weight(.medium)).foregroundStyle(status.label)
         }
         .padding(.horizontal, DS.Space.md)
         .padding(.vertical, DS.Space.hair)
         // "Running" and "Done" are different widths, and a pill that resizes on every status
         // change makes the whole card twitch. A floor holds the geometry still.
         .frame(minWidth: DS.Size.statusPillMin, minHeight: DS.Size.glyph + DS.Space.xs, alignment: .leading)
-        .background(DS.Tint.t3, in: Capsule())
+        .background(status.chip, in: Capsule())
+        .accessibilityElement()
+        .accessibilityLabel(label)
+    }
+
+    /// The design-system state behind this pill.
+    private var status: DS.Status {
+        switch state {
+        case .running: return .running
+        case .done:    return .done
+        case .failed:  return .failed
+        case .waiting: return .awaitingApproval
+        case .idle:    return .idle
+        }
     }
 }
 
@@ -267,14 +317,22 @@ public struct Spinner: View {
         self.size = size; self.tint = tint
     }
 
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
     public var body: some View {
         Circle()
             .trim(from: 0, to: 0.72)
             .stroke(tint, style: StrokeStyle(lineWidth: max(1.2, size / 9), lineCap: .round))
             .frame(width: size, height: size)
             .rotationEffect(.degrees(spinning ? 360 : 0))
-            .animation(.linear(duration: 0.72).repeatForever(autoreverses: false), value: spinning)
+            // Reduce Motion means what it says. A perpetually rotating ring is the single most
+            // literal example of the movement the setting exists to remove, and this was one of
+            // the few places bypassing the gate the rest of the app routes through.
+            .animation(reduceMotion ? nil
+                       : .linear(duration: 0.72).repeatForever(autoreverses: false),
+                       value: spinning)
             .onAppear { spinning = true }
+            .accessibilityLabel("Working")
     }
 }
 
@@ -288,6 +346,7 @@ public struct Skeleton: View {
     var height: CGFloat = 12
     var radius: CGFloat = DS.Radius.xs
     @State private var phase: CGFloat = -1
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     public init(width: CGFloat? = nil, height: CGFloat = 12, radius: CGFloat = DS.Radius.xs) {
         self.width = width; self.height = height; self.radius = radius
@@ -311,6 +370,7 @@ public struct Skeleton: View {
                 .clipShape(RoundedRectangle(cornerRadius: radius))
             )
             .onAppear {
+                guard !reduceMotion else { return }
                 withAnimation(.linear(duration: 1.4).repeatForever(autoreverses: false)) {
                     phase = 1
                 }
@@ -363,11 +423,12 @@ public struct EmptyState: View {
             Image(systemName: systemImage)
                 .font(.system(size: 22, weight: .light))
                 .foregroundStyle(DS.Ink.tertiary)
+                .accessibilityHidden(true)
             VStack(spacing: DS.Space.sm) {
                 Text(title).font(DS.Text.title).foregroundStyle(DS.Ink.primary)
                 Text(message)
                     .font(DS.Text.caption)
-                    .foregroundStyle(DS.Ink.tertiary)
+                    .foregroundStyle(DS.Ink.secondary)
                     .multilineTextAlignment(.center)
                     .frame(maxWidth: DS.Window.proseMax)
                     .fixedSize(horizontal: false, vertical: true)
@@ -378,6 +439,8 @@ public struct EmptyState: View {
         }
         .frame(maxWidth: .infinity, minHeight: DS.Size.hit * 4)
         .padding(.vertical, DS.Space.xxxl)
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("\(title). \(message)")
     }
 }
 
@@ -419,7 +482,7 @@ public struct SectionLabel: View {
         Text(text.uppercased())
             .font(DS.Text.micro.weight(.semibold))
             .kerning(0.4)
-            .foregroundStyle(DS.Ink.tertiary)
+            .foregroundStyle(DS.Ink.secondary)
             // A consistent band above every group, so sections sit on the same rhythm whether
             // their label is one word or four.
             .frame(minHeight: DS.Space.xl, alignment: .bottomLeading)
@@ -452,8 +515,9 @@ public struct Disclosure<Header: View, Content: View>: View {
                 HStack(spacing: DS.Space.md) {
                     Image(systemName: "chevron.right")
                         .font(.system(size: 9, weight: .semibold))
-                        .foregroundStyle(DS.Ink.tertiary)
+                        .foregroundStyle(DS.Ink.secondary)
                         .rotationEffect(.degrees(expanded ? 90 : 0))
+                        .accessibilityHidden(true)
                     header
                 }
                 .contentShape(Rectangle())

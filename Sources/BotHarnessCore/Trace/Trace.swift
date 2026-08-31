@@ -16,14 +16,23 @@ import CryptoKit
 ///   tool runs and amended with `completed` after. A crash mid-action therefore leaves
 ///   evidence of what was being attempted, which is exactly the case you most need it.
 /// - **Secrets are redacted on the way in.** Not on the way out. A trace file is a file on
-///   disk that will be copied, attached to issues, and read by other agents.
+///   disk that will be copied, attached to issues, and read by other agents. Two redactors run,
+///   not one: `Redactor` for the shapes a key has, and a `StreamingRedactor` seeded with the
+///   actual credential values for the secrets that have no shape at all — a database URL with
+///   a password in it, a bearer string, a refresh token. The regex can never catch those.
 /// - **Screenshots live beside the trace, referenced by name.** They are the largest and most
 ///   sensitive artifacts, so they are separable: deleting them must not corrupt the trace.
-/// - **Every line carries the hash of the line before it.** Borrowed from bloks, whose audit
-///   log is hash-chained and signed. It costs one SHA-256 per event and turns the file from a
-///   log into evidence: an edited or deleted line breaks the chain and `verifyChain` says
-///   where. Without it, "we log everything" only means "we logged everything nobody wanted to
-///   change afterwards".
+/// - **Every line carries a keyed hash of the line before it.** Borrowed from bloks, whose audit
+///   log is hash-chained and signed. The chain used to be a bare SHA-256, which was a mistake
+///   worth naming: verification re-derived it with the same public algorithm and no key, so
+///   anything that could rewrite the file could re-chain it and hand back something that
+///   verified perfectly. It caught accidents and nothing else. The link is now an HMAC under a
+///   key held where a bot cannot read it — see `TraceChainKey` for where, and for what an
+///   attacker who *can* read it still gets.
+/// - **Owner-only on disk.** The directory is 0700 and every file in it 0600, asserted on each
+///   run rather than inherited from the umask. A trace holds real commands, real paths and real
+///   file contents; it is not a thing to leave group-readable because a shell was configured
+///   loosely.
 /// - **Failures to trace never fail the work.** Every write is best-effort.
 ///
 /// Layout on disk:
@@ -55,6 +64,23 @@ public actor TraceWriter {
     /// be recomputed, and every trace fails verification for no reason.
     private let encoder: JSONEncoder = TraceWriter.canonicalEncoder
 
+    /// The HMAC key for this run's chain, or `nil` if the machine has none and could not make
+    /// one. `nil` means the chain falls back to the old unkeyed SHA-256 and verification says
+    /// so out loud. That is a deliberate trade against the house rule that a failure to trace
+    /// never fails the work: an unsigned trace is worth much more than no trace, and it is
+    /// reported as unsigned rather than quietly passed off as evidence.
+    private let chainKey: SymmetricKey?
+    private let chainAlgorithm: String?
+
+    /// Seeded once, at construction, and never again for the life of the writer.
+    ///
+    /// Re-seeding per record would re-read the credential store on every line, but cost is the
+    /// smaller reason. The larger one is that a trace whose records were scrubbed against
+    /// different secret sets is not auditable: whether a value appears would depend on when in
+    /// the run it was written, and "why is the key visible on line 40 but not line 12" is not a
+    /// question a person should have to answer about an audit log.
+    private let valueRedactor: StreamingRedactor
+
     public static var canonicalEncoder: JSONEncoder {
         let e = JSONEncoder()
         e.outputFormatting = [.withoutEscapingSlashes, .sortedKeys]
@@ -62,19 +88,46 @@ public actor TraceWriter {
         return e
     }
 
-    /// - Parameter root: normally `var/traces` inside Application Support.
-    public init(root: URL, botName: String) {
+    /// - Parameters:
+    ///   - root: normally `var/traces` inside Application Support.
+    ///   - extraSecrets: values beyond the credential store that must never reach this trace.
+    ///   - chainKey: overrides the machine's chain key. Tests pass one so the suite never has
+    ///     to touch the real credential file; nothing in the app does.
+    public init(root: URL, botName: String, extraSecrets: [String] = [], chainKey: Data? = nil) {
         let stamp = TraceWriter.stampFormatter.string(from: Date())
         let slug = String(UUID().uuidString.prefix(6)).lowercased()
         self.runID = "\(stamp)-\(slug)"
         self.directory = root.appendingPathComponent(runID, isDirectory: true)
         self.steps = directory.appendingPathComponent("steps.jsonl")
 
-        try? FileManager.default.createDirectory(
-            at: directory.appendingPathComponent("artifacts", isDirectory: true),
-            withIntermediateDirectories: true
+        let key = chainKey ?? TraceChainKey.current()
+        self.chainKey = key.map { SymmetricKey(data: $0) }
+        self.chainAlgorithm = key == nil ? nil : TraceWriter.hmacAlgorithm
+
+        // The chain key is seeded into the redactor alongside the API keys. It should never
+        // pass through a tool's output, but if it ever does, a trace that leaks the key that
+        // signs it is a trace that proves nothing.
+        self.valueRedactor = StreamingRedactor.forRun(
+            extra: extraSecrets + (key.map { [$0.base64EncodedString()] } ?? [])
         )
-        FileManager.default.createFile(atPath: steps.path, contents: nil)
+
+        let manager = FileManager.default
+        // Assert the mode on the traces root as well as on this run's directory. A mode is not
+        // something you establish once; it is something you keep, and the root outlives every
+        // run in it. Doing it here rather than where the directory is first made means it is
+        // re-checked on every single run, which is the only schedule that actually holds.
+        try? manager.createDirectory(at: root, withIntermediateDirectories: true,
+                                     attributes: [.posixPermissions: 0o700])
+        try? manager.setAttributes([.posixPermissions: 0o700], ofItemAtPath: root.path)
+        try? manager.createDirectory(
+            at: directory.appendingPathComponent("artifacts", isDirectory: true),
+            withIntermediateDirectories: true,
+            attributes: [.posixPermissions: 0o700]
+        )
+        try? manager.setAttributes([.posixPermissions: 0o700], ofItemAtPath: directory.path)
+
+        manager.createFile(atPath: steps.path, contents: nil,
+                           attributes: [.posixPermissions: 0o600])
         self.handle = try? FileHandle(forWritingTo: steps)
     }
 
@@ -102,8 +155,8 @@ public actor TraceWriter {
         e.at = Date()
         e.completes = seq
         e.outcome = outcome
-        e.output = output.map(Redactor.redact)
-        e.error = error.map(Redactor.redact)
+        e.output = output
+        e.error = error
         append(e)
     }
 
@@ -113,7 +166,7 @@ public actor TraceWriter {
         sequence += 1
         let filename = String(format: "%04d-%@", sequence, name)
         let url = directory.appendingPathComponent("artifacts").appendingPathComponent(filename)
-        try? data.write(to: url)
+        TraceWriter.writeOwnerOnly(data, to: url)
         return filename
     }
 
@@ -123,8 +176,28 @@ public actor TraceWriter {
         m.runID = runID
         m.finishedAt = Date()
         m.steps = sequence
+
+        // The manifest used to go to disk with no redaction whatever, which was the widest hole
+        // in the whole trace: `goal` is the user's own message, and the message someone pastes a
+        // key into is exactly the one that starts a run about that key. The two free-text fields
+        // get the same treatment every appended record gets. The rest are identifiers this app
+        // generated itself — a UUID, a model name, an enum — where there is no secret to catch
+        // and a regex could only corrupt something.
+        m.goal = scrub(m.goal)
+        m.closingNote = m.closingNote.map(scrub)
+
+        // Seal the manifest with the same key the chain uses. This is what makes a *downgrade*
+        // visible: an attacker who re-chains `steps.jsonl` with the public SHA-256 and strips
+        // the algorithm marker produces a file that is internally consistent and would otherwise
+        // read as "written before chain signing". They cannot forge this seal, so the manifest
+        // keeps saying the run was signed and the mismatch shows.
+        m.chainSeal = nil
+        if let chainKey, let body = try? encoder.encode(m) {
+            m.chainSeal = TraceWriter.hex(HMAC<SHA256>.authenticationCode(for: body, using: chainKey))
+        }
+
         if let data = try? encoder.encode(m) {
-            try? data.write(to: directory.appendingPathComponent("run.json"))
+            TraceWriter.writeOwnerOnly(data, to: directory.appendingPathComponent("run.json"))
         }
         try? handle?.close()
         handle = nil
@@ -139,18 +212,22 @@ public actor TraceWriter {
         // Redact here rather than at each call site. Every path into the trace goes through
         // this function, so this is the one place that can guarantee it — and a guarantee
         // that depends on every caller remembering is not one.
-        chained.summary = Redactor.redact(chained.summary)
-        chained.intent = chained.intent.map(Redactor.redact)
-        chained.arguments = chained.arguments.map(Redactor.redact)
-        chained.output = chained.output.map(Redactor.redact)
-        chained.error = chained.error.map(Redactor.redact)
-        chained.permissionReason = chained.permissionReason.map(Redactor.redact)
+        chained.summary = scrub(chained.summary)
+        chained.intent = chained.intent.map(scrub)
+        chained.arguments = chained.arguments.map(scrub)
+        chained.output = chained.output.map(scrub)
+        chained.error = chained.error.map(scrub)
+        chained.permissionReason = chained.permissionReason.map(scrub)
 
         chained.prev = previousHash
+        chained.hashAlgorithm = chainAlgorithm
+        // Cleared explicitly rather than assumed nil: a caller can hand `record` an event it
+        // built by copying another one, and a stale hash in the body would be hashed into the
+        // link and make the record unverifiable for a reason nobody could see.
+        chained.hash = nil
         guard let body = try? encoder.encode(chained) else { return }
 
-        let digest = SHA256.hash(data: body)
-        let hash = digest.map { String(format: "%02x", $0) }.joined()
+        let hash = TraceWriter.link(over: body, with: chainKey)
         chained.hash = hash
         previousHash = hash
 
@@ -159,50 +236,177 @@ public actor TraceWriter {
         try? handle.write(contentsOf: data)
     }
 
+    /// Both redactors, in this order.
+    ///
+    /// Values first, patterns second. A known secret is replaced whole, so the regex pass never
+    /// sees a fragment of one; the other order risks a pattern chewing the middle out of a value
+    /// and leaving its head and tail behind, which is worse than not redacting at all because it
+    /// looks redacted.
+    private func scrub(_ text: String) -> String {
+        Redactor.redact(valueRedactor.redact(text))
+    }
+
     public static let genesis = "genesis"
+
+    /// The marker written into every signed record. Its absence is what identifies a trace from
+    /// before the chain was keyed.
+    public static let hmacAlgorithm = "hmac-sha256"
+
+    // MARK: Verification
 
     /// Re-derive every hash and report the first line that does not match.
     ///
     /// Deliberately a static function over a path rather than a method on a live writer: the
     /// point of verification is to run it on a file somebody handed you, long after the
     /// process that wrote it is gone.
-    public static func verifyChain(at stepsFile: URL) -> ChainStatus {
+    public static func verifyChain(at stepsFile: URL, chainKey: Data? = nil) -> ChainStatus {
+        inspectChain(at: stepsFile, chainKey: chainKey).status
+    }
+
+    /// Verification with the part `ChainStatus` cannot say: *how* the chain was signed.
+    ///
+    /// A trace written before the chain was keyed still verifies — its SHA-256 links are intact
+    /// and nothing about it is suspicious — but calling that "intact" without qualification
+    /// overstates what it proves. `signing` carries the distinction so a reader can be told
+    /// "written before chain signing" instead of a green tick it has not earned.
+    public static func inspectChain(at stepsFile: URL, chainKey: Data? = nil) -> ChainReport {
         guard let text = try? String(contentsOf: stepsFile, encoding: .utf8) else {
-            return .unreadable
+            return ChainReport(status: .unreadable, signing: .empty, records: 0)
         }
+        let key = (chainKey ?? TraceChainKey.current()).map { SymmetricKey(data: $0) }
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .iso8601
         let encoder = canonicalEncoder
 
         var expectedPrev = genesis
         var line = 0
+        var sawSigned = false
+        var sawUnsigned = false
+
+        func broken(_ reason: String) -> ChainReport {
+            ChainReport(status: .brokenAt(line: line, reason: reason),
+                        signing: sawSigned ? .signed : .writtenBeforeSigning,
+                        records: line - 1)
+        }
+
         for raw in text.split(separator: "\n", omittingEmptySubsequences: true) {
             line += 1
             guard let data = raw.data(using: .utf8),
                   var event = try? decoder.decode(Event.self, from: data),
                   let claimed = event.hash
-            else { return .brokenAt(line: line, reason: "line is not a readable trace record") }
+            else { return broken("line is not a readable trace record") }
 
             if event.prev != expectedPrev {
-                return .brokenAt(line: line, reason: "does not follow the previous record")
+                return broken("does not follow the previous record")
             }
+
+            let algorithm = event.hashAlgorithm
             event.hash = nil
             guard let body = try? encoder.encode(event) else {
-                return .brokenAt(line: line, reason: "could not be re-encoded for checking")
+                return broken("could not be re-encoded for checking")
             }
-            let recomputed = SHA256.hash(data: body).map { String(format: "%02x", $0) }.joined()
+
+            let recomputed: String
+            switch algorithm {
+            case nil:
+                // One trace, one scheme. A file that starts signed and turns unsigned partway
+                // down is not a legacy trace; it is somebody appending records they could not
+                // sign, which is the cheapest possible forgery and has to be caught here.
+                if sawSigned { return broken("record is not signed like the ones before it") }
+                sawUnsigned = true
+                recomputed = hex(SHA256.hash(data: body))
+            case hmacAlgorithm:
+                if sawUnsigned { return broken("record is signed but the ones before it are not") }
+                guard let key else {
+                    return ChainReport(status: .unreadable, signing: .keyUnavailable, records: line - 1)
+                }
+                sawSigned = true
+                recomputed = hex(HMAC<SHA256>.authenticationCode(for: body, using: key))
+            default:
+                return broken("record was written with an unrecognised hash algorithm")
+            }
+
             if recomputed != claimed {
-                return .brokenAt(line: line, reason: "contents do not match the recorded hash")
+                return broken("contents do not match the recorded hash")
             }
             expectedPrev = claimed
         }
-        return .intact(records: line)
+
+        let signing: ChainReport.Signing =
+            line == 0 ? .empty : (sawSigned ? .signed : .writtenBeforeSigning)
+        return ChainReport(status: .intact(records: line), signing: signing, records: line)
     }
 
-    public enum ChainStatus: Equatable {
+    /// Whether the manifest still carries the seal the writer put on it.
+    ///
+    /// Checked separately from the step chain because the two fail differently: a manifest that
+    /// was never sealed is an old run, while a manifest whose seal no longer matches is somebody
+    /// editing the goal or the closing note — the two fields a person would most want to change
+    /// after the fact.
+    public static func verifyManifest(_ manifest: RunManifest, chainKey: Data? = nil) -> ManifestSeal {
+        guard let claimed = manifest.chainSeal else { return .writtenBeforeSigning }
+        guard let key = (chainKey ?? TraceChainKey.current()).map({ SymmetricKey(data: $0) }) else {
+            return .keyUnavailable
+        }
+        var m = manifest
+        m.chainSeal = nil
+        guard let body = try? canonicalEncoder.encode(m) else { return .altered }
+        return hex(HMAC<SHA256>.authenticationCode(for: body, using: key)) == claimed ? .sealed : .altered
+    }
+
+    /// The link written into a record: keyed when there is a key, and the old bare digest when
+    /// there is not, so that a machine without a key still produces a readable, self-consistent
+    /// trace rather than none at all.
+    private static func link(over body: Data, with key: SymmetricKey?) -> String {
+        guard let key else { return hex(SHA256.hash(data: body)) }
+        return hex(HMAC<SHA256>.authenticationCode(for: body, using: key))
+    }
+
+    private static func hex<S: Sequence>(_ bytes: S) -> String where S.Element == UInt8 {
+        bytes.map { String(format: "%02x", $0) }.joined()
+    }
+
+    /// Create the file with its mode already set rather than writing and then chmod-ing.
+    /// Between those two calls the file exists with whatever the umask allowed, and a trace
+    /// holds real commands and real file contents — a window of one syscall is still a window.
+    /// `setAttributes` runs afterwards anyway, because `createFile` overwriting a file that
+    /// already exists is not documented to reset its mode.
+    private static func writeOwnerOnly(_ data: Data, to url: URL) {
+        let manager = FileManager.default
+        manager.createFile(atPath: url.path, contents: data,
+                           attributes: [.posixPermissions: 0o600])
+        try? manager.setAttributes([.posixPermissions: 0o600], ofItemAtPath: url.path)
+    }
+
+    public enum ChainStatus: Equatable, Sendable {
         case intact(records: Int)
         case brokenAt(line: Int, reason: String)
         case unreadable
+    }
+
+    /// What verification found, including the part that does not fit in `ChainStatus`.
+    public struct ChainReport: Equatable, Sendable {
+        public var status: ChainStatus
+        public var signing: Signing
+        public var records: Int
+
+        public enum Signing: Equatable, Sendable {
+            /// Every record carries an HMAC this machine could check.
+            case signed
+            /// Bare SHA-256 links throughout: written before the chain was keyed. Intact, but
+            /// it proves only that nobody edited it carelessly.
+            case writtenBeforeSigning
+            /// Signed with a key this machine does not hold, so nothing can be said either way.
+            case keyUnavailable
+            case empty
+        }
+    }
+
+    public enum ManifestSeal: Equatable, Sendable {
+        case sealed
+        case writtenBeforeSigning
+        case altered
+        case keyUnavailable
     }
 
     private static let stampFormatter: DateFormatter = {
@@ -261,8 +465,12 @@ extension TraceWriter {
         // — tamper evidence —
         /// Hash of the preceding record, or "genesis" for the first.
         var prev: String?
-        /// SHA-256 of this record with `hash` itself omitted. Set at write time.
+        /// The link over this record with `hash` itself omitted. Set at write time.
         var hash: String?
+        /// How `hash` was computed. Absent on records written before the chain was keyed, which
+        /// is the only thing that tells those traces apart from tampered ones — so it is part of
+        /// the hashed body, not metadata beside it.
+        var hashAlgorithm: String?
 
         var kindRaw: String { kind.rawValue }
 
@@ -322,6 +530,10 @@ extension TraceWriter {
         /// Free text the agent writes at the end: what it concluded, what it could not do,
         /// what a future run should know. The single most useful field for the next agent.
         public var closingNote: String?
+
+        /// HMAC over this manifest with the field itself omitted. Absent on runs written before
+        /// the chain was keyed.
+        public var chainSeal: String?
     }
 }
 
@@ -334,8 +546,9 @@ extension TraceWriter {
 /// about redacting it, it has already been somewhere.
 ///
 /// It is a filter, not a guarantee. It catches known key shapes; it cannot catch a password
-/// that looks like an English word. The real defence is that credentials live in a file bots
-/// and are never passed through the agent at all.
+/// that looks like an English word, or a database URL, or a bearer token with no prefix. That
+/// gap is why `TraceWriter` runs a value-seeded `StreamingRedactor` before this one rather than
+/// treating this as the whole defence.
 public enum Redactor {
     private static let patterns: [NSRegularExpression] = {
         [

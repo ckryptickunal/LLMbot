@@ -53,7 +53,11 @@ for path in UI:
         # A maxHeight on a container claims space rather than capping it — the composer bug.
         # A deliberate cap is marked `// cap:` on the same line so it is a decision on the
         # record rather than something the lint quietly tolerates.
-        if (re.search(r'\.frame\([^)]*maxHeight:\s*(?!\.infinity)', code)
+        # The lookahead has to sit before the whitespace, not after it. Written as
+        # `maxHeight:\s*(?!\.infinity)` the `\s*` backtracks to zero width, the lookahead then
+        # sees a space rather than `.infinity`, and every `maxHeight: .infinity` written with a
+        # space was flagged. A lint that cries wolf is one people stop running.
+        if (re.search(r'\.frame\([^)]*maxHeight:(?!\s*\.infinity)', code)
                 and "Skeleton" not in code and "// cap:" not in line):
             findings["maxHeight claims space"].append(f"{rel}:{n}  {code.strip()[:70]}")
 
