@@ -52,3 +52,5 @@ in `CHANGELOG.md` instead.
 | [0017](0017-the-trace-chain-is-keyed.md) | The trace chain is keyed, and the key lives beside the API keys | accepted | 2026-08-31 |
 | [0018](0018-the-browser-is-driven-through-applescript.md) | The browser is driven through AppleScript, not a debugging port | accepted | 2026-08-31 |
 | [0019](0019-the-claude-cli-is-a-model-not-an-agent.md) | The claude CLI is used as a model, not as an agent | accepted | 2026-08-31 |
+| [0020](0020-shell-commands-run-inside-seatbelt.md) | Shell commands run inside a kernel sandbox, not only past a matcher | accepted | 2026-08-31 |
+| [0021](0021-a-bot-can-have-its-own-computer.md) | A bot can have its own Linux computer, and the Mac stays the default | accepted | 2026-08-31 |

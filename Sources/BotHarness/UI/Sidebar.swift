@@ -60,6 +60,25 @@ struct Sidebar: View {
                 }
                 .listStyle(.sidebar)
                 .scrollContentBackground(.hidden)
+                // Room to scroll clear of the footer, and a soft edge where it meets it.
+                //
+                // The list ends exactly where the footer's hairline begins, so whatever row
+                // happens to straddle that line is sliced through — usually through the middle
+                // of an avatar, which reads as a rendering fault rather than as a list that
+                // continues below the fold. The padding gives the content somewhere to go; the
+                // mask dissolves the last few points instead of cutting them.
+                //
+                // A mask rather than an overlay because the roster deliberately has no
+                // background of its own — it inherits the window's material — so there is no
+                // colour an overlay could fade to without banding against it.
+                .safeAreaPadding(.bottom, DS.Space.sm)
+                .mask(
+                    LinearGradient(
+                        stops: [.init(color: .black, location: 0),
+                                .init(color: .black, location: 0.94),
+                                .init(color: .clear, location: 1)],
+                        startPoint: .top, endPoint: .bottom)
+                )
             }
 
             footer
@@ -375,7 +394,11 @@ struct Sidebar: View {
             Hairline()
 
             Button { library = .connections } label: {
-                footerRow("app.connected.to.app.below.fill", "Connections")
+                // `app.connected.to.app.below.fill` drew as a faint diagonal stroke with two
+                // dots at the 13-point size this row uses — illegible, much lighter than the
+                // icons beside it, and read as a stray mark rather than a control. A plug is
+                // legible small and says the right thing about a list of connectors.
+                footerRow("powerplug", "Connections")
             }
             .buttonStyle(.plain)
 

@@ -363,8 +363,14 @@ public enum DS {
         public static let activityDetailMin: CGFloat = 460
 
         /// Settings and the library share one size, so switching between them does not resize.
+        ///
+        /// 620 rather than 480, measured against the tab that holds the most: Connections opens
+        /// on a description line, a section label and five capability rows, which came to more
+        /// than 480 and left the fifth row sliced through the middle at the sheet's edge. The
+        /// comment above this block already warned that a sheet forty points too short clips its
+        /// own content; this one was a hundred and forty short.
         public static let sheetWidth: CGFloat = 560
-        public static let sheetHeight: CGFloat = 480
+        public static let sheetHeight: CGFloat = 620
 
         /// A popover menu wide enough that no item wraps.
         public static let popoverMin: CGFloat = 190

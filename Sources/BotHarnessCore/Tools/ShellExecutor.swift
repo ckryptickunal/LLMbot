@@ -25,7 +25,9 @@ public actor ShellExecutor: CommandRunning {
     /// Per-run scratch, exported as TMPDIR so a confined build has somewhere to stage work.
     private let scratchDirectory: String?
 
-    public var isSandboxed: Bool { sandbox != nil }
+    // `nonisolated`: it reads one immutable `let` and is needed synchronously by the trace
+    // writer, which should not have to await an actor hop to record where a command ran.
+    public nonisolated var isSandboxed: Bool { sandbox != nil }
 
     public init(authority: Authority = Authority(), sandbox: Seatbelt.Policy? = nil) {
         self.authority = authority

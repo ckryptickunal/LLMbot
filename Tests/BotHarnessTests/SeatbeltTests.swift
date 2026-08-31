@@ -250,3 +250,28 @@ final class SeatbeltTests: XCTestCase {
         XCTAssertEqual(Array(argv.suffix(3)), ["/bin/zsh", "-c", "echo hi"])
     }
 }
+
+/// A regression guard for a crash, not a feature test.
+///
+/// `Seatbelt.isWorking` runs the self-test on first read, and the self-test spawns a subprocess.
+/// A settings panel read it from inside a SwiftUI body and the app died silently — no crash
+/// report, no Swift runtime message, just an exit. `knownWorking` exists so a view can ask without
+/// ever triggering that, and this test fails if someone routes it back through `isWorking`.
+final class SeatbeltViewSafetyTests: XCTestCase {
+
+    func testTheViewFacingAnswerIsCheapEnoughForABodyEvaluation() {
+        // A spawn is ~100ms. A cached read is nanoseconds. Two orders of magnitude of headroom
+        // means this cannot fail for timing noise, only for someone reintroducing the spawn.
+        let started = Date()
+        for _ in 0..<1_000 { _ = Seatbelt.knownWorking }
+        XCTAssertLessThan(Date().timeIntervalSince(started), 0.05,
+                          "reading knownWorking is doing real work — it must never spawn anything")
+    }
+
+    func testTheCachedAnswerAgreesWithTheRealOne() {
+        // Reading `isWorking` here is fine: this is a test, not a view.
+        let real = Seatbelt.isWorking
+        XCTAssertEqual(Seatbelt.knownWorking, real,
+                       "the cached answer drifted from the one the runtime uses")
+    }
+}

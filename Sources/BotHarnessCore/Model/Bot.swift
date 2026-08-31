@@ -202,9 +202,27 @@ public enum EnvironmentKind: String, Codable, Hashable, CaseIterable {
     public var explanation: String {
         switch self {
         case .thisMac:
-            return "Your real files, your signed-in browser, your apps. Guarded by permissions."
+            // The second sentence is conditional on fact, not on intent: the sandbox is proven
+            // once at launch by attempting a write that must fail, and if it ever stops confining
+            // anything this must stop saying that it does.
+            //
+            // `knownWorking`, never `isWorking`. This is read from a view body, and reading
+            // `isWorking` before the launch-time warm-up finishes would run the self-test right
+            // there — spawning a subprocess mid-layout, which terminates the app. Until the answer
+            // is in, the wording claims nothing.
+            let base = "Your real files, your signed-in browser, your apps."
+            switch Seatbelt.knownWorking {
+            case true:  return base + " Commands can only change this bot's folder."
+            case false: return base + " Guarded by permissions — but command sandboxing is not "
+                             + "working on this system."
+            default:    return base + " Guarded by permissions."
+            }
         case .container:
-            return "A throwaway Linux machine. Nothing it does can affect your Mac."
+            // Not "nothing it does can affect your Mac". The workspace folder is shared into the
+            // machine read-write, so a bot can certainly destroy the files in it — they are the
+            // user's real files, and that is the whole point of sharing them.
+            return "A Linux machine of its own. It can install and break things without touching "
+                 + "your Mac; only its workspace folder is shared in."
         }
     }
 }

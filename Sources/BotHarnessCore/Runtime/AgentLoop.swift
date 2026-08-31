@@ -52,6 +52,14 @@ public actor AgentLoop {
     /// Set once a run has told the user its container was unavailable, so a long run does not
     /// repeat the same paragraph on every command.
     private var reportedContainerFallback = false
+
+    /// The computer this run is actually using, as opposed to the one the bot is configured for.
+    ///
+    /// A run set to use a container on a Mac that has none falls back to the host, and a trace
+    /// that recorded the *setting* would then say "container" about work that happened on the
+    /// user's own machine. This holds what happened. It starts as the intent and is corrected the
+    /// first time a command actually runs somewhere.
+    private var computerInUse: String
     private let computer: ComputerExecutor
     private let git: GitExecutor
     private let browser = BrowserExecutor()
@@ -181,6 +189,9 @@ public actor AgentLoop {
                               scratchDirectory: NSTemporaryDirectory() + "bh-run-\(contract.id.uuidString)")
         self.shell = ShellExecutor(authority: contract.authority, sandbox: sandbox)
         self.containers = wantsContainer ? ContainerRuntime.shared : nil
+        self.computerInUse = wantsContainer
+            ? "container:" + ContainerRuntime.name(for: bot.id)
+            : (sandbox != nil ? "mac (sandboxed)" : "mac (unconfined)")
         self.computer = ComputerExecutor()
         self.git = GitExecutor(authority: contract.authority)
         self.effects = EffectLedger(root: trace.tracesRoot)
@@ -255,6 +266,12 @@ public actor AgentLoop {
 
     private func execute(goal: String, emit: @escaping @Sendable (Event) -> Void) async {
         currentEmit = emit
+        // Settle which computer this run is actually on before the first prompt is written. The
+        // fallback is otherwise discovered on the first shell call, by which point the bot has
+        // already been told it is working in Linux and may have planned around `apt-get`.
+        if let containers, await !containers.availability().isReady {
+            computerInUse = shell.isSandboxed ? "mac (sandboxed)" : "mac (unconfined)"
+        }
         await trace.record(.init(kind: .runStarted, summary: goal))
         turns.append(.init(role: .user, text: goal))
 
@@ -474,7 +491,12 @@ public actor AgentLoop {
         // `files.read` does not need an idempotency key and giving it one would only add noise.
         var effectKey: String?
         if Self.isOutwardEffect(action.name, arguments: action.arguments) {
-            let key = EffectLedger.key(tool: action.name, arguments: action.arguments)
+            // Shell commands are identified by the computer they run on as well as by what they
+            // say — see `EffectLedger.key`. Nothing else is: a mail sent from a container is the
+            // same mail, and its identity must not change when a setting does.
+            let onWhichComputer = action.name.hasPrefix("shell.") ? computerInUse : nil
+            let key = EffectLedger.key(tool: action.name, arguments: action.arguments,
+                                       environment: onWhichComputer)
             effectKey = key
             if let already = await effects.existing(key), already.outcome != .failed {
                 let advisory = await effects.advisory(for: already)
@@ -511,6 +533,7 @@ public actor AgentLoop {
             e.tool = action.name
             e.arguments = detail
             e.intent = action.intent
+            e.computer = computerInUse
             return e
         }())
 
@@ -1109,6 +1132,8 @@ public actor AgentLoop {
                 """)
         }
 
+        sections.append("YOUR COMPUTER\n" + computerBriefing)
+
         sections.append("""
             HOW TO WRITE
             Terse, first person, and carrying decisions. Say what you did, what you found, and \
@@ -1117,6 +1142,28 @@ public actor AgentLoop {
             """)
 
         return sections.joined(separator: "\n\n")
+    }
+
+    /// What the bot needs to know about the machine it is on in order to pick commands that work.
+    ///
+    /// Without this a container bot reaches for `brew`, `open -a`, and `/Users/...` paths, gets
+    /// four failures in a row, and concludes the tools are broken rather than that it is on a
+    /// different operating system. Derived from `computerInUse`, which is what actually happened,
+    /// so a run that fell back to the Mac is never told it is in Linux.
+    private var computerBriefing: String {
+        if computerInUse.hasPrefix("container:") {
+            return """
+                You are working inside your own Linux machine (Debian), not on the user's Mac.                 Your folder is at \(ContainerRuntime.guestWorkspace) — use that path, not a                 /Users path. Install what you need with apt-get; there is no Homebrew and no                 `open`. There is no screen, no browser and no Mac applications in here, so                 screenshots and clicking are unavailable. Anything you install or break stays in                 this machine; the only thing of the user's you can reach is your own folder, and                 changes there are real.
+                """
+        }
+        let confinement = Seatbelt.isWorking
+            ? "Commands you run can only change files inside your own folder — a write outside it "
+            + "fails at the kernel, no matter how the path is spelled. That is a boundary, not a "
+            + "suggestion: if you need something outside, ask rather than working around it."
+            : "Command sandboxing is not working on this system, so treat every path you write "
+            + "with the care that implies and stay inside your own folder."
+        return "You are working on the user's real Mac. Their files, their signed-in browser, "
+             + "their apps. There is no undo. " + confinement
     }
 
     private func usesComputer(_ exposed: [ToolDescriptor]) -> Bool {
@@ -1135,7 +1182,7 @@ public actor AgentLoop {
         await trace.finish(.init(
             botID: bot.id, botName: bot.name, conversationID: contract.conversationID,
             goal: contract.objective, brain: brain.name,
-            environment: bot.environment.rawValue, startedAt: contract.startedAt,
+            environment: computerInUse, startedAt: contract.startedAt,
             outcome: closure == .succeeded ? .succeeded : .failed,
             totalCostUSD: contract.spend.usd,
             totalPromptTokens: contract.spend.promptTokens,
@@ -1163,6 +1210,7 @@ public actor AgentLoop {
         let workspace = bot.effectiveWorkspace.path
         let availability = await containers.availability()
         guard availability.isReady else {
+            computerInUse = shell.isSandboxed ? "mac (sandboxed)" : "mac (unconfined)"
             let out = await shell.run(command, cwd: cwd, timeout: timeout)
             guard !reportedContainerFallback else { return out }
             reportedContainerFallback = true
@@ -1185,6 +1233,7 @@ public actor AgentLoop {
         let prefixed = (guestCwd == nil || guestCwd == ContainerRuntime.guestWorkspace)
             ? command
             : "cd \(shellQuote(guestCwd!)) && \(command)"
+        computerInUse = "container:" + ContainerRuntime.name(for: bot.id)
         return await containers.exec(prefixed, botID: bot.id, workspace: workspace, timeout: timeout)
     }
 

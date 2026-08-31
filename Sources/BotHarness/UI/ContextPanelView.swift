@@ -54,29 +54,29 @@ struct ContextPanelView: View {
     private var currentConversation: Conversation? { store.conversation(store.selection) }
     private var currentBot: Bot? { store.bot(currentConversation?.participants.first) }
 
+    /// Left-aligned and the same height as the conversation's own header.
+    ///
+    /// It was centred, and 28 points tall with 8 of top padding — 36 against the 52 of the header
+    /// on the other side of the divider. So the two titles sat at different heights across a
+    /// vertical line that invites exactly that comparison, and the panel's title was the only
+    /// centred one in an app whose every other header is left-aligned. Centring also needed an
+    /// invisible spacer to balance the back button, which is a thing to keep in step forever.
     private var header: some View {
-        HStack {
+        HStack(spacing: DS.Space.md) {
             if ui.panel == .settings {
                 IconButton("chevron.left", filled: false, help: "Back to the screen",
                            accessibilityLabel: "Back to the screen") {
                     withAnimation(DS.Motion.instant) { ui.panel = .screen }
                 }
             }
-            Spacer()
             Text(ui.panel == .settings ? "Settings" : "Screen")
                 .font(DS.Text.callout.weight(.semibold))
                 .foregroundStyle(DS.Ink.primary)
                 .accessibilityAddTraits(.isHeader)
-            Spacer()
-            // Balances the leading control so the title stays optically centred.
-            if ui.panel == .settings {
-                Color.clear.frame(width: DS.Size.hit, height: DS.Size.hit)
-                    .accessibilityHidden(true)
-            }
+            Spacer(minLength: 0)
         }
         .padding(.horizontal, DS.Space.lg)
-        .frame(height: DS.Size.rosterRow)
-        .padding(.top, DS.Space.md)
+        .frame(height: DS.Size.titlebar)
     }
 }
 
@@ -404,16 +404,25 @@ private struct BotSettingsPane: View {
     }
 
     private var unavailableReason: String {
+        // What the fallback actually is, rather than what it is meant to be. On a machine where
+        // the self-test failed there is no sandbox to fall back into, and saying otherwise would
+        // be the app claiming a boundary it does not have.
+        // `knownWorking`, not `isWorking` — see `Seatbelt.knownWorking`. This is a view body.
+        let fallback: String
+        switch Seatbelt.knownWorking {
+        case true:  fallback = "this bot works on your Mac, sandboxed."
+        case false: fallback = "this bot works on your Mac, unsandboxed."
+        default:    fallback = "this bot works on your Mac."
+        }
         switch containerReady {
         case .notInstalled:
             return "Not set up on this Mac yet — Computers → Its own computer explains the "
-                 + "one-time install. Until then this bot works on your Mac, sandboxed."
+                 + "one-time install. Until then \(fallback)"
         case .serviceStopped:
             return "The container service is not running. Computers → Its own computer can "
-                 + "start it. Until then this bot works on your Mac, sandboxed."
+                 + "start it. Until then \(fallback)"
         case .failing(let detail):
-            return "The container tool reported: \(detail). Until that is fixed this bot works "
-                 + "on your Mac, sandboxed."
+            return "The container tool reported: \(detail). Until that is fixed \(fallback)"
         case .ready:
             return ""
         }

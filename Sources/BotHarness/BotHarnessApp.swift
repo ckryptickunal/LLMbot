@@ -13,6 +13,10 @@ struct BotHarnessApp: App {
         let store = Store()
         _store = State(initialValue: store)
         _runner = State(initialValue: BotRunner(store: store))
+        // Settle "is the sandbox actually confining anything" before anything asks. The check
+        // spawns a process, and the first thing to ask used to be a view body — which is not a
+        // place a subprocess can be spawned from.
+        Seatbelt.warmUp()
     }
 
     var body: some Scene {

@@ -16,7 +16,7 @@ import Foundation
 /// behind this one type, and `selfTest()` proves the mechanism still works at launch rather
 /// than assuming it.
 ///
-/// See `docs/decisions/0014-shell-commands-run-inside-seatbelt.md`.
+/// See `docs/decisions/0020-shell-commands-run-inside-seatbelt.md`.
 public enum Seatbelt {
 
     /// Hardcoded, never resolved from `PATH`.
@@ -224,8 +224,36 @@ public enum Seatbelt {
     ///
     /// The test spawns a process, so it is done once and remembered. Anything that needs the
     /// answer synchronously — the decision of whether to build a profile for a run — reads this.
+    /// Compute `isWorking` now, off whatever thread calls this, so nothing later has to wait.
+    ///
+    /// Called once at launch. Without it the first read of `isWorking` runs the self-test wherever
+    /// that read happens — and the first read turned out to be a SwiftUI view body, which spawns a
+    /// subprocess in the middle of a layout pass and takes the app down with it. The lazy static
+    /// is still correct on its own; this only decides *where* the one-time cost is paid.
+    public static func warmUp() {
+        Task.detached(priority: .utility) { _ = isWorking }
+    }
+
+    /// The answer if it is already known, without ever computing it.
+    ///
+    /// **Views must read this, never `isWorking`.** Reading `isWorking` runs the self-test if it
+    /// has not run yet, and the self-test spawns a subprocess — which took the app down when the
+    /// first read happened to be a SwiftUI body evaluating a settings panel. `nil` means "not
+    /// known yet", and the honest thing to render for `nil` is wording that claims nothing.
+    public static var knownWorking: Bool? {
+        stateLock.lock()
+        defer { stateLock.unlock() }
+        return cachedWorking
+    }
+
+    private static let stateLock = NSLock()
+    nonisolated(unsafe) private static var cachedWorking: Bool?
+
     public static let isWorking: Bool = {
         let working = selfTest()
+        stateLock.lock()
+        cachedWorking = working
+        stateLock.unlock()
         if !working {
             let warning = "Bot-Harness: sandbox-exec is not confining commands on this system. "
                         + "Shell commands run unconfined, and runs record that they were not "

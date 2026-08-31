@@ -83,7 +83,15 @@ struct ConversationView: View {
     /// a permanent divider under a header is a line the design does not need at rest.
     private var header: some View {
         VStack(spacing: 0) {
-            ReadingColumn {
+            // Full pane width, not a reading column.
+            //
+            // A reading column caps its content at a comfortable measure for prose and lets the
+            // slack fall to its trailing side — which is right for messages and wrong for a
+            // toolbar. Wrapped in one, the settings and panel buttons sat at the right edge of
+            // the *text column*, several hundred points short of the pane they belong to, and
+            // read as icons dropped in the middle of empty space. The leading padding matches
+            // `ReadingColumn`'s so the title still lines up with the messages beneath it.
+            Group {
                 HStack(spacing: DS.Space.md) {
                     if let conversation, conversation.isChannel {
                         channelIdentity(conversation)
@@ -123,6 +131,8 @@ struct ConversationView: View {
                     }
                 }
                 .frame(height: DS.Size.titlebar)
+                .padding(.leading, DS.Space.xxl)
+                .padding(.trailing, DS.Space.lg)
             }
             if scrolled { Hairline() }
         }
@@ -292,7 +302,11 @@ struct ConversationView: View {
                 }
             }
             .overlay(alignment: .bottom) {
-                if !atBottom {
+                // Nothing to jump to in an empty conversation. The bottom-anchor test measures
+                // whether the end of the transcript is on screen, and the empty state is a tall
+                // centred block, so the anchor sat below the fold and offered to scroll a
+                // conversation that had no messages in it at all.
+                if !atBottom, !conversation.messages.isEmpty {
                     Button {
                         withAnimation(DS.Motion.rowInsert) {
                             proxy.scrollTo(Self.bottomAnchor, anchor: .bottom)

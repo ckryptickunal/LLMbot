@@ -21,6 +21,91 @@ Versioning follows [Semantic Versioning 2.0.0](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+### Fixed — visual defects found by looking at the running app
+
+- **The settings and panel buttons sat in the middle of the conversation, not at its edge.** The
+  header was wrapped in the same reading column the messages use, which caps its width for
+  comfortable prose — so the buttons stopped where the text stops, several hundred points short
+  of the pane, and read as icons dropped into empty space.
+- **The model and autonomy chips never drew the way they were designed.** Both are menus, and a
+  macOS menu restyles whatever label it is given: the capsule background, the small icon size and
+  the chevron were all discarded, and the tint was dropped so a warning showed a white triangle
+  beside amber words. They are buttons with popovers now, which is the same fix already applied
+  to the roster's own controls. `Chip` is used in exactly two places and both were menus, so the
+  component had never once rendered correctly anywhere in the app.
+- **"Ask" was marked with a raised palm**, which reads as "stop" — the opposite of a mode whose
+  promise is that the bot carries on and checks with you first. It is a question mark now.
+- **The Connections icon was illegible.** At the size that row uses it drew as a faint diagonal
+  stroke with two dots, much lighter than the icons beside it. It is a plug.
+- **The mascot stood on the wrong thing.** It is meant to stand on the message field, and did —
+  until a notice appeared above the field, at which point it stood on the notice instead, a third
+  of the way across.
+- **"Jump to latest" was offered in conversations with no messages.** The test for whether the
+  end of the transcript is on screen measures a tall centred empty state as "scrolled away".
+- **The panel's title was centred and sat higher than the conversation's.** It was 36 points tall
+  against 52, so the two headings disagreed across the divider that invites comparing them, and
+  it was the only centred heading in the app.
+- **The roster's last row was sliced through the middle of its avatar** by the footer above
+  Connections. It now fades out.
+- **The connections and skills sheet was too short for its own content**, cutting the fifth row
+  in half. The comment on the size token already warned that a sheet forty points short clips
+  itself; this one was a hundred and forty short.
+
+
+### Security
+- **Shell commands now run inside a kernel sandbox, not only past a text check.** Every command
+  a bot runs on this Mac is confined by a deny-default Seatbelt profile: it may write inside the
+  bot's workspace and nowhere else, and it can only reach the network if the bot was granted a
+  web capability. This closes the case the old check could never see — a path the model never
+  writes down, such as `P=$HOME; cat "$P/.ssh/id_rsa"`, or anything an interpreter opens after it
+  starts. Reads are deliberately still governed by the existing per-bot scope rather than by the
+  profile (see `docs/decisions/0020-shell-commands-run-inside-seatbelt.md`).
+- **A bot's own git history and the app's own state are read-only from the shell.** A bot can work
+  in a repository without rewriting its history, and cannot edit the rules that govern it.
+- **The app checks at every launch that the sandbox is actually confining anything**, because the
+  mechanism is deprecated and the dangerous failure is the silent one. If it ever stops working
+  the shell keeps running, but the app says so on stderr and the run records `mac (unconfined)`
+  rather than claiming a boundary it does not have.
+- **Nothing from the credential store can reach a bot's container.** The guest environment is
+  built from scratch rather than inherited, only the bot's own folder is ever shared in, and
+  output from inside stays wrapped as untrusted content.
+
+### Added
+- **A bot can now have its own computer.** In a bot's settings, Environment offers This Mac or
+  Container. A container bot gets a private Linux machine with only its workspace shared in, so
+  it can install packages, break a toolchain or run a long build without any of it touching your
+  Mac (see `docs/decisions/0021-a-bot-can-have-its-own-computer.md`).
+- **Computers → Container shows what is actually true** — installed and ready, installed but
+  stopped (with a button to start it), not installed (with what to install), or broken (with what
+  the tool said). It re-checks when you come back to the app, so installing the tool in another
+  window is noticed.
+
+### Changed
+- **A bot set to use a container on a Mac that has none keeps working.** The command runs on the
+  Mac inside the usual sandbox, and the bot is told once, in a sentence, which computer it is on
+  and why. Nothing about this feature requires you to install anything.
+- **Screen, browser and Mac-app tools are refused for container bots** instead of quietly doing
+  nothing. There is no screen inside a Linux machine, and a bot that believes it took a screenshot
+  is worse than one that was told it could not.
+
+### Fixed
+- **Opening a bot's settings no longer quits the app.** Checking whether the sandbox is working
+  spawns a short-lived process, and the settings panel was asking for that answer while it was
+  drawing itself — which took the whole app down with no error and no crash report. The answer is
+  now worked out once when the app starts, and anything on screen reads the stored result.
+- **A build that ran in a container is no longer mistaken for one that ran on your Mac.** The
+  record of what already happened now includes which computer it happened on, so switching a bot's
+  environment no longer causes a needed `npm install` or `make` to be skipped on the grounds that
+  it "already ran" somewhere else. Mail and messages are unaffected: those are the same effect
+  wherever they were sent from.
+- **Traces record the computer a step actually used**, not the one the bot was set to. A run that
+  asked for a container and fell back to the Mac used to leave a record saying otherwise.
+- **A container whose folder moved between launches is rebuilt rather than silently serving the
+  old one.** The mount is verified by observation, not assumed.
+- **An error from the container tool is shown as one readable line** instead of an indented
+  fragment or, when the tool printed nothing at all, a blank space where the reason should be.
+
+
 ### Added — plan
 - **A complete, hand-off-able implementation plan for giving bots their own computer**
   (`docs/plans/own-computer.md`): Seatbelt enforcement for every shell command on This Mac,

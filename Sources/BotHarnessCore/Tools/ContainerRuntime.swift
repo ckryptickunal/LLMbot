@@ -16,7 +16,7 @@ import Foundation
 /// what installing it would buy. A bot whose computer is unavailable falls back to This Mac
 /// rather than failing — see `AgentLoop`.
 ///
-/// See `docs/decisions/0015-a-bot-can-have-its-own-linux-computer.md`.
+/// See `docs/decisions/0021-a-bot-can-have-its-own-computer.md`.
 public actor ContainerRuntime {
 
     /// Hardcoded, like `sandbox-exec` and for the same reason: a boundary you locate by asking

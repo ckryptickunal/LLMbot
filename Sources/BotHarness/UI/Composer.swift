@@ -35,8 +35,13 @@ struct Composer: View {
             // It also carries the run's state, which is the reason it earns permanent space:
             // the field you are typing into is the thing you are already looking at, so it is
             // where "working", "needs you" and "that failed" cost nothing to notice.
-            MascotView(mascotState)
             if let blocker { preflight(blocker) }
+            // Below the preflight banner, not above it. The comment above describes the mascot
+            // standing one `md` above the field, and that was true only when no banner was
+            // showing — with one present it stood on the banner instead, a third of the way
+            // across, which reads as a drawing dropped into empty space rather than a character
+            // standing on the thing you type into.
+            MascotView(mascotState)
             field
             controls
         }
@@ -280,35 +285,59 @@ struct BrainChip: View {
     @Environment(Store.self) private var store
     let bot: Bot
 
+    @State private var open = false
+
+    /// A popover rather than a `Menu`, for the reason already recorded on the roster's create
+    /// button: `Menu` insets and restyles its own label, and there is no supported way to take
+    /// that off. The `Chip` primitive was written with a capsule background, a 9-point icon and
+    /// a chevron, and inside a `Menu` label none of the three survived — the chip rendered as
+    /// bare text with an oversized icon whose tint was dropped, so a warning showed a white
+    /// triangle beside amber words. `Chip` is used in exactly two places, both of them were
+    /// menus, and so the primitive had never once drawn the way it was designed.
     var body: some View {
-        Menu {
-            Section("Gemini") {
-                option(.gemini(model: GeminiAdapter.defaultModel), "Gemini 3.7 Flash",
-                       "Best for using the computer")
-                option(.gemini(model: GeminiAdapter.cheapModel), "Gemini 3.5 Flash-Lite",
-                       "Faster and cheaper")
-            }
-            Section("Claude Code") {
-                option(.claudeCode, "Claude Code",
-                       "Your subscription, no key — cannot drive the screen")
-            }
-            Section("Not wired up yet") {
-                option(.anthropic(model: "claude-opus-5"), "Claude Opus 5", "Adapter not written")
-                option(.openAI(model: "gpt-5"), "GPT-5", "Adapter not written")
-            }
-            Divider()
-            Button("Set up keys…") {
-                NSApp.sendAction(Selector(("showSettingsWindow:")), to: nil, from: nil)
-            }
-        } label: {
+        Button { open.toggle() } label: {
             Chip(label, systemImage: warns ? "exclamationmark.triangle.fill" : "brain",
                  tint: warns ? DS.Status.running.mark : DS.Ink.secondary,
                  showsChevron: true)
         }
-        .menuStyle(.borderlessButton)
-        .menuIndicator(.hidden)
-        .fixedSize()
+        .buttonStyle(.plain)
         .help(helpText)
+        .popover(isPresented: $open, arrowEdge: .top) { menu }
+    }
+
+    private var menu: some View {
+        VStack(alignment: .leading, spacing: DS.Space.xs) {
+            SectionLabel("Gemini")
+            option(.gemini(model: GeminiAdapter.defaultModel), "Gemini 3.7 Flash",
+                   "Best for using the computer")
+            option(.gemini(model: GeminiAdapter.cheapModel), "Gemini 3.5 Flash-Lite",
+                   "Faster and cheaper")
+
+            SectionLabel("Claude Code")
+            option(.claudeCode, "Claude Code",
+                   "Your subscription, no key — cannot drive the screen")
+
+            SectionLabel("Not wired up yet")
+            option(.anthropic(model: "claude-opus-5"), "Claude Opus 5", "Adapter not written")
+            option(.openAI(model: "gpt-5"), "GPT-5", "Adapter not written")
+
+            Hairline()
+            Button {
+                open = false
+                NSApp.sendAction(Selector(("showSettingsWindow:")), to: nil, from: nil)
+            } label: {
+                Text("Set up keys…")
+                    .font(DS.Text.callout)
+                    .foregroundStyle(DS.Ink.primary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .frame(height: DS.Size.hit)
+                    .padding(.horizontal, DS.Space.sm)
+            }
+            .buttonStyle(.plain)
+            .hoverRow(shape: RoundedRectangle(cornerRadius: DS.Radius.xs))
+        }
+        .padding(DS.Space.md)
+        .frame(minWidth: DS.Window.popoverMin)
     }
 
     /// Whether the brain this bot is actually set to can answer.
@@ -348,13 +377,28 @@ struct BrainChip: View {
             var updated = bot
             updated.brain = brain
             store.update(updated)
+            open = false
         } label: {
-            if bot.brain == brain {
-                Label("\(title) — \(detail)", systemImage: "checkmark")
-            } else {
-                Text("\(title) — \(detail)")
+            HStack(alignment: .firstTextBaseline, spacing: DS.Space.md) {
+                // A fixed gutter so every title starts on the same pixel whether or not it is
+                // the one currently chosen. A checkmark that shifts the text is how a menu ends
+                // up looking like it is moving under the cursor.
+                Image(systemName: "checkmark")
+                    .font(DS.Text.glyphSmall)
+                    .foregroundStyle(bot.brain == brain ? DS.Ink.primary : .clear)
+                    .frame(width: DS.Space.lg, alignment: .center)
+                VStack(alignment: .leading, spacing: 0) {
+                    Text(title).font(DS.Text.callout).foregroundStyle(DS.Ink.primary)
+                    Text(detail).font(DS.Text.micro).foregroundStyle(DS.Ink.secondary)
+                }
+                Spacer(minLength: 0)
             }
+            .padding(.vertical, DS.Space.xs)
+            .padding(.horizontal, DS.Space.sm)
+            .contentShape(Rectangle())
         }
+        .buttonStyle(.plain)
+        .hoverRow(shape: RoundedRectangle(cornerRadius: DS.Radius.xs))
     }
 }
 
@@ -364,18 +408,25 @@ struct AutonomyChip: View {
     @Environment(Store.self) private var store
     let bot: Bot
 
+    @State private var open = false
+
+    /// A popover for the same reason as `BrainChip`: a `Menu` restyles its label and the chip
+    /// loses its capsule, its icon size and its chevron.
     var body: some View {
-        Menu {
-            mode(.confirmBeforeChange, "Ask", "Reads anything. Asks before changing anything.")
-            mode(.autonomousWorkspace, "Work", "Works in its folder. Asks before anything consequential.")
-            mode(.autonomousOperational, "Autopilot", "Acts across what you authorised. Asks rarely.")
-        } label: {
+        Button { open.toggle() } label: {
             Chip(label, systemImage: icon, showsChevron: true)
         }
-        .menuStyle(.borderlessButton)
-        .menuIndicator(.hidden)
-        .fixedSize()
+        .buttonStyle(.plain)
         .help("How much this bot decides on its own")
+        .popover(isPresented: $open, arrowEdge: .top) {
+            VStack(alignment: .leading, spacing: DS.Space.xs) {
+                mode(.confirmBeforeChange, "Ask", "Reads anything. Asks before changing anything.")
+                mode(.autonomousWorkspace, "Work", "Works in its folder. Asks before anything consequential.")
+                mode(.autonomousOperational, "Autopilot", "Acts across what you authorised. Asks rarely.")
+            }
+            .padding(DS.Space.md)
+            .frame(minWidth: DS.Window.popoverMin)
+        }
     }
 
     private var label: String {
@@ -388,9 +439,12 @@ struct AutonomyChip: View {
 
     private var icon: String {
         switch bot.defaultAutonomy {
+        // `hand.raised` was a raised palm, which reads as "stop" — the opposite of a mode whose
+        // whole promise is that the bot keeps going and checks with you first. A question mark
+        // says "it will ask", which is what the mode is called.
         case .autonomousOperational, .delegatedOperator: return "bolt.fill"
         case .autonomousWorkspace:                        return "play.fill"
-        default:                                          return "hand.raised"
+        default:                                          return "questionmark.circle.fill"
         }
     }
 
@@ -399,12 +453,25 @@ struct AutonomyChip: View {
             var updated = bot
             updated.defaultAutonomy = level
             store.update(updated)
+            open = false
         } label: {
-            if bot.defaultAutonomy == level {
-                Label("\(title) — \(detail)", systemImage: "checkmark")
-            } else {
-                Text("\(title) — \(detail)")
+            HStack(alignment: .firstTextBaseline, spacing: DS.Space.md) {
+                // The gutter is always there so the titles do not shift when the choice moves.
+                Image(systemName: "checkmark")
+                    .font(DS.Text.glyphSmall)
+                    .foregroundStyle(bot.defaultAutonomy == level ? DS.Ink.primary : .clear)
+                    .frame(width: DS.Space.lg, alignment: .center)
+                VStack(alignment: .leading, spacing: 0) {
+                    Text(title).font(DS.Text.callout).foregroundStyle(DS.Ink.primary)
+                    Text(detail).font(DS.Text.micro).foregroundStyle(DS.Ink.secondary)
+                }
+                Spacer(minLength: 0)
             }
+            .padding(.vertical, DS.Space.xs)
+            .padding(.horizontal, DS.Space.sm)
+            .contentShape(Rectangle())
         }
+        .buttonStyle(.plain)
+        .hoverRow(shape: RoundedRectangle(cornerRadius: DS.Radius.xs))
     }
 }

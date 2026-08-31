@@ -158,3 +158,42 @@ final class ContainerRuntimeTests: XCTestCase {
         XCTAssertEqual(ContainerRuntime.firstLine(String(repeating: "x", count: 5_000)).count, 200)
     }
 }
+
+/// Which computer an effect landed on is part of what the effect *was* — for the tools where
+/// that is true, and only those.
+final class EffectIdentityAcrossComputersTests: XCTestCase {
+
+    func testTheSameCommandOnTwoComputersIsTwoEffects() {
+        // The bug this prevents: a bot runs `npm install` on the Mac, the user switches it to its
+        // own computer, and the ledger reports the install as already done. The container has no
+        // node_modules, and the bot then works from a premise that is false.
+        let arguments: [String: Any] = ["command": "npm install"]
+        let onMac = EffectLedger.key(tool: "shell.exec", arguments: arguments,
+                                     environment: "mac (sandboxed)")
+        let inContainer = EffectLedger.key(tool: "shell.exec", arguments: arguments,
+                                           environment: "container:bh-3f2504e04f89")
+        XCTAssertNotEqual(onMac, inContainer)
+    }
+
+    func testTheSameCommandOnTheSameComputerIsOneEffect() {
+        let arguments: [String: Any] = ["command": "npm install"]
+        XCTAssertEqual(EffectLedger.key(tool: "shell.exec", arguments: arguments, environment: "mac"),
+                       EffectLedger.key(tool: "shell.exec", arguments: arguments, environment: "mac"))
+    }
+
+    /// Mail is mail wherever it was sent from. Passing no environment must leave these keys
+    /// exactly as they were, or an app update would let every recorded send happen again.
+    func testOmittingTheEnvironmentLeavesAKeyUnchanged() {
+        let arguments: [String: Any] = ["to": "bob@example.com", "body": "hi"]
+        XCTAssertEqual(EffectLedger.key(tool: "mail.send", arguments: arguments),
+                       EffectLedger.key(tool: "mail.send", arguments: arguments, environment: nil))
+    }
+
+    func testAnEnvironmentCannotImpersonateAnArgument() {
+        // The environment is hashed as its own tagged component, so it cannot be confused with a
+        // command that happens to contain the same text.
+        XCTAssertNotEqual(
+            EffectLedger.key(tool: "shell.exec", arguments: ["command": "x"], environment: "mac"),
+            EffectLedger.key(tool: "shell.exec", arguments: ["command": "x", "env": "mac"]))
+    }
+}

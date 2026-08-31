@@ -21,7 +21,7 @@ struct LibrarySheet: View {
         }
         var icon: String {
             switch self {
-            case .connections: return "app.connected.to.app.below.fill"
+            case .connections: return "powerplug"
             case .skills:      return "sparkles"
             case .computers:   return "desktopcomputer"
             }
@@ -42,6 +42,10 @@ struct LibrarySheet: View {
                 case .computers:   ComputersList()
                 }
             }
+            // Room below the last row. Content that ends exactly at the sheet's edge is cut
+            // through whatever happens to be there, and a row sliced in half reads as a
+            // rendering fault rather than as a list that continues.
+            .safeAreaPadding(.bottom, DS.Space.md)
         }
         .frame(width: DS.Window.sheetWidth, height: DS.Window.sheetHeight)
         .background(DS.Surface.panel)
@@ -148,7 +152,7 @@ private struct ConnectionsList: View {
                     }
                 }
             } else if model.rows.isEmpty {
-                EmptyState(systemImage: "app.connected.to.app.below.fill",
+                EmptyState(systemImage: "powerplug",
                            title: "No connectors yet",
                            message: "Connectors you configure for other tools on this Mac appear here automatically.")
             }
@@ -319,8 +323,13 @@ private struct ComputersList: View {
                     VStack(alignment: .leading, spacing: 1) {
                         Text("Its own computer").font(DS.Text.body.weight(.semibold))
                             .foregroundStyle(DS.Ink.primary)
-                        Text("A Linux machine per bot. It can install anything and break "
-                           + "anything, and none of it touches your Mac.")
+                        // Deliberately not "none of it touches your Mac". The bot's workspace
+                        // folder is shared into the machine read-write, and those are the user's
+                        // real files. Overstating the boundary here is how someone points a
+                        // container bot at a folder they care about.
+                        Text("A Linux machine per bot. It can install packages and break its own "
+                           + "toolchain without touching your Mac. Its workspace folder is shared "
+                           + "in, and that is the only thing of yours it can reach.")
                             .font(DS.Text.caption).foregroundStyle(DS.Ink.secondary)
                             .fixedSize(horizontal: false, vertical: true)
                     }
