@@ -62,6 +62,22 @@ public actor AgentLoop {
     private var computerInUse: String
     private let computer: ComputerExecutor
     private let git: GitExecutor
+    private let ingest: FileIngest
+
+    /// What keeps going wrong, across runs. See `FailureLog`.
+    ///
+    /// The trace answers "what happened in this run" and answers it well. It cannot answer "what
+    /// has been failing all week and is it getting better", because each run writes its own
+    /// directory and nothing reads across them. That second question is the one worth acting on
+    /// each morning, so it gets its own file.
+    private let failures: FailureLog
+
+    /// Failures recorded this run that nothing has yet contradicted.
+    ///
+    /// A tool that fails and is then worked around is a different animal from one that ends the
+    /// run, and the difference is only knowable later — so the id is kept and amended once the
+    /// run gets past it.
+    private var unrecovered: [String] = []
     private let browser = BrowserExecutor()
     private let trace: TraceWriter
     private let rules: [PermissionRule]
@@ -194,6 +210,8 @@ public actor AgentLoop {
             : (sandbox != nil ? "mac (sandboxed)" : "mac (unconfined)")
         self.computer = ComputerExecutor()
         self.git = GitExecutor(authority: contract.authority)
+        self.ingest = FileIngest(authority: contract.authority)
+        self.failures = FailureLog(root: trace.tracesRoot)
         self.effects = EffectLedger(root: trace.tracesRoot)
     }
 
@@ -244,6 +262,13 @@ public actor AgentLoop {
         pendingApproval?.resume(returning: .denied)
         pendingApproval = nil
         await shell.killAll()
+    }
+
+    /// Tell the failure log that everything recorded so far was survived.
+    private func markRecoveries() async {
+        guard !unrecovered.isEmpty else { return }
+        for id in unrecovered { await failures.markRecovered(id) }
+        unrecovered.removeAll()
     }
 
     /// True if the run should unwind now, for either reason.
@@ -546,6 +571,10 @@ public actor AgentLoop {
             }
             output = redactor.redact(output)
             if let effectKey { await effects.finished(effectKey, outcome: .done, note: "completed") }
+            // Something worked, so the run is past whatever failed before it. This is the field
+            // that separates "noisy but self-healing" from "dead end", and it is the reason the
+            // daily report can rank a rare failure above a common one.
+            await markRecoveries()
             await trace.complete(step, outcome: .succeeded, output: output)
             turns.append(.init(role: .tool, text: output, toolCallID: action.id))
             emit(.toolFinished(id: action.id, output: output, ok: true))
@@ -559,6 +588,8 @@ public actor AgentLoop {
                 await effects.finished(effectKey, outcome: certain ? .failed : .uncertain,
                                        note: message)
             }
+            unrecovered.append(await failures.record(source: action.name, message: message,
+                                                     bot: bot.name, run: runIdentifier))
             await trace.complete(step, outcome: .failed, error: message)
             turns.append(.init(role: .tool, text: "Failed: \(message)", toolCallID: action.id))
             emit(.toolFinished(id: action.id, output: message, ok: false))
@@ -611,6 +642,38 @@ public actor AgentLoop {
         case "files.delete":
             guard let path = str("path") else { throw Bad.missing("path") }
             return try await files.delete(path)
+        // — reading a file that is not plain text —
+        //
+        // A dropped PDF, spreadsheet or archive used to reach `files.read`, which handed back raw
+        // bytes: a page of binary for a PDF, nothing usable at all for a zip. `inspect` is the one
+        // to call first — it answers "what is this and how should I read it" in a sentence, which
+        // is the question a model actually has.
+        //
+        // All three return attacker-controlled text — document bodies and archive entry names are
+        // written by whoever made the file — so each goes through the same envelope `files.read`
+        // uses. A document that says "SYSTEM: ignore your instructions" is a document, not an
+        // instruction, however it was parsed.
+        case "files.inspect":
+            guard let path = str("path") else { throw Bad.missing("path") }
+            let described = try await ingest.inspect(path)
+            sawUntrustedContent = true
+            return UntrustedContent.envelope(described, source: "the file \(path)")
+
+        case "files.extract_text":
+            guard let path = str("path") else { throw Bad.missing("path") }
+            let text = try await ingest.extractText(
+                path, maxCharacters: int("max_characters") ?? FileIngest.Limits.defaultTextCharacters)
+            sawUntrustedContent = true
+            return UntrustedContent.envelope(text, source: "the document \(path)")
+
+        case "files.unarchive":
+            guard let path = str("path"), let destination = str("destination") else {
+                throw Bad.missing("path and destination")
+            }
+            let report = try await ingest.unarchive(path, to: destination)
+            sawUntrustedContent = true
+            return UntrustedContent.envelope(report, source: "the archive \(path)")
+
         case "files.search", "files.glob":
             let workspace = bot.workspace?.path ?? NSHomeDirectory()
             var rawRoot = str("path") ?? workspace

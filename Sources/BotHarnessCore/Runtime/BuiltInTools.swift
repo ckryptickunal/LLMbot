@@ -59,6 +59,27 @@ extension ToolRegistry {
             keywords: ["edit", "modify", "change", "fix"]),
 
         ToolDescriptor(
+            id: "files.inspect", domain: .files, surface: .code,
+            summary: "What a file is and the cheap facts that decide how to read it: page count and whether a PDF has a text layer, a CSV's columns and rows, an image's dimensions, an archive's contents. Call this before reading anything that is not plain text.",
+            schema: #"{"type":"object","properties":{"path":{"type":"string"}},"required":["path"]}"#,
+            capability: "files.read", floorCategory: nil,
+            keywords: ["what is this", "identify", "describe", "pdf", "docx", "csv", "zip", "attachment"]),
+
+        ToolDescriptor(
+            id: "files.extract_text", domain: .files, surface: .code,
+            summary: "Plain text out of a PDF, Word document, RTF, HTML or a text file in any encoding. Truncation is always stated in the result.",
+            schema: #"{"type":"object","properties":{"path":{"type":"string"},"max_characters":{"type":"integer"}},"required":["path"]}"#,
+            capability: "files.read", floorCategory: nil,
+            keywords: ["read the pdf", "extract text", "contents of", "what does it say", "transcribe"]),
+
+        ToolDescriptor(
+            id: "files.unarchive", domain: .files, surface: .code,
+            summary: "Extract a zip, tar, tar.gz, tgz or gz into a new or empty directory inside the workspace. Refuses archives that would write outside it.",
+            schema: #"{"type":"object","properties":{"path":{"type":"string"},"destination":{"type":"string"}},"required":["path","destination"]}"#,
+            capability: "files.write", floorCategory: nil,
+            keywords: ["unzip", "extract", "decompress", "untar", "open the archive"]),
+
+        ToolDescriptor(
             id: "files.search", domain: .files, surface: .code,
             summary: "Search file contents by regular expression, across a directory tree.",
             schema: #"{"type":"object","properties":{"pattern":{"type":"string"},"path":{"type":"string"},"glob":{"type":"string"}},"required":["pattern"]}"#,

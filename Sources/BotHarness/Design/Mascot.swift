@@ -731,10 +731,17 @@ public struct MascotView: View {
         eyes.translateBy(x: pose.eyesX, y: pose.eyesY)
         for eye in Mascot.eyes {
             // Each eye closes about its own middle, so a blink shuts rather than shrinks.
+            //
+            // The floor draws a shut eye as a line rather than letting it vanish: at 22 points
+            // a fully closed lid is a fifth of a pixel, and the states that *hold* their lids
+            // low — asleep shut, stumped drooping — showed a face with no eyes at all. It was
+            // reported as exactly that. The floor lives here and not in the routines because
+            // it is a fact about rendering size, not about expressions; 0.45 was picked by
+            // rendering a sweep at real scale and taking the smallest value that still reads.
             var lid = eyes
             let centre = eye.midY
             lid.translateBy(x: 0, y: centre)
-            lid.scaleBy(x: 1, y: max(0.02, pose.eyeOpen))
+            lid.scaleBy(x: 1, y: max(0.45, pose.eyeOpen))
             lid.translateBy(x: 0, y: -centre)
             lid.fill(Path(eye), with: .color(DS.Brand.mascotEye))
         }

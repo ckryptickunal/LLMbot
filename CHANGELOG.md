@@ -21,6 +21,41 @@ Versioning follows [Semantic Versioning 2.0.0](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+### Added — reading what you drop in
+
+- **Bots can read the files you attach, not just their bytes.** Dropping a PDF, a spreadsheet or
+  an archive used to reach the plain file reader, which handed back a page of binary for a PDF and
+  nothing usable at all for a zip.
+  - `files.inspect` says what a file *is* and the cheap facts that decide how to read it: how many
+    pages a PDF has and whether it has a text layer at all or is a scan, a spreadsheet's columns
+    and row count, an image's dimensions, an archive's contents. It is the one to call first.
+  - `files.extract_text` pulls plain text out of PDFs, Word documents, RTF and HTML, and reads
+    text files in whatever encoding they actually are rather than assuming UTF-8 and returning
+    mojibake. When it has to truncate, it says so — silently cut evidence is how you get told
+    something is absent when it was only cut off.
+  - `files.unarchive` opens zip, tar, tar.gz, tgz and gz into a new or empty folder inside the
+    workspace.
+- **An archive cannot write outside where you put it.** Every entry is resolved and checked before
+  a single byte is written, so a refusal leaves the destination untouched; a symbolic link inside
+  an archive is refused outright, because a link extracted first can redirect a later entry
+  somewhere else entirely; and an archive that claims absurd size or entry counts is refused with
+  the real numbers. The format is decided by the file's first bytes, not its name.
+
+### Added — a failure log and a daily report
+
+- **Bot-Harness now keeps track of what keeps going wrong, across runs.** The per-run trace has
+  always answered "what happened in this run" and answers it well. Nothing answered "what has been
+  failing all week, and is it getting better or worse", because each run writes its own directory
+  and nothing read across them.
+- **Opening the Activity window shows that report first.** It ranks by what deserves attention
+  rather than by count — three failures that each ended a run matter more than thirty that always
+  recovered — shows the trend against the previous week, and names the one to fix first. Failures
+  are grouped by what they are rather than by their exact wording, so the same problem in two
+  different folders counts once, and any stored key is scrubbed before it reaches the file.
+- The window no longer selects the newest run for you, because doing so made the report reachable
+  only by deselecting, which nothing invited you to do.
+
+
 ### Fixed
 - **The app no longer burns 13% of a CPU core sitting still.** The mascot above the composer was
   redrawing continuously for as long as the window was in front, whether or not anything was
@@ -35,6 +70,11 @@ Versioning follows [Semantic Versioning 2.0.0](https://semver.org/spec/v2.0.0.ht
   the text box, so most of the time it was somewhere other than the middle and read as a drawing
   that had come loose from the layout. It now stands centred — measured at exactly 0 points off
   the centre of its pane. The gait is unchanged; only the ground stopped moving.
+- **A sleeping or stumped mascot has its eyes back.** At the size it is drawn, a fully closed
+  eyelid was a fifth of a pixel, so the two states that hold their lids low — asleep over an
+  empty conversation, slumped after a failure — showed a face with no eyes at all. A shut eye
+  now draws as a visible line, chosen by rendering a sweep at real screen scale and keeping the
+  smallest height that still reads. Blinks and the celebration squint narrow to the same line.
 
 
 ### Added

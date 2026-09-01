@@ -13,6 +13,8 @@ struct ActivityWindow: View {
     @State private var selected: TraceReader.Run?
     @State private var timeline: [TraceReader.Entry] = []
     @State private var loading = true
+    /// What has been failing lately, shown when no single run is selected.
+    @State private var failureReport: String = ""
 
     var body: some View {
         HSplitView {
@@ -37,7 +39,18 @@ struct ActivityWindow: View {
         let found = await Task.detached(priority: .userInitiated) { [reader] in reader.runs() }.value
         runs = found
         loading = false
-        if selected == nil { await select(found.first) }
+
+        // A week, because that is the span over which "is this getting worse" means anything.
+        // Read off the main actor for the same reason the run scan is: the log is a whole file.
+        let week = Date().addingTimeInterval(-7 * 24 * 60 * 60)
+        failureReport = await Task.detached(priority: .utility) {
+            FailureLog(root: Paths.traces).report(since: week).text
+        }.value
+
+        // Deliberately not auto-selecting a run any more. Selecting the newest one meant the
+        // report below could only ever be reached by deselecting, which nothing invites you to
+        // do — so the thing worth reading each day was effectively unreachable.
+        _ = found.first
     }
 
     private func select(_ run: TraceReader.Run?) async {
@@ -185,6 +198,37 @@ struct ActivityWindow: View {
                     }
                     .padding(DS.Space.lg)
                 }
+            }
+        } else if !failureReport.isEmpty {
+            // The report, not an empty state, is what this pane is for.
+            //
+            // Opening this window with nothing selected is the daily moment: the question then is
+            // not "which run do I want" but "what has been going wrong". A single run's trace
+            // cannot answer that — each writes its own directory and nothing reads across them —
+            // so the log that does gets the space the placeholder was using.
+            ScrollView {
+                VStack(alignment: .leading, spacing: DS.Space.lg) {
+                    HStack(spacing: DS.Space.md) {
+                        Image(systemName: "exclamationmark.triangle")
+                            .font(DS.Text.glyph)
+                            .foregroundStyle(DS.Status.running.mark)
+                        Text("What has been failing")
+                            .font(DS.Text.callout.weight(.semibold))
+                            .foregroundStyle(DS.Ink.primary)
+                        Spacer(minLength: 0)
+                    }
+                    Text(failureReport)
+                        .font(DS.Text.mono)
+                        .foregroundStyle(DS.Ink.secondary)
+                        .lineSpacing(DS.Text.bodyLineSpacing)
+                        .textSelection(.enabled)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Text("Pick a run on the left to see every step it took.")
+                        .font(DS.Text.caption)
+                        .foregroundStyle(DS.Ink.tertiary)
+                }
+                .padding(DS.Space.xl)
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
         } else {
             EmptyState(systemImage: "list.bullet.rectangle",
