@@ -193,6 +193,14 @@ public final class FailureLog: @unchecked Sendable {
 
     // MARK: - Pruning
 
+    /// How many records the log keeps.
+    ///
+    /// Sized against the thing the log is for: the report looks back over a week, and a bot that
+    /// fails a thousand times in a week has a problem the newest few hundred records already
+    /// describe. Large enough that pruning never eats a trend, small enough that reading and
+    /// rewriting the file at the end of a run is not something anyone notices.
+    public static let keptRecords = 2000
+
     /// Keep the newest `newest` failures and drop the rest. Returns how many were kept.
     ///
     /// This is also the repair path, and deliberately so: it rewrites the file from records

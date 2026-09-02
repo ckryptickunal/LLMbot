@@ -38,7 +38,8 @@ struct ContextPanelView: View {
                             // bot. Without it the pane kept editing whichever bot was selected
                             // when the user first typed, and wrote those keystrokes into that
                             // bot's record while showing a different one.
-                            BotSettingsPane(bot: bot).id(bot.id)
+                            BotSettingsPane(bot: bot, conversation: currentConversation?.id)
+                                .id(bot.id)
                         }
                     } else {
                         EmptyState(systemImage: "person.crop.circle",
@@ -210,6 +211,9 @@ private struct BotSettingsPane: View {
     @Environment(BotRunner.self) private var runner
     @Environment(UIState.self) private var ui
     let bot: Bot
+    /// Attachments belong to the conversation, not the bot, so this pane needs to know which
+    /// one it is looking at to show them.
+    let conversation: UUID?
 
     @State private var confirmingDelete = false
     @State private var containerReady: ContainerRuntime.Availability = .notInstalled
@@ -231,6 +235,8 @@ private struct BotSettingsPane: View {
             description
 
             workspace
+
+            attached
 
             readOnly("Brain", live.brain.displayName, nil)
             computer
@@ -478,6 +484,66 @@ private struct BotSettingsPane: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(DS.Space.md)
             .background(DS.Tint.t3, in: RoundedRectangle(cornerRadius: DS.Radius.sm))
+        }
+    }
+
+    // MARK: Attached files
+
+    /// Files the user handed this conversation, and the only place they can be taken back.
+    ///
+    /// Sits directly under the workspace because it answers the same question — what may this
+    /// bot read — and because it is the only part of that answer the user changes by accident.
+    /// Dragging a file in is a permission grant made with a gesture that does not feel like
+    /// one, so it has to be visible somewhere without being hunted for, exactly as
+    /// `standingPermissions` argues for the rules an approval card writes.
+    @ViewBuilder private var attached: some View {
+        let files = conversation.flatMap { store.conversation($0) }?.attachments ?? []
+        if !files.isEmpty {
+            VStack(alignment: .leading, spacing: DS.Space.sm) {
+                Text("Files you attached")
+                    .font(DS.Text.caption)
+                    .foregroundStyle(DS.Ink.secondary)
+                VStack(alignment: .leading, spacing: DS.Space.md) {
+                    ForEach(files) { file in
+                        HStack(alignment: .top, spacing: DS.Space.md) {
+                            Image(systemName: file.isDirectory ? "folder" : "doc")
+                                .font(DS.Text.glyphSmall)
+                                .foregroundStyle(DS.Ink.secondary)
+                                // `folder` is a narrower glyph than `doc`, so without a fixed
+                                // box the two rows start their names at different x positions
+                                // and the list reads as ragged.
+                                .frame(width: DS.Size.glyphSmall, alignment: .center)
+                                .accessibilityHidden(true)
+                            VStack(alignment: .leading, spacing: DS.Space.xs) {
+                                Text(file.name)
+                                    .font(DS.Text.caption)
+                                    .foregroundStyle(DS.Ink.primary)
+                                    .lineLimit(1)
+                                    .truncationMode(.middle)
+                                Text(file.path)
+                                    .font(DS.Text.micro)
+                                    .foregroundStyle(DS.Ink.secondary)
+                                    .lineLimit(1)
+                                    .truncationMode(.middle)
+                                    .textSelection(.enabled)
+                            }
+                            Spacer(minLength: DS.Space.sm)
+                            IconButton("xmark", help: "Stop this bot reading \(file.name)") {
+                                if let conversation { store.detach(file.path, from: conversation) }
+                            }
+                        }
+                    }
+                    Text(files.contains(where: \.isDirectory)
+                         ? "This bot may read these. A folder includes everything inside it. It cannot write to any of them."
+                         : "This bot may read these, and cannot write to them.")
+                        .font(DS.Text.micro)
+                        .foregroundStyle(DS.Ink.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(DS.Space.md)
+                .background(DS.Tint.t3, in: RoundedRectangle(cornerRadius: DS.Radius.sm))
+            }
         }
     }
 

@@ -177,6 +177,47 @@ public final class Store {
         scheduleSave()
     }
 
+    // MARK: Writing — attachments
+
+    /// Record what the user attached, and hand back what was refused so the interface can say
+    /// so out loud.
+    ///
+    /// The refusals are returned rather than logged because the user is standing right there
+    /// with their hand still on the trackpad. A drop that quietly does nothing is the failure
+    /// this whole path exists to remove — it is not an improvement to swap one silent failure
+    /// for another one a layer up.
+    public struct AttachResult: Sendable {
+        public var granted: [Attachment] = []
+        public var refused: [Attachment.Refusal] = []
+    }
+
+    @discardableResult
+    public func attach(_ paths: [String], to conversationID: UUID) -> AttachResult {
+        guard let i = conversations.firstIndex(where: { $0.id == conversationID }) else {
+            return AttachResult()
+        }
+        var result = AttachResult()
+        for path in paths {
+            switch Attachment.grant(path) {
+            case .success(let attachment): result.granted.append(attachment)
+            case .failure(let refusal): result.refused.append(refusal)
+            }
+        }
+        guard !result.granted.isEmpty else { return result }
+        conversations[i].attachments = Attachment.merge(conversations[i].attachments,
+                                                        adding: result.granted)
+        scheduleSave()
+        return result
+    }
+
+    /// Take a grant back. The user gave it, so the user can withdraw it.
+    public func detach(_ path: String, from conversationID: UUID) {
+        guard let i = conversations.firstIndex(where: { $0.id == conversationID }),
+              conversations[i].attachments.contains(where: { $0.path == path }) else { return }
+        conversations[i].attachments.removeAll { $0.path == path }
+        scheduleSave()
+    }
+
     public func deleteMessage(_ messageID: UUID, in conversationID: UUID) {
         guard let c = conversations.firstIndex(where: { $0.id == conversationID }) else { return }
         conversations[c].messages.removeAll { $0.id == messageID }

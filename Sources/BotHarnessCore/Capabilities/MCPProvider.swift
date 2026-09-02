@@ -95,6 +95,14 @@ public actor MCPProvider: CapabilityProvider {
         return await client.tools
     }
 
+    public func operationDetails() async -> [String: (summary: String, schema: String)] {
+        var out: [String: (summary: String, schema: String)] = [:]
+        for tool in await tools() {
+            out[tool.name] = (tool.description, tool.schema)
+        }
+        return out
+    }
+
     public func invoke(operation: String, arguments: [String: Any]) async throws -> String {
         let health = await ensureConnected()
         guard health.status.isUsable else {

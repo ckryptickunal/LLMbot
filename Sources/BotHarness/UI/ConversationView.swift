@@ -54,10 +54,10 @@ struct ConversationView: View {
         .onDrop(of: DroppedFiles.accepted, isTargeted: $droppingOnPane) { providers in
             guard let conversation else { return false }
             DroppedFiles.load(from: providers) { paths in
-                guard !paths.isEmpty else { return }
-                let binding = ui.draftBinding(for: conversation.id)
-                binding.wrappedValue += (binding.wrappedValue.isEmpty ? "" : "\n")
-                    + DroppedFiles.draftLines(for: paths)
+                // Attaching is granting — the same one function the composer and the open
+                // panel use. See `Attaching`.
+                Attaching.accept(paths, into: conversation.id, store: store, ui: ui,
+                                 draft: ui.draftBinding(for: conversation.id))
                 composerFocused = true
             }
             return true

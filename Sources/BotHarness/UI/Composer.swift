@@ -15,6 +15,7 @@ import UniformTypeIdentifiers
 struct Composer: View {
     @Environment(Store.self) private var store
     @Environment(BotRunner.self) private var runner
+    @Environment(UIState.self) private var ui
 
     let conversationID: UUID
     @Binding var draft: String
@@ -42,6 +43,9 @@ struct Composer: View {
             // It also carries the run's state, which is the reason it earns permanent space:
             // the field you are typing into is the thing you are already looking at, so it is
             // where "working", "needs you" and "that failed" cost nothing to notice.
+            if let problems = ui.attachmentProblems[conversationID], !problems.isEmpty {
+                attachmentProblem(problems)
+            }
             if let blocker { preflight(blocker) }
             // Below the preflight banner, not above it. The comment above describes the mascot
             // standing one `md` above the field, and that was true only when no banner was
@@ -93,6 +97,43 @@ struct Composer: View {
                     .font(DS.Text.caption.weight(.medium))
                     // The accent, because this is the banner's one action and it rendered as
                     // plain white text — a button that does not look like one.
+                    .foregroundStyle(DS.Accent.live)
+            }
+            .buttonStyle(PressableStyle())
+        }
+        .padding(.horizontal, DS.Space.lg)
+        .padding(.vertical, DS.Space.md)
+        .background(DS.Tint.t3, in: RoundedRectangle(cornerRadius: DS.Radius.md))
+        .accessibilityElement(children: .combine)
+    }
+
+    /// What a drop declined to attach, and why.
+    ///
+    /// In the same slot as the key banner and styled the same, because it is the same kind of
+    /// thing: a condition standing between you and sending, stated where you are already
+    /// looking. It is dismissed rather than timed out — the whole reason it exists is that a
+    /// drop which quietly did nothing left the person believing the file was attached, and a
+    /// message that disappears on its own recreates that at a delay.
+    private func attachmentProblem(_ sentences: [String]) -> some View {
+        HStack(alignment: .top, spacing: DS.Space.md) {
+            Image(systemName: "exclamationmark.triangle")
+                .font(DS.Text.glyphSmall)
+                .foregroundStyle(DS.Status.awaitingApproval.mark)
+                .accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: DS.Space.xs) {
+                ForEach(sentences, id: \.self) { sentence in
+                    Text(sentence)
+                        .font(DS.Text.caption)
+                        .foregroundStyle(DS.Ink.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            Spacer(minLength: DS.Space.md)
+            Button {
+                ui.clearAttachmentProblems(for: conversationID)
+            } label: {
+                Text("OK")
+                    .font(DS.Text.caption.weight(.medium))
                     .foregroundStyle(DS.Accent.live)
             }
             .buttonStyle(PressableStyle())
@@ -304,12 +345,14 @@ struct Composer: View {
         }
     }
 
+    /// Attaching is granting. See `Attaching` for why all three routes go through one function,
+    /// and `Attachment` for why the grant may come from this gesture and never from a message.
+    ///
+    /// Paths are quoted where they need it. Most screenshots are called "Screen Shot …", and an
+    /// unquoted path with a space in it read as two paths — the bot then went looking for a
+    /// file called "Screen" and reported, truthfully, that it did not exist.
     private func append(paths: [String]) {
-        guard !paths.isEmpty else { return }
-        // Quoted where they need it. Most screenshots are called "Screen Shot …", and an
-        // unquoted path with a space in it read as two paths — the bot then went looking for a
-        // file called "Screen" and reported that it did not exist.
-        draft += (draft.isEmpty ? "" : "\n") + DroppedFiles.draftLines(for: paths)
+        Attaching.accept(paths, into: conversationID, store: store, ui: ui, draft: $draft)
         focused = true
     }
 

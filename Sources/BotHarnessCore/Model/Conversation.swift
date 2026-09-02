@@ -46,6 +46,20 @@ public struct Conversation: Identifiable, Codable, Hashable {
     /// you were reading a different one leaves no trace at all in the list.
     public var lastReadAt: Date?
 
+    /// Files the user handed to this conversation by dropping them in or choosing them in the
+    /// attach panel.
+    ///
+    /// Saved with the conversation rather than held for the session, because the alternative is
+    /// worse in exactly the way this feature was already broken: you drop a PDF, quit for the
+    /// night, come back and ask a follow-up about it, and the bot says it cannot read the file
+    /// you can see in the transcript. The grant is narrow, it names one file each, and it is
+    /// legible in `state.json` — so a person who wants to know what their bots may read can
+    /// read the list rather than infer it.
+    ///
+    /// Absent from every state file written before this existed, hence the default. See
+    /// `Attachment` for why a grant may only come from a gesture.
+    public var attachments: [Attachment] = []
+
     /// True when something has happened here since the user last looked.
     public var isUnread: Bool {
         guard let lastReadAt else { return !messages.isEmpty }
@@ -79,6 +93,18 @@ public struct Conversation: Identifiable, Codable, Hashable {
         // falls back to it and the row shows as unread. Being told about something twice is a
         // better failure than never being told at all.
         lastReadAt = recovery.optional(.lastReadAt)
+
+        // Element by element, and empty when unreadable. This is a permission list, so the
+        // direction of the fallback is the one that grants nothing: a grant that cannot be read
+        // is a grant the user has to make again, which costs them one drag. The opposite
+        // failure costs them a file they did not know a bot could still read.
+        //
+        // Adding the property was not enough on its own, and the gap was invisible from the
+        // code: the encoder is synthesised and wrote the field correctly, this decoder is
+        // hand-written and simply did not mention it, so every attachment survived being saved
+        // and vanished on the next launch. Anything added to this type from here needs a line
+        // here too.
+        attachments = recovery.elements(.attachments, of: Attachment.self)
     }
 }
 

@@ -189,6 +189,42 @@ public actor CapabilityRegistry {
         return try await provider.invoke(operation: operation, arguments: arguments)
     }
 
+    /// Real tool descriptors for a capability the model has just loaded.
+    ///
+    /// `capability.load` used to answer with a sentence — "you can now call: a, b, c" — and
+    /// stop there. The operations never joined the exposed set, so the model was handed three
+    /// names with no schemas and had to invent the arguments; and because `ToolRegistry` had
+    /// never heard of them, `PermissionEngine` was called with a nil descriptor and skipped the
+    /// authority check entirely. One missing step, two different holes.
+    ///
+    /// Every descriptor asks for `capability.use`, which is the permission to call something a
+    /// connector provides at all. The narrower gate is upstream and unchanged: the registry
+    /// only resolves operations belonging to capabilities that were explicitly loaded, and
+    /// loading is itself an action the permission engine decides on.
+    public func descriptors(for capabilityID: String) async -> [ToolDescriptor] {
+        guard let capability = capabilities[capabilityID],
+              let provider = providers[capability.provider] else { return [] }
+        let details = await provider.operationDetails()
+
+        return capability.operations.map { operation in
+            let detail = details[operation]
+            return ToolDescriptor(
+                id: operation,
+                domain: .external,
+                surface: capability.surface,
+                summary: detail?.summary.isEmpty == false
+                    ? detail!.summary
+                    : "\(operation), from \(capability.provider). \(capability.summary)",
+                // An operation whose server did not describe its arguments still gets a schema,
+                // because a model handed no schema at all tends to send nothing rather than to
+                // ask. An empty object says "arguments exist and I was not told which".
+                schema: detail?.schema ?? #"{"type":"object"}"#,
+                capability: "capability.use",
+                floorCategory: nil,
+                keywords: capability.keywords)
+        }
+    }
+
     /// Find whichever loaded provider owns an operation name. MCP tool names are unique
     /// enough in practice that this is reliable, and it saves the model having to remember
     /// which server a tool came from.

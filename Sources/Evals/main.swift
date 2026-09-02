@@ -67,11 +67,17 @@ func run(_ task: EvalTask) async -> Result {
     contract.autonomy = task.autonomy
     contract.successCriteria = task.criteria(dir)
     contract.urgency = .critical            // smallest budget, so a stuck eval ends quickly
+    // Grants made the way the app makes them, from paths the task named — so an eval that
+    // attaches a file is exercising `Attachment.grant` and not a hand-built authority that
+    // happens to contain the right string.
+    let attached = task.attach(dir).compactMap { try? Attachment.grant($0).get() }
+
     contract.authority = Authority(
-        readable: [dir.path + "/**"],
+        readable: [dir.path + "/**"] + attached.map(\.readablePattern),
         writable: [dir.path + "/**"],
         granted: ["files.read", "files.write", "shell.exec", "computer.observe",
-                  "computer.control", "web.search", "web.read", "browser.use"],
+                  "computer.control", "web.search", "web.read", "browser.use",
+                  "capability.read", "capability.use"],
         requiresApproval: ["files.delete"],
         selfRepair: true, maySpend: false)
 

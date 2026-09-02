@@ -105,6 +105,20 @@ public protocol CapabilityProvider: Actor {
     func health() async -> ProviderHealth
 
     func invoke(operation: String, arguments: [String: Any]) async throws -> String
+
+    /// The argument schema for each operation, keyed by operation name, and a line describing
+    /// what it does.
+    ///
+    /// Without this, loading a capability told the model "you can now call: create_issue,
+    /// list_issues" and nothing else — no arguments, no types, no description. The model then
+    /// guessed an argument shape, the server rejected it, and the model guessed again. A
+    /// provider that genuinely cannot describe itself returns nothing and the old behaviour
+    /// stands, which is why this has a default rather than being required.
+    func operationDetails() async -> [String: (summary: String, schema: String)]
+}
+
+public extension CapabilityProvider {
+    func operationDetails() async -> [String: (summary: String, schema: String)] { [:] }
 }
 
 /// A provider's state.

@@ -21,6 +21,58 @@ Versioning follows [Semantic Versioning 2.0.0](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+### Security — the drop gesture is a permission grant, and three guards that were not connected
+
+- **A file you drop in is now a file the bot can read.** Dropping worked as far as the boundary
+  and stopped there: the path reached the draft, the bot called `files.inspect`, and the answer
+  was "this bot may only read inside the paths you gave it". A run may read its workspace and the
+  Desktop, and almost nothing anyone drags into a window lives in either — so the whole feature
+  produced a refusal for attachments out of Downloads, Documents or anywhere else. Dragging a file
+  in now grants read access to that one file. A folder grants its own subtree; nothing ever grants
+  write access, because dragging a file in is consent to read it and not to replace it.
+  (see docs/decisions/0023-a-dropped-file-is-a-permission-grant.md)
+- **Only your hand can make that grant.** Nothing reads a path out of a message to decide what a
+  bot may open — a model that writes `~/.ssh/id_rsa` into its reply has attached nothing. The two
+  callers are the drop handler and the attach panel.
+- **Dropping something a bot may never read now says so at the drop**, in the composer, instead of
+  looking like it worked and failing three messages later in the bot's voice. Symlinks are resolved
+  before that check, so a harmless-looking shortcut cannot smuggle a path in.
+- **You can see and take back what you have attached.** The bot's settings pane lists every
+  attached file under "Files you attached", beside the folder it may change, each with an X.
+- **The two tools that let a bot reach anything new were refused on every call.**
+  `capability.search` and `capability.load` ask for a capability that was in neither the granted
+  list nor the ask-first list, and a capability in neither is refused outright — so for the life of
+  the app, a bot that needed something outside its first dozen tools chose the tool designed for
+  exactly that, was refused, and could not find out why. A test now asserts that every tool the app
+  ships can actually run under the authority the app ships.
+- **A connector's operations are now checked against the permission model.** Loading one used to
+  answer with a sentence naming its operations and nothing else: no schemas, so the model guessed
+  the arguments, and no tool descriptor, so `PermissionEngine` was called with nothing to check and
+  skipped the authority step entirely. Loaded operations now arrive with the server's real schemas
+  and are gated like everything else.
+- **Content that tries to give orders now reaches the safety floor.** The check for it existed and
+  had no callers, so the only injection signal was Gemini's own verdict — a bot on the Claude CLI
+  brain had none at all. Reading something shaped like an instruction now refuses anything that
+  would leave this machine on the following turn. Reading is never blocked, so a bot can still
+  investigate and report what it found.
+  (see docs/decisions/0024-content-that-gives-orders-poisons-the-next-turn.md)
+
+### Fixed
+
+- **Attachments survived being saved and vanished on the next launch.** `Conversation` has a
+  hand-written decoder that lists the fields it reads, and a new field encodes correctly whether or
+  not that decoder mentions it. Caught by looking at the running app rather than by any test.
+- **The failure log grew forever.** It is appended to on every tool failure and nothing trimmed it,
+  so the file a daily report is read out of was the one thing that got slower every day. Each run
+  now prunes it to its newest 2,000 records.
+- **Every MCP server the app spawned stayed running after you quit it.** One process per connected
+  server, invisible unless you went looking, and cumulative across launches.
+- **A bot is now told which paths it may read and change.** The boundary was enforced everywhere
+  and stated nowhere, so a bot found it by walking into it and could not tell "not allowed" from
+  "not there" — the usual next move being to try a different spelling of the same path.
+- The attached-files list keeps its two icons in one column, so file and folder names start at the
+  same place.
+
 ### Added — reading what you drop in
 
 - **Bots can read the files you attach, not just their bytes.** Dropping a PDF, a spreadsheet or

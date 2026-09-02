@@ -39,6 +39,26 @@ public enum UntrustedContent {
         """
     }
 
+    /// Whether this string is one of our envelopes.
+    public static func isEnvelope(_ text: String) -> Bool {
+        text.contains("<untrusted source=\"") && text.contains("</untrusted>")
+    }
+
+    /// The wrapped content, without the warning we wrapped it in.
+    ///
+    /// This exists because the obvious thing is wrong. The preamble above contains the words
+    /// "a system message" and "an instruction to you", so running `looksLikeInjection` over a
+    /// whole envelope scores a marker for the wrapper itself and drops the real threshold from
+    /// two markers to one — turning a deliberately conservative check into one that fires on
+    /// any document that says "override" once.
+    public static func body(of envelope: String) -> String {
+        guard let open = envelope.range(of: "\">\n"),
+              let close = envelope.range(of: "\n</untrusted>", options: .backwards),
+              open.upperBound <= close.lowerBound
+        else { return envelope }
+        return String(envelope[open.upperBound..<close.lowerBound])
+    }
+
     /// Whether a piece of content is trying to issue instructions.
     ///
     /// Not a defence on its own — the envelope is the defence. This flags the action for the

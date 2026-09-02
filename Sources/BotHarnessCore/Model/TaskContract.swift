@@ -433,6 +433,43 @@ public struct Authority: Codable, Hashable {
         "choose a different local port",
     ]
 
+    // MARK: - The authority a real run gets
+
+    /// What an ordinary run may touch: its workspace, the Desktop, and whatever the user
+    /// attached.
+    ///
+    /// This used to be assembled inline in `BotRunner`, which put the single most consequential
+    /// list in the product inside the app target — the one target the test bundle does not
+    /// link. Every test that thought it was checking the boundary was checking an `Authority`
+    /// it had built itself, and the list the app actually shipped was verified by reading it.
+    /// It lives here now so a test can assert on the real thing.
+    ///
+    /// `attachments` is the only part that varies with what the user has done, and it is
+    /// additive by construction: it can widen `readable` and can never widen `writable`,
+    /// because dragging a file in is consent to read it and nothing else. A bot that could
+    /// overwrite whatever you dropped on it would make the drop gesture dangerous, and the
+    /// gesture has to stay cheap enough to use without thinking.
+    public static func forWorkspace(_ workspace: String,
+                                    attachments: [Attachment] = []) -> Authority {
+        Authority(
+            readable: [workspace + "/**", NSHomeDirectory() + "/Desktop/**"]
+                + attachments.map(\.readablePattern),
+            writable: [workspace + "/**"],
+            // `capability.read` and `capability.use` were both missing, and their absence was
+            // silent in the worst way: a capability that is in neither `granted` nor
+            // `requiresApproval` is refused on every call, so `capability.search` and
+            // `capability.load` — the two tools whose entire job is reaching something the
+            // router did not anticipate — were dead in every run the app has ever done. The
+            // model chose them, was refused, and had no way to learn why.
+            granted: ["files.read", "files.write", "shell.exec", "git.read", "git.commit",
+                      "web.search", "web.read", "browser.use", "computer.observe",
+                      "computer.control", "memory.read", "memory.write",
+                      "capability.read", "capability.use"],
+            requiresApproval: ["git.push", "files.delete"],
+            selfRepair: true,
+            maySpend: false)
+    }
+
     public func permits(_ capability: String) -> Bool { granted.contains(capability) }
     public func needsApproval(for capability: String) -> Bool { requiresApproval.contains(capability) }
 }

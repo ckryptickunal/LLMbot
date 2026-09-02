@@ -1,3 +1,4 @@
+import AppKit
 import BotHarnessCore
 import Foundation
 import Observation
@@ -72,6 +73,20 @@ final class BotRunner {
     init(store: Store) {
         self.store = store
         Task { await capabilities.registerConfiguredMCPServers() }
+
+        // Every MCP server is a child process this app spawned. `CapabilityRegistry.shutdown`
+        // existed to stop them and had no callers, so quitting left one process per connected
+        // server running with nothing attached to its pipes — invisible unless you go looking
+        // in Activity Monitor, and cumulative across launches.
+        NotificationCenter.default.addObserver(
+            forName: NSApplication.willTerminateNotification, object: nil, queue: .main
+        ) { [capabilities] _ in
+            // Synchronous on purpose: the process is about to go, and a detached Task is not
+            // guaranteed to run at all. Each `disconnect` terminates a child and returns.
+            let done = DispatchSemaphore(value: 0)
+            Task { await capabilities.shutdown(); done.signal() }
+            _ = done.wait(timeout: .now() + 2)
+        }
         // Machines belonging to bots that no longer exist. Only ever names this app assigns,
         // and only when no live bot owns them, so nothing else on the Mac is a candidate.
         // Silent when the container tool is not installed, which is the ordinary case.
@@ -106,7 +121,8 @@ final class BotRunner {
 
         store.append(Message(author: nil, body: .text(text)), to: conversationID)
 
-        let contract = Self.contract(for: text, bot: bot, conversation: conversationID)
+        let contract = Self.contract(for: text, bot: bot, conversation: conversationID,
+                                     attachments: conversation.attachments)
         let brain = Self.brain(for: bot)
         let trace = TraceWriter(root: Paths.traces, botName: bot.name)
         let loop = AgentLoop(contract: contract, bot: bot, brain: brain,
@@ -467,7 +483,8 @@ final class BotRunner {
     /// This is currently a deterministic first pass. Inferring good criteria is genuinely a
     /// model's job and belongs here next; what is deliberate is that a run with *no* criteria
     /// is treated as unverifiable rather than as trivially complete.
-    static func contract(for goal: String, bot: Bot, conversation: UUID) -> TaskContract {
+    static func contract(for goal: String, bot: Bot, conversation: UUID,
+                         attachments: [Attachment] = []) -> TaskContract {
         var contract = TaskContract(botID: bot.id, conversationID: conversation, objective: goal)
 
         let lower = goal.lowercased()
@@ -477,17 +494,11 @@ final class BotRunner {
 
         contract.autonomy = bot.defaultAutonomy
 
-        let workspace = bot.effectiveWorkspace.path
-        contract.authority = Authority(
-            readable: [workspace + "/**", NSHomeDirectory() + "/Desktop/**"],
-            writable: [workspace + "/**"],
-            granted: ["files.read", "files.write", "shell.exec", "git.read", "git.commit",
-                      "web.search", "web.read", "browser.use", "computer.observe",
-                      "computer.control", "memory.read", "memory.write"],
-            requiresApproval: ["git.push", "files.delete"],
-            selfRepair: true,
-            maySpend: false
-        )
+        // The list itself lives in `Authority.forWorkspace`, in the core, so a test can assert
+        // on the authority the app actually ships rather than on one it built for itself.
+        // Attachments are what the user dropped into this conversation: without them the drop
+        // gesture reaches the boundary and stops, which is how it shipped.
+        contract.authority = .forWorkspace(bot.effectiveWorkspace.path, attachments: attachments)
         return contract
     }
 

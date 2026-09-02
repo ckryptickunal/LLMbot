@@ -97,6 +97,28 @@ final class UIState {
         for id in ids { drafts.removeValue(forKey: id) }
     }
 
+    // MARK: Attachments
+
+    /// Why the last drop did not attach everything, per conversation.
+    ///
+    /// Held here rather than in the composer because a file can be dropped on the conversation
+    /// pane, and the thing that has to say so is the composer — the two are different views and
+    /// this is the object they share.
+    ///
+    /// Cleared by the user rather than on a timer. A drop that silently did nothing is the
+    /// defect being fixed; a message about it that fades before they look up is the same defect
+    /// with extra steps.
+    private(set) var attachmentProblems: [UUID: [String]] = [:]
+
+    func noteAttachmentProblems(_ sentences: [String], for conversation: UUID) {
+        guard !sentences.isEmpty else { return }
+        attachmentProblems[conversation] = sentences
+    }
+
+    func clearAttachmentProblems(for conversation: UUID) {
+        attachmentProblems.removeValue(forKey: conversation)
+    }
+
     // MARK: Routing
 
     /// Reveal the bot's screen. Called from the Computer card.
