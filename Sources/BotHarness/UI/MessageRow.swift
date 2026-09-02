@@ -73,7 +73,8 @@ private struct TextBubble: View {
                 case .prose(let body):
                     Text(inline(body))
                         .font(DS.Text.body)
-                        .foregroundStyle(DS.Ink.primary)
+                        // What you said sits on ink, so it is written in paper.
+                        .foregroundStyle(isUser ? DS.Ink.onInk : DS.Ink.primary)
                         .lineSpacing(DS.Text.bodyLineSpacing)
                         .textSelection(.enabled)
                 case .code(let language, let body):
@@ -82,8 +83,19 @@ private struct TextBubble: View {
             }
         }
         .dsInset(DS.Inset.bubble)
-        .background(isUser ? DS.Surface.active : DS.Surface.raised,
-                    in: RoundedRectangle(cornerRadius: DS.Radius.xl))
+        // Two different objects rather than two shades of the same one. What you said is a
+        // solid ink lozenge; what the bot said is paper with a hairline, like every other
+        // surface in the app. Previously both were grey rectangles four per cent apart, which
+        // is why a transcript read as a wall rather than as an exchange.
+        .background {
+            let shape = RoundedRectangle(cornerRadius: DS.Radius.xl)
+            if isUser {
+                shape.fill(DS.Ink.fill)
+            } else {
+                shape.fill(DS.Surface.paper)
+                    .overlay(shape.stroke(DS.Surface.border, lineWidth: DS.Size.hairline))
+            }
+        }
         // Hugs its content up to the measure. A bubble stretched to the column edge
         // stops reading as a spoken turn and starts reading as a paragraph of layout.
         // A floor as well as a ceiling: below the minimum a bubble wraps to one word
@@ -169,7 +181,7 @@ struct CodeBlock: View {
                     .frame(minWidth: 0, alignment: .leading)
             }
             .scrollIndicators(.automatic)
-            .background(DS.Surface.ground, in: RoundedRectangle(cornerRadius: DS.Radius.sm))
+            .background(DS.Surface.paper, in: RoundedRectangle(cornerRadius: DS.Radius.sm))
         }
         .dsAnimation(DS.Motion.instant, value: copied)
     }
@@ -262,7 +274,7 @@ private struct ToolCard: View {
                     .frame(minWidth: 0, alignment: .leading)
             }
             .scrollIndicators(.automatic)
-            .background(DS.Surface.ground, in: RoundedRectangle(cornerRadius: DS.Radius.sm))
+            .background(DS.Surface.paper, in: RoundedRectangle(cornerRadius: DS.Radius.sm))
         }
     }
 
@@ -400,7 +412,7 @@ private struct ApprovalCard: View {
     }
 
     private var borderTint: Color {
-        request.answer == nil ? DS.Status.awaitingApproval.mark.opacity(0.4) : DS.Tint.t6
+        request.answer == nil ? DS.Status.awaitingApproval.mark.opacity(0.4) : DS.Surface.border
     }
 
     private func answer(_ a: ApprovalRequest.Answer) {
@@ -485,7 +497,7 @@ struct ScreenshotCard: View {
                         .clipShape(RoundedRectangle(cornerRadius: DS.Radius.md))
                         .overlay(
                             RoundedRectangle(cornerRadius: DS.Radius.md)
-                                .stroke(DS.Tint.t6, lineWidth: DS.Size.hairline)
+                                .stroke(DS.Surface.border, lineWidth: DS.Size.hairline)
                         )
                         .onTapGesture { zoomed = true }
                         .help("Click to see it full size")
@@ -493,7 +505,7 @@ struct ScreenshotCard: View {
                         .accessibilityLabel("Screenshot: \(shot.caption). Open full size.")
                 } else if failed {
                     // The artifact was cleaned up or moved. Say so rather than showing a void.
-                    Surface(fill: DS.Tint.t3, bordered: false) {
+                    Surface(fill: DS.Tint.t3) {
                         Text("That screenshot is no longer on disk.")
                             .font(DS.Text.caption)
                             .foregroundStyle(DS.Ink.secondary)
@@ -547,7 +559,7 @@ struct ScreenshotCard: View {
                 .padding(DS.Space.lg)
             }
             .frame(minWidth: DS.Window.viewerMinWidth, minHeight: DS.Window.viewerMinHeight)
-            .background(DS.Surface.ground)
+            .background(DS.Surface.paper)
         }
     }
 

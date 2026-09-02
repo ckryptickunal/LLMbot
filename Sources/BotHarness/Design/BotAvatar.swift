@@ -18,7 +18,11 @@ public struct BotAvatar: View {
 
     public var body: some View {
         Circle()
-            .fill(bot.tint.gradient)
+            // Flat, not `.gradient`. A gradient on a 24-point disc is invisible as a gradient
+            // and visible as softness, and softness is what this system spent its whole rewrite
+            // removing — nothing else in the app is shaded, so one shaded thing reads as a
+            // leftover.
+            .fill(bot.tint)
             .frame(width: size, height: size)
             .overlay {
                 Text(monogram)
@@ -29,12 +33,14 @@ public struct BotAvatar: View {
                     .font(.system(size: size * 0.42, weight: .semibold))
                     // Dark ink on a saturated fill, rather than white: at these sizes white on
                     // a mid-tone reads as a smudge.
-                    .foregroundStyle(.black.opacity(0.62))
+                    .foregroundStyle(.black.opacity(0.66))
             }
             .overlay {
-                // A hairline of the fill lightened, so the disc has an edge against the panel
-                // without a border that reads as a stroke.
-                Circle().stroke(.white.opacity(0.14), lineWidth: DS.Size.hairline)
+                // The disc's own edge, drawn as the fill darkened rather than as white
+                // lightened. The old stroke was `.white.opacity(0.14)`, which the token file
+                // itself lists as a bug — and on white paper a white hairline is nothing at
+                // all, so the avatar lost its edge the moment the app learned light mode.
+                Circle().stroke(.black.opacity(0.10), lineWidth: DS.Size.hairline)
             }
     }
 

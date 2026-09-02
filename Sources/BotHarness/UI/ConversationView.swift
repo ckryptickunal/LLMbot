@@ -43,7 +43,7 @@ struct ConversationView: View {
                 nothingSelected
             }
         }
-        .background(DS.Surface.ground)
+        .background(DS.Surface.paper)
         // The whole conversation is a drop target, not just the composer pill.
         //
         // The pill is about forty points tall at the very bottom of the window, and a person
@@ -195,7 +195,7 @@ struct ConversationView: View {
             HStack(spacing: -DS.Space.xl) {
                 ForEach(members.prefix(3)) { member in
                     BotAvatar(bot: member, size: DS.Size.avatarRoster)
-                        .overlay(Circle().stroke(DS.Surface.ground, lineWidth: DS.Size.hairline))
+                        .overlay(Circle().stroke(DS.Surface.paper, lineWidth: DS.Size.hairline))
                 }
             }
             .accessibilityHidden(true)
@@ -356,8 +356,8 @@ struct ConversationView: View {
                             .foregroundStyle(DS.Ink.primary)
                             .padding(.horizontal, DS.Space.lg)
                             .frame(height: DS.Size.hit)
-                            .background(DS.Surface.raised, in: Capsule())
-                            .overlay(Capsule().stroke(DS.Tint.t6, lineWidth: DS.Size.hairline))
+                            .background(DS.Surface.paperTint, in: Capsule())
+                            .overlay(Capsule().stroke(DS.Surface.border, lineWidth: DS.Size.hairline))
                     }
                     .buttonStyle(PressableStyle())
                     .padding(.bottom, DS.Space.lg)
@@ -407,20 +407,17 @@ struct ConversationView: View {
             channelIntroduction(conversation)
         } else if let bot {
             VStack(spacing: DS.Space.lg) {
+                // No halo behind it any more. A 200-point radial gradient was the largest
+                // single thing on an empty screen and it was decoration — the flat rule takes
+                // it, and what is left is an avatar and a name, which is what the screen is
+                // actually about.
                 BotAvatar(bot: bot, size: DS.Size.avatarInspector)
-                    // A soft halo in the bot's own colour. It costs nothing and it is the
-                    // difference between an avatar floating on a void and a character with
-                    // a presence — the one place in the app that is allowed to feel warm.
-                    .background {
-                        Circle()
-                            .fill(RadialGradient(colors: [bot.halo, .clear],
-                                                 center: .center, startRadius: 0,
-                                                 endRadius: DS.Size.halo / 2))
-                            .frame(width: DS.Size.halo, height: DS.Size.halo)
-                    }
                     .accessibilityHidden(true)
+                // The one display-sized thing on this screen. Tracked tight, which is what
+                // separates a heading from body text that happens to be large.
                 Text(bot.name)
-                    .font(DS.Text.title)
+                    .font(DS.Text.display)
+                    .tracking(DS.Text.displayTracking)
                     .foregroundStyle(DS.Ink.primary)
                 Text(bot.persona.isEmpty
                      ? "Give this bot a description in Settings, then tell it what to do."
@@ -453,7 +450,7 @@ struct ConversationView: View {
             HStack(spacing: -DS.Space.xl) {
                 ForEach(members.prefix(3)) { member in
                     BotAvatar(bot: member, size: DS.Size.avatarInspector)
-                        .overlay(Circle().stroke(DS.Surface.ground, lineWidth: DS.Size.hairline))
+                        .overlay(Circle().stroke(DS.Surface.paper, lineWidth: DS.Size.hairline))
                 }
             }
             .accessibilityHidden(true)
@@ -493,12 +490,12 @@ private struct DaySeparator: View {
 
     var body: some View {
         HStack(spacing: DS.Space.md) {
-            Rectangle().fill(DS.Tint.t6).frame(height: DS.Size.hairline)
+            Rectangle().fill(DS.Surface.border).frame(height: DS.Size.hairline)
             Text(label)
                 .font(DS.Text.micro.weight(.medium))
                 .foregroundStyle(DS.Ink.secondary)
                 .fixedSize()
-            Rectangle().fill(DS.Tint.t6).frame(height: DS.Size.hairline)
+            Rectangle().fill(DS.Surface.border).frame(height: DS.Size.hairline)
         }
         .padding(.vertical, DS.Space.sm)
         .frame(maxWidth: .infinity)

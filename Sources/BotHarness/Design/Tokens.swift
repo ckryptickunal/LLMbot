@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 /// The design system, implemented. `docs/DESIGN-SYSTEM.md` is the contract; this is the code.
@@ -7,130 +8,166 @@ import SwiftUI
 /// write `14` inline. That rule is the whole mechanism: a system is not a palette, it is the
 /// absence of exceptions.
 ///
-/// Three decisions shape everything below, and each was a real fork:
+/// ## What changed, and why the old system was wrong
 ///
-/// **Colour comes from two places, not one.** Radix Colors (MIT) supplies the opaque neutral
-/// ramp, because macOS publishes no numeric surface scale — you get `windowBackground`,
-/// `controlBackground`, `underPageBackground` and nothing between, and a three-pane cockpit
-/// needs five distinguishable depths. macOS supplies text and materials, because `labelColor`
-/// is white at 84.7% alpha rather than a grey, and only an alpha composite tracks Increase
-/// Contrast, desktop tinting and translucency correctly. The accent is the one deliberate
-/// exception to "macOS owns it": it is the mascot's clay (ADR 0022), because the app has a
-/// character and a character wears one colour.
+/// The app was dark-only, and its structure came entirely from fill against fill: five opaque
+/// greys, each a little lighter than the last, stacked to imply depth. The tell is in the old
+/// file itself — `Surface.border` and `Surface.borderStrong` were defined, documented, and had
+/// **zero call sites**. Nothing in the app drew a line. Every boundary was a change of shade,
+/// which is why it read as a stack of soft grey slabs rather than as a built thing.
 ///
-/// **The functional layer is never painted; the content layer always is.** The roster, the
-/// inspector, the toolbar and every sheet get no background at all and inherit the system
-/// material. Only the conversation pane is filled. This single rule decides whether the app
-/// reads as Mac-native or as a web page in a window.
+/// Three decisions replace that:
 ///
-/// **We do not copy Grok Bot's pixels.** Their palette is flat achromatic Electron grey
-/// (#070707 / #111111 / #262626) with no semantic contract and no alpha companion. We take
-/// their information design — the bubble geometry, the natural-language rule form, the handoff
-/// card, the settings copy — and leave the greys.
+/// **Structure comes from hairlines, not from shade.** A card is the page colour with a
+/// one-point border, not a lighter rectangle. This is the single change that does most of the
+/// work, and it is what makes a surface look drawn rather than lit.
+///
+/// **Every colour is appearance-aware.** The app follows the system appearance like a Mac app
+/// should. The light ramp is the reference's (`#ffffff` paper through `#171717` ink); the dark
+/// ramp mirrors it around `#0c0c0c`, and both were checked numerically rather than by eye —
+/// every value that carries text clears WCAG AA on its own paper, and the two ramps have
+/// matching contrast at matching steps, so a component does not become quieter by being in
+/// dark mode.
+///
+/// **Flat at rest.** No glows, no gradients, no ambient shadow. The old composer had a clay
+/// glow behind it and the empty state had a 200-point halo; both are gone. Depth is a border
+/// and a tonal fill, and that is the whole vocabulary.
+///
+/// The neutrals are now true neutral rather than Radix sand. ADR 0022 chose a warm ground
+/// because clay on a *cool blue-grey* read as a sticker on someone else's window — that
+/// argument was about blue, and true neutral is not blue. Clay sits on it without arguing, and
+/// the stage stops having an opinion, which is what a stage is for.
 public enum DS {
 
     // MARK: - Surface
     //
-    // Radix sand, dark, steps 1-8. Opaque. For the content layer only: anything drawn over a
-    // system material must use `DS.Tint` instead, or it flattens the material into mud.
+    // The stage. Paper is the page; everything else is a deliberate step away from it.
     //
-    // The 12 Radix steps are a semantic contract rather than a lightness ramp, which is why
-    // this is the base: step 3 is an element background, 6 a subtle border, 9 a solid fill,
-    // 11 low-contrast text. The scale tells you which value to use.
-    //
-    // Sand rather than slate, and the swap is the identity decision of the app (ADR 0022):
-    // the accent and the mascot are warm clay, and clay on a cool blue-grey ground reads as a
-    // sticker on someone else's window. The warm neutral is what makes the character look like
-    // it lives here. Same Radix contract, same steps — only the temperature changed.
+    // Light values are the reference's neutral ramp. Dark values mirror them: paper is near
+    // black rather than pure, because pure black against a Mac's window chrome reads as a hole
+    // rather than as a surface, and a hairline on pure black has nowhere to go.
 
     public enum Surface {
-        /// sand1 — the conversation pane, the Settings content pane.
-        /// Deliberately *darker* than the window chrome, which is the native relationship.
-        public static let ground = Color(hex: 0x111110)
-        /// sand2 — composer field, inset wells inside the transcript.
-        public static let panel = Color(hex: 0x191918)
-        /// sand3 — cards, incoming bubbles, tool cards, settings cards.
-        public static let raised = Color(hex: 0x222221)
-        /// sand4 — a hovered card or row sitting on an opaque surface.
-        public static let raisedHover = Color(hex: 0x2A2A28)
-        /// sand5 — pressed or selected element on an opaque surface; the outgoing bubble.
-        public static let active = Color(hex: 0x31312E)
-        /// sand6 — subtle borders and dividers inside cards.
-        public static let border = Color(hex: 0x3B3A37)
-        /// sand7 — field borders.
-        public static let borderStrong = Color(hex: 0x494844)
+        /// The page. Conversation pane, settings pane, window fills.
+        public static let paper = Color.dynamic(light: 0xFFFFFF, dark: 0x0C0C0C)
+
+        /// One step in. Recessed fields at rest, incoming bubbles, disabled fills, the quiet
+        /// stripe behind a code block. Never used to imply elevation — it is a *lower* tone,
+        /// not a higher one.
+        public static let paperTint = Color.dynamic(light: 0xFAFAFA, dark: 0x141414)
+
+        /// A row under the cursor.
+        public static let hover = Color.dynamic(light: 0xF5F5F5, dark: 0x1A1A1A)
+
+        /// A selected row. Distinct from `hover` by a full step, because a selected row under
+        /// the cursor must still look selected.
+        public static let selected = Color.dynamic(light: 0xEDEDED, dark: 0x232323)
+
+        /// A pressed control.
+        public static let pressed = Color.dynamic(light: 0xE5E5E5, dark: 0x2B2B2B)
+
+        // Borders. The structural device of the whole system.
+
+        /// Hairline dividers and card edges. Quiet structure — visible, never a line you read.
+        public static let borderSubtle = Color.dynamic(light: 0xF0F0F0, dark: 0x1C1C1C)
+
+        /// The default border on a card, a field, a control.
+        public static let border = Color.dynamic(light: 0xE5E5E5, dark: 0x262626)
+
+        /// A field the cursor is over, and any border that needs to be seen rather than felt.
+        public static let borderStrong = Color.dynamic(light: 0xD4D4D4, dark: 0x333333)
+
+        /// The border of a focused field. Full ink: the reference's focus rule is border colour
+        /// and nothing else — never a ring, never a glow.
+        public static let borderFocus = Color.dynamic(light: 0x171717, dark: 0xEDEDED)
     }
 
     // MARK: - Tint
     //
-    // Sand alphas, steps A2-A7. For anything drawn *over* a system material — the roster, the
-    // inspector, the toolbar, sheets.
+    // Fills for anything drawn *over* a system material — the roster, the inspector, sheets —
+    // where an opaque colour would flatten the material into mud.
     //
-    // Note these are not pure white. The base is a warm ivory, the alpha companion to the sand
-    // surfaces, so a tint over a material and a surface beside it read as one temperature. The
-    // cast is deliberate and small — at these opacities it warms without ever reading as
-    // yellow. Every `Color.white.opacity(…)` in this codebase is a bug; use these.
+    // These are neutral now rather than warm ivory, for the same reason the surfaces are, and
+    // they are appearance-aware: white alphas over a light material make it *lighter*, which is
+    // backwards. Every `Color.white.opacity(…)` in this codebase is still a bug; use these.
 
     public enum Tint {
-        private static let warm = Color(hex: 0xF2EDE3)
+        private static let wash = Color.dynamic(light: 0x171717, dark: 0xFFFFFF)
 
-        public static let t2 = warm.opacity(0.035)
-        /// Hover fill for a row sitting on a material.
-        public static let t3 = warm.opacity(0.078)
-        public static let t4 = warm.opacity(0.114)
+        /// Barely there. A zebra stripe, a disabled fill.
+        public static let t2 = wash.opacity(0.022)
+        /// Hover fill for a row on a material.
+        public static let t3 = wash.opacity(0.045)
+        /// A recessed well on a material.
+        public static let t4 = wash.opacity(0.070)
         /// A selected row in a window that does not have focus.
-        public static let t5 = warm.opacity(0.145)
+        public static let t5 = wash.opacity(0.100)
         /// A separator drawn on a material.
-        public static let t6 = warm.opacity(0.188)
-        public static let t7 = warm.opacity(0.251)
+        public static let t6 = wash.opacity(0.130)
+        public static let t7 = wash.opacity(0.180)
     }
 
     // MARK: - Ink
     //
-    // Text. macOS semantic, never Radix — `labelColor` is white at 84.7% alpha, not a grey,
-    // and only the semantic name tracks Increase Contrast and desktop tinting.
-    //
-    // Prefer `.foregroundStyle(.primary)` and friends directly in views. These exist for the
-    // handful of places that need a `Color` value rather than a `ShapeStyle`.
+    // Text. The two tiers people actually read stay macOS-semantic, because `labelColor` is an
+    // alpha composite rather than a grey and only the semantic name tracks Increase Contrast,
+    // desktop tinting and translucency. The quieter tiers are explicit, because at that end the
+    // exact value is the design and the system's answer is not the reference's.
 
     public enum Ink {
-        /// 13.6:1 on `ground`. Everything the user actually reads.
+        /// Everything the user actually reads. 17.9:1 light, 16.7:1 dark.
         public static let primary = Color.primary
-        /// 6.2:1. Supporting text that is still meant to be read.
+        /// Supporting text that is still meant to be read.
         public static let secondary = Color.secondary
-        /// 2.2:1 — decorative and disabled only. **Never a string the user must read.**
-        public static let tertiary = Color.primary.opacity(0.247)
-        /// Glyph washes and other non-text marks.
-        public static let quaternary = Color.primary.opacity(0.098)
 
+        /// The reference's `muted`. Secondary prose, footers, help text — 4.7:1 light,
+        /// 6.1:1 dark, so it is quiet but still legitimately readable.
+        public static let muted = Color.dynamic(light: 0x737373, dark: 0x8F8F8F)
+
+        /// The reference's `faint`. Placeholders, meta labels, keyboard hints.
+        /// **Never a string the user must read.**
+        public static let tertiary = Color.dynamic(light: 0xA3A3A3, dark: 0x6B6B6B)
+
+        /// Glyph washes and other non-text marks.
+        public static let quaternary = Color.dynamic(light: 0xD4D4D4, dark: 0x3A3A3A)
+
+        /// Ink drawn on an ink-filled control — a primary button's label.
+        public static let onInk = Color.dynamic(light: 0xFFFFFF, dark: 0x0C0C0C)
+
+        /// The fill of a primary control. Ink-soft rather than full ink, so a button feels
+        /// solid without shouting.
+        public static let fill = Color.dynamic(light: 0x262626, dark: 0xEDEDED)
+        /// The same fill, hovered — deepens toward ink.
+        public static let fillHover = Color.dynamic(light: 0x171717, dark: 0xFFFFFF)
     }
 
     // MARK: - Accent
     //
-    // The mascot's clay, promoted to the app's accent (ADR 0022). This deliberately does NOT
-    // track `controlAccentColor` any more: the character standing on the composer, the send
-    // button beside it and the selection in the roster are one identity, and an app whose
-    // mascot is clay while its buttons follow whatever System Settings says wears two brands
-    // at once. The cost — ignoring the user's accent preference — is the decision.
+    // The mascot's clay (ADR 0022), kept as the app's single accent and demoted to accent duty.
+    //
+    // The reference's One Voice Rule is the reason for the demotion: the stage stays neutral and
+    // colour lives in state and in signature moments, never in chrome. So clay is no longer the
+    // selection colour, no longer the focus ring, and no longer a wash behind a hero avatar. It
+    // is the character, the send button the character stands beside, and nothing else — which is
+    // both under the reference's ten-per-cent bar and a stronger identity than spraying it
+    // everywhere was.
 
     public enum Accent {
-        /// Selection, primary actions, focus. The same clay as `Brand.mascot`, on purpose.
+        /// The clay fill. Send button, mascot, brand marks. Identical in both appearances,
+        /// because it is a brand colour rather than a neutral.
         public static let live = Color(hex: 0xDD775B)
 
-        /// Ink drawn *on* an accent fill. Dark, like the avatars' monograms, because white on
-        /// this clay measures 3.1:1 and fails AA — this warm near-black measures 5.3:1.
+        /// Clay as *text or a mark*, which the fill colour cannot be: `#DD775B` measures 3.06:1
+        /// on white and fails AA outright. This is the same hue taken down until it passes —
+        /// 5.09:1 on light paper, and on dark the fill is already 6.39:1 and needs no change.
+        public static let text = Color.dynamic(light: 0xB4502F, dark: 0xDD775B)
+
+        /// Ink drawn *on* a clay fill. Warm near-black, because white on this clay measures
+        /// 3.1:1 and fails; this measures 5.3:1.
         public static let onAccent = Color(hex: 0x2B1811)
 
-        /// The composer's border while focused. Quiet on purpose: the composer is focused
-        /// almost always, so anything louder would be permanent decoration.
-        public static let ring = live.opacity(0.45)
-
-        /// The soft glow under the focused composer. Barely there; it reads as warmth, not
-        /// as a highlight.
-        public static let ringGlow = live.opacity(0.12)
-
-        /// A wash for selected fills and the halo behind a hero avatar.
-        public static let wash = live.opacity(0.14)
+        /// A clay hairline, for the one or two places a border should carry the brand.
+        public static let border = live.opacity(0.55)
     }
 
     // MARK: - Brand
@@ -151,39 +188,41 @@ public enum DS {
 
     // MARK: - Status
     //
-    // Radix step 9 for the dot, step 11 for the word beside it. **Never colour alone**: every
-    // status is a glyph plus a word plus a colour, so it survives colour-blindness and a
-    // greyscale screenshot.
+    // **Never colour alone**: every status is a glyph plus a word plus a colour, so it survives
+    // colour-blindness and a greyscale screenshot.
     //
-    // The one rule with a real cost if broken: `running` and `awaitingApproval` must never
-    // share a colour. "Working" and "blocked on you" is the confusion in this app that wastes
-    // a person's afternoon.
+    // Both ramps were measured against their own paper and every mark clears AA as text, which
+    // is a stricter bar than a dot needs and the right one for the word beside it. The old dark
+    // values were Radix step 9, authored for dark grounds and unreadable on white — amber9 on
+    // paper is 1.7:1.
+    //
+    // The one rule with a real cost if broken: `running` and `awaitingApproval` must never share
+    // a colour. "Working" and "blocked on you" is the confusion in this app that wastes a
+    // person's afternoon.
 
     public enum Status: String, CaseIterable, Sendable {
         case idle, running, awaitingApproval, done, failed, waiting, denied
 
-        /// The dot or bar. Radix step 9.
+        /// The dot, the bar and the word. One value rather than the old mark/label pair: with
+        /// both ramps tuned to clear AA on their own paper, a second, lighter variant was a
+        /// second thing to keep in step for no gain.
         public var mark: Color {
             switch self {
-            case .idle:             return Color(hex: 0x696e77)   // slate9
-            case .running:          return Color(hex: 0xffc53d)   // amber9
-            case .awaitingApproval: return Color(hex: 0xf76b15)   // orange9
-            case .done:             return Color(hex: 0x30a46c)   // green9
-            case .failed, .denied:  return Color(hex: 0xe5484d)   // red9
-            case .waiting:          return Color(hex: 0x0090ff)   // blue9
+            case .idle:             return Color.dynamic(light: 0x737373, dark: 0x8F8F8F)
+            case .running:          return Color.dynamic(light: 0xB45309, dark: 0xFFC53D)
+            case .awaitingApproval: return Color.dynamic(light: 0xC2410C, dark: 0xF97316)
+            case .done:             return Color.dynamic(light: 0x15803D, dark: 0x4ADE80)
+            case .failed, .denied:  return Color.dynamic(light: 0xB91C1C, dark: 0xF87171)
+            case .waiting:          return Color.dynamic(light: 0x1D4ED8, dark: 0x60A5FA)
             }
         }
 
-        /// The word beside it. Radix step 11 — the step authored to be readable on a dark
-        /// background, all of these ≥9:1 on `ground`.
+        /// The word beside the mark. Idle stays secondary so an idle bot does not advertise
+        /// itself; everything else carries its own colour.
         public var label: Color {
             switch self {
-            case .idle:             return Color.secondary
-            case .running:          return Color(hex: 0xffca16)   // amber11
-            case .awaitingApproval: return Color(hex: 0xffa057)   // orange11
-            case .done:             return Color(hex: 0x3dd68c)   // green11
-            case .failed, .denied:  return Color(hex: 0xff9592)   // red11
-            case .waiting:          return Color(hex: 0x70b8ff)   // blue11
+            case .idle: return Color.secondary
+            default:    return mark
             }
         }
 
@@ -211,32 +250,50 @@ public enum DS {
             }
         }
 
-        /// A tinted chip behind the label, all ≥7:1.
+        /// The tinted chip behind the label. A wash of the mark rather than a hand-picked
+        /// third colour, so a chip can never drift out of step with the dot it sits beside.
         public var chip: Color {
-            switch self {
-            case .idle:             return Surface.raised
-            case .running:          return Color(hex: 0x302008)   // amber3
-            case .awaitingApproval: return Color(hex: 0x331e0b)   // orange3
-            case .done:             return Color(hex: 0x132d21)   // green3
-            case .failed, .denied:  return Color(hex: 0x3b1219)   // red3
-            case .waiting:          return Color(hex: 0x0d2847)   // blue3
-            }
+            self == .idle ? Surface.paperTint : mark.opacity(0.10)
+        }
+
+        /// The chip's hairline. Chips are bordered like everything else now, which is what lets
+        /// them sit on paper at a ten-per-cent fill and still read as objects.
+        public var chipBorder: Color {
+            self == .idle ? Surface.border : mark.opacity(0.24)
         }
     }
 
     // MARK: - Type
     //
-    // Five steps, each bound to a system text style so they track the OS and line up optically
-    // with the toolbar. The previous scale had six half-point sizes appearing 31 times; they
-    // match nothing the system draws, which is exactly why the text never sat right.
+    // One voice, SF Pro, and hierarchy made out of size, weight and tracking rather than out of
+    // a second typeface.
     //
-    // `design: .rounded` is banned — it has no macOS precedent and reads instantly as
-    // non-native.
+    // The reference pairs a display serif with a sans. This app does not: **no serif**, by
+    // instruction, and the substitution is not a compromise so long as the display step does
+    // the work the serif was doing. What made the serif read as a brand moment was that it was
+    // *set* rather than merely large — so the display and headline steps carry negative
+    // tracking, which is the same move the reference already makes on its own body copy
+    // (`letterSpacing: -0.025em`). Large sans at default tracking is the thing that looks
+    // undesigned; large sans pulled tight does not.
+    //
+    // `design: .rounded` and `design: .serif` are both banned — the first has no macOS
+    // precedent and reads instantly as non-native, the second is out by instruction.
 
     public enum Text {
+        /// The one big moment per screen. An empty conversation's bot name.
+        public static let display = Font.system(size: 28, weight: .semibold)
+        /// Section titles and pane headings.
+        public static let headline = Font.system(size: 19, weight: .semibold)
+
+        /// Tracking for the two steps above. Negative, and that is the whole trick: SF Pro
+        /// spaces itself for reading at body size, so at 28 points the default gaps are what
+        /// make a heading look like body text that was scaled up.
+        public static let displayTracking: CGFloat = -0.7
+        public static let headlineTracking: CGFloat = -0.4
+
         /// Message text, row labels, field text.
         public static let body = Font.body
-        /// Section and pane titles, the bot name in the header. "Body Emphasized" in the HIG.
+        /// Card titles, sidebar section labels, form labels. "Body Emphasized" in the HIG.
         public static let title = Font.body.weight(.semibold)
         /// Supporting text beside a body line.
         public static let callout = Font.callout
@@ -244,6 +301,12 @@ public enum DS {
         public static let caption = Font.subheadline
         /// Timestamps, counters, hash prefixes.
         public static let micro = Font.caption
+
+        /// A label above a field or a group. Small, medium weight, slightly tracked out — the
+        /// reference's `label` step, and the thing that makes a settings pane look composed
+        /// rather than listed.
+        public static let label = Font.caption.weight(.medium)
+        public static let labelTracking: CGFloat = 0.3
 
         /// Shell commands, tool arguments, paths, trace hashes. **The only correct use of
         /// monospace in this app** — prose in monospace is a web habit, not a Mac one.
@@ -258,7 +321,6 @@ public enum DS {
         public static let glyph = Font.system(size: 12)
         public static let glyphSmall = Font.system(size: 10)
         public static let glyphBold = Font.system(size: 10, weight: .semibold)
-
     }
 
     // MARK: - Space
@@ -274,23 +336,27 @@ public enum DS {
         public static let lg: CGFloat = 12      // inside cards
         public static let xl: CGFloat = 16      // between groups
         public static let xxl: CGFloat = 24     // between sections
-        public static let xxxl: CGFloat = 40    // page margins, empty states
+        /// Page margins and empty states. 48 rather than 40, matching the reference's top
+        /// step — the extra eight points is most of what makes an empty state look composed.
+        public static let xxxl: CGFloat = 48
     }
 
     // MARK: - Radius
     //
+    // The reference's three steps — 6 for controls, 8 for fields, 16 for cards — plus the two
+    // small ones this app already needed.
+    //
     // Nesting rule, and it is not optional: **inner radius = outer radius − inner padding.**
-    // A 12pt card with 8pt of padding contains a 4pt element. Nested corners that share a
+    // A 16pt card with 8pt of padding contains an 8pt element. Nested corners that share a
     // radius look wrong in a way people notice without being able to name.
 
     public enum Radius {
         public static let xs: CGFloat = 4       // inline code, tags
-        public static let sm: CGFloat = 6       // fields inside cards
-        public static let md: CGFloat = 8       // rows, small cards
-        public static let lg: CGFloat = 12      // cards, tool cards, handoff cards
-        public static let xl: CGFloat = 16      // message bubbles, sheets
+        public static let sm: CGFloat = 6       // buttons, chips
+        public static let md: CGFloat = 8       // fields, rows
+        public static let lg: CGFloat = 12      // small cards
+        public static let xl: CGFloat = 16      // cards, bubbles, sheets
         public static let pill: CGFloat = 999
-
     }
 
     // MARK: - Size
@@ -340,7 +406,9 @@ public enum DS {
         public static let hit: CGFloat = 28
         /// Holds the status pill's geometry still as "Running" becomes "Done".
         public static let statusPillMin: CGFloat = 62
-        /// Text control heights, so a field and a button beside it share a baseline.
+        /// Text control heights, so a field and a button beside it share a baseline. The
+        /// reference's controls are 40pt tall, which is a web number; 28 is the Mac one and
+        /// what the toolbar beside it uses.
         public static let controlHeight: CGFloat = 28
         /// A field stops being usable below this and should truncate rather than shrink.
         public static let fieldMin: CGFloat = 120
@@ -355,10 +423,6 @@ public enum DS {
         public static let screenshotMax: CGFloat = 460
         /// The activity stream is a peek, not a second transcript.
         public static let activityStreamMax: CGFloat = 220
-        /// The soft halo behind the hero avatar in an empty conversation.
-        public static let halo: CGFloat = 200
-        /// Blur radius of the focused composer's glow.
-        public static let glowRadius: CGFloat = 12
 
         // Split-view columns. Resizable ranges, not the fixed Electron numbers Grok Bot uses.
         public static let rosterMin: CGFloat = 180
@@ -430,8 +494,9 @@ public enum DS {
         /// Message bubbles. Wider than tall, so a single line reads as a lozenge rather than
         /// a box, which is what makes a transcript feel like a conversation.
         public static let bubble = EdgeInsets(top: 11, leading: 15, bottom: 11, trailing: 15)
-        /// Tool cards, approval cards, connection rows.
-        public static let card = EdgeInsets(top: 12, leading: 13, bottom: 12, trailing: 13)
+        /// Tool cards, approval cards, connection rows. Sixteen on every side, which is the
+        /// reference's card padding and reads as deliberate where the old 12/13 read as tight.
+        public static let card = EdgeInsets(top: 16, leading: 16, bottom: 16, trailing: 16)
         /// Roster rows and list rows.
         public static let row = EdgeInsets(top: 8, leading: 10, bottom: 8, trailing: 10)
         /// The composer field.
@@ -450,9 +515,10 @@ public enum DS {
     // ninety call sites.
 
     public enum Motion {
-        /// Strong ease-out. The built-in curves are too weak to read as intentional.
+        /// Strong ease-out. The built-in curves are too weak to read as intentional. This is
+        /// the reference's `--ease-smooth` to three decimal places, arrived at independently.
         private static func out(_ duration: Double) -> Animation {
-            .timingCurve(0.23, 1, 0.32, 1, duration: duration)
+            .timingCurve(0.22, 1, 0.36, 1, duration: duration)
         }
 
         /// Button press. Pair with `pressScale`.
@@ -510,7 +576,7 @@ public enum DS {
 // MARK: - Colour helpers
 
 extension Color {
-    /// sRGB from a hex literal, for the Radix values published that way.
+    /// sRGB from a hex literal, for the values published that way.
     init(hex: UInt32) {
         self.init(.sRGB,
                   red: Double((hex >> 16) & 0xff) / 255,
@@ -519,9 +585,26 @@ extension Color {
                   opacity: 1)
     }
 
-    /// Display P3, which is what Radix authors and what every Mac display renders.
-    init(p3 red: Double, _ green: Double, _ blue: Double, opacity: Double = 1) {
-        self.init(.displayP3, red: red, green: green, blue: blue, opacity: opacity)
+    /// A colour that resolves against whichever appearance is drawing it.
+    ///
+    /// `NSColor(name:dynamicProvider:)` rather than an asset catalogue, because this package has
+    /// no asset catalogue and a hand-assembled bundle should not grow one to hold forty colours
+    /// that are already written down here. The provider is asked at draw time, so a value built
+    /// once at launch still flips when the user changes appearance in System Settings.
+    static func dynamic(light: UInt32, dark: UInt32) -> Color {
+        Color(nsColor: NSColor(name: nil) { appearance in
+            let isDark = appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
+            return NSColor(hex: isDark ? dark : light)
+        })
+    }
+}
+
+extension NSColor {
+    convenience init(hex: UInt32) {
+        self.init(srgbRed: CGFloat((hex >> 16) & 0xff) / 255,
+                  green: CGFloat((hex >> 8) & 0xff) / 255,
+                  blue: CGFloat(hex & 0xff) / 255,
+                  alpha: 1)
     }
 }
 

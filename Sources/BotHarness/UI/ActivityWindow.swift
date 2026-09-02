@@ -22,7 +22,7 @@ struct ActivityWindow: View {
             detail.frame(minWidth: DS.Window.activityDetailMin)
         }
         .frame(minWidth: DS.Window.activityMinWidth, minHeight: DS.Window.mainMinHeight)
-        .background(DS.Surface.ground)
+        .background(DS.Surface.paper)
         .task { await reload() }
         // A run that started while this window was open used to be invisible until someone
         // pressed Reload. Coming back to the window is the moment to catch up.
@@ -106,7 +106,7 @@ struct ActivityWindow: View {
                 .scrollContentBackground(.hidden)
             }
         }
-        .background(DS.Surface.panel)
+        .background(DS.Surface.paperTint)
     }
 
     /// Selecting by id rather than by value: a run is a snapshot, and comparing whole
@@ -382,7 +382,7 @@ private struct StepRow: View {
         }
         .padding(DS.Space.lg)
         .frame(minHeight: DS.Size.denseRow, alignment: .leading)
-        .background(DS.Surface.raised, in: RoundedRectangle(cornerRadius: DS.Radius.md))
+        .background(DS.Surface.paperTint, in: RoundedRectangle(cornerRadius: DS.Radius.md))
         .contentShape(Rectangle())
         .onTapGesture { withAnimation(DS.Motion.panel) { expanded.toggle() } }
     }
@@ -396,7 +396,7 @@ private struct StepRow: View {
                 .textSelection(.enabled)
                 .padding(DS.Space.md)
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .background(DS.Surface.ground, in: RoundedRectangle(cornerRadius: DS.Radius.sm))
+                .background(DS.Surface.paper, in: RoundedRectangle(cornerRadius: DS.Radius.sm))
         }
         .padding(.leading, DS.Space.xxl + DS.Space.xl)
     }

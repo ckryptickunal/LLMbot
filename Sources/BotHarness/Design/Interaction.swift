@@ -55,7 +55,7 @@ public extension View {
     /// Row hover: delayed in, animated out.
     func hoverRow(shape: some Shape = RoundedRectangle(cornerRadius: DS.Radius.md),
                   resting: Color = .clear,
-                  hovered: Color = DS.Surface.raisedHover) -> some View {
+                  hovered: Color = DS.Surface.hover) -> some View {
         modifier(HoverHighlight(shape: AnyShape(shape), resting: resting,
                                 hovered: hovered, delay: DS.Motion.hoverRowDelay))
     }

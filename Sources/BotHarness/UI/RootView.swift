@@ -52,7 +52,7 @@ struct RootView: View {
                 adapt(to: width)
             }
         }
-        .background(DS.Surface.ground)
+        .background(DS.Surface.paper)
         // The state file could not be read. Saying nothing here is the difference between
         // "my data is gone" and "my data is at this path".
         .sheet(isPresented: Binding(get: { store.loadFailure != nil },
@@ -162,6 +162,6 @@ private struct RecoveredStateSheet: View {
         }
         .dsInset(DS.Inset.pane)
         .frame(width: DS.Window.sheetWidth)
-        .background(DS.Surface.panel)
+        .background(DS.Surface.paperTint)
     }
 }

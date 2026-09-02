@@ -14,14 +14,14 @@ struct SettingsView: View {
             switch self {
             case .providers:   return "Providers"
             case .permissions: return "Permissions"
-            case .about:       return "About"
+            case .about:       return "General"
             }
         }
         var icon: String {
             switch self {
             case .providers:   return "brain"
             case .permissions: return "hand.raised"
-            case .about:       return "info.circle"
+            case .about:       return "gearshape"
             }
         }
     }
@@ -374,7 +374,7 @@ private struct KeyField: View {
                         .foregroundStyle(DS.Ink.primary)
                         .padding(.horizontal, DS.Space.md)
                         .frame(minHeight: DS.Size.controlHeight)
-                        .background(DS.Tint.t3, in: RoundedRectangle(cornerRadius: DS.Radius.sm))
+                        .dsWell(DS.Radius.sm)
                         .onSubmit(commit)
                     PrimaryButton("Save", isEnabled: !entry.trimmingCharacters(in: .whitespaces).isEmpty,
                                   action: commit)
@@ -472,7 +472,7 @@ struct PermissionSettings: View {
                     .foregroundStyle(DS.Ink.primary)
                     .padding(.horizontal, DS.Space.md)
                     .frame(minWidth: DS.Size.fieldMin, minHeight: DS.Size.controlHeight)
-                    .background(DS.Tint.t3, in: RoundedRectangle(cornerRadius: DS.Radius.sm))
+                    .dsWell(DS.Radius.sm)
                     .onSubmit(add)
                     .accessibilityLabel("What the bot might want to do")
             }
@@ -492,7 +492,7 @@ struct PermissionSettings: View {
             }
         }
         .padding(DS.Space.lg)
-        .background(DS.Surface.raised, in: RoundedRectangle(cornerRadius: DS.Radius.md))
+        .background(DS.Surface.paperTint, in: RoundedRectangle(cornerRadius: DS.Radius.md))
     }
 
     private func add() {
@@ -526,7 +526,7 @@ private struct RuleRow: View {
                         .foregroundStyle(DS.Ink.primary)
                         .padding(.horizontal, DS.Space.md)
                         .frame(minHeight: DS.Size.controlHeight)
-                        .background(DS.Surface.ground, in: RoundedRectangle(cornerRadius: DS.Radius.sm))
+                        .background(DS.Surface.paper, in: RoundedRectangle(cornerRadius: DS.Radius.sm))
                         .onSubmit(commit)
                     HStack(spacing: DS.Space.md) {
                         Picker("", selection: behaviourBinding) {
@@ -559,7 +559,7 @@ private struct RuleRow: View {
                                 .foregroundStyle(DS.Ink.secondary)
                                 .padding(.horizontal, DS.Space.sm)
                                 .padding(.vertical, DS.Space.hair)
-                                .background(DS.Tint.t3, in: Capsule())
+                                .dsWellCapsule()
                         }
                     }
                 }
@@ -572,7 +572,7 @@ private struct RuleRow: View {
         }
         .padding(DS.Space.lg)
         .frame(minHeight: DS.Size.settingsRow, alignment: .leading)
-        .background(DS.Tint.t3, in: RoundedRectangle(cornerRadius: DS.Radius.sm))
+        .dsWell(DS.Radius.sm)
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Rule: when a bot wants to \(rule.whenBotWantsTo), \(rule.behaviour.displayName)")
     }
@@ -613,12 +613,18 @@ private struct RuleRow: View {
 // MARK: - About
 
 struct AboutSettings: View {
+    @Environment(Store.self) private var store
+
     var body: some View {
         VStack(alignment: .leading, spacing: DS.Space.lg) {
             Text("Bot-Harness").font(DS.Text.title).foregroundStyle(DS.Ink.primary)
             Text("An open-source, local-first agent cockpit. Your bots, your Mac, your API keys.")
                 .font(DS.Text.callout)
                 .foregroundStyle(DS.Ink.secondary)
+
+            Hairline()
+
+            appearance
 
             Hairline()
 
@@ -636,6 +642,35 @@ struct AboutSettings: View {
         }
         .dsInset(DS.Inset.pane)
         .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    /// Light, dark, or whatever the system is doing.
+    ///
+    /// A segmented control rather than a menu: there are three options, they are mutually
+    /// exclusive, and all three fit — which is exactly the case AppKit's segmented control was
+    /// made for and the case a popup menu handles worst, by hiding two of three answers behind
+    /// a click.
+    private var appearance: some View {
+        VStack(alignment: .leading, spacing: DS.Space.md) {
+            Text("Appearance")
+                .font(DS.Text.label)
+                .tracking(DS.Text.labelTracking)
+                .foregroundStyle(DS.Ink.muted)
+            Picker("", selection: Binding(
+                get: { store.appearance },
+                set: { store.setAppearance($0) }
+            )) {
+                ForEach(Appearance.allCases) { option in
+                    Label(option.displayName, systemImage: option.symbol).tag(option)
+                }
+            }
+            .pickerStyle(.segmented)
+            .labelsHidden()
+            .fixedSize()
+            Text("Follows the system unless you pick one.")
+                .font(DS.Text.micro)
+                .foregroundStyle(DS.Ink.muted)
+        }
     }
 
     private func path(_ title: String, _ value: String) -> some View {

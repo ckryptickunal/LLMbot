@@ -118,7 +118,7 @@ private struct ScreenPane: View {
                 ScreenshotCard(shot: latest)
             } else {
                 RoundedRectangle(cornerRadius: DS.Radius.md)
-                    .fill(DS.Surface.ground)
+                    .fill(DS.Surface.paper)
                     .aspectRatio(16.0 / 10.0, contentMode: .fit)
                     .overlay {
                         // A bot working inside its own Linux machine has no screen at all, so
@@ -335,7 +335,7 @@ private struct BotSettingsPane: View {
                         .foregroundStyle(DS.Ink.secondary)
                         .padding(.horizontal, DS.Space.sm)
                         .padding(.vertical, DS.Space.hair)
-                        .background(DS.Tint.t3, in: Capsule())
+                        .dsWellCapsule()
                         .help("Kept up to date from what you ask it to do. Editing it makes it yours.")
                 }
                 Spacer()
@@ -364,7 +364,7 @@ private struct BotSettingsPane: View {
                 .scrollContentBackground(.hidden)
                 .frame(height: DS.Window.personaEditorHeight)
                 .padding(DS.Space.md)
-                .background(DS.Tint.t3, in: RoundedRectangle(cornerRadius: DS.Radius.sm))
+                .dsWell(DS.Radius.sm)
                 .accessibilityLabel("Bot description")
         }
     }
@@ -404,7 +404,7 @@ private struct BotSettingsPane: View {
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(DS.Space.md)
-            .background(DS.Tint.t3, in: RoundedRectangle(cornerRadius: DS.Radius.sm))
+            .dsWell(DS.Radius.sm)
         }
         .task { containerReady = await runner.containerAvailability() }
     }
@@ -483,7 +483,7 @@ private struct BotSettingsPane: View {
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(DS.Space.md)
-            .background(DS.Tint.t3, in: RoundedRectangle(cornerRadius: DS.Radius.sm))
+            .dsWell(DS.Radius.sm)
         }
     }
 
@@ -542,7 +542,7 @@ private struct BotSettingsPane: View {
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(DS.Space.md)
-                .background(DS.Tint.t3, in: RoundedRectangle(cornerRadius: DS.Radius.sm))
+                .dsWell(DS.Radius.sm)
             }
         }
     }
@@ -607,7 +607,7 @@ private struct BotSettingsPane: View {
                 .foregroundStyle(DS.Ink.primary)
                 .padding(.horizontal, DS.Space.md)
                 .padding(.vertical, DS.Space.md)
-                .background(DS.Tint.t3, in: RoundedRectangle(cornerRadius: DS.Radius.sm))
+                .dsWell(DS.Radius.sm)
                 .accessibilityLabel(title)
         }
     }
@@ -625,7 +625,7 @@ private struct BotSettingsPane: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.horizontal, DS.Space.md)
             .padding(.vertical, DS.Space.md)
-            .background(DS.Tint.t3, in: RoundedRectangle(cornerRadius: DS.Radius.sm))
+            .dsWell(DS.Radius.sm)
         }
         .accessibilityElement(children: .combine)
     }
@@ -647,6 +647,6 @@ private struct BotSettingsPane: View {
                 .accessibilityLabel(title)
         }
         .padding(DS.Space.lg)
-        .background(DS.Tint.t3, in: RoundedRectangle(cornerRadius: DS.Radius.md))
+        .dsWell(DS.Radius.md)
     }
 }

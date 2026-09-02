@@ -21,6 +21,47 @@ Versioning follows [Semantic Versioning 2.0.0](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+### Changed — the interface is paper and ink, and it follows your Mac
+
+- **The app has a light appearance, and follows the system.** It was dark-only and pinned that
+  way; the token file said as much — "following the OS here would mean designing a second palette
+  that nobody has designed". That palette exists now. Settings → General has System, Light and
+  Dark, and System is the default.
+  (see docs/decisions/0025-paper-and-ink-in-both-appearances.md)
+- **Structure comes from hairlines instead of shade.** This is the change that does most of the
+  work. The app used to get every boundary from one grey being slightly lighter than the grey
+  beside it — five stacked greys and not a single drawn line, which is why it read as a pile of
+  soft slabs. Cards, fields, chips, wells, bubbles and status pills are now the page colour with
+  a one-point border.
+- **Nothing glows any more.** The clay glow behind the composer, the 200-point halo behind the
+  avatar on an empty conversation, and the gradient inside every bot's disc are gone. Surfaces are
+  flat; depth is a border and a tonal fill.
+- **Focus is a border, not a ring.** A focused field darkens its edge and does nothing else.
+- **The accent stopped being everywhere.** Clay was the selection, the focus ring, every primary
+  button and a wash behind hero avatars — and when the confirm button, the selection and the
+  mascot are all one colour, none of them is a signal. Clay is now the mascot, the send button and
+  accent text. Primary buttons are ink.
+- **What you said and what the bot said look like different things.** Your messages are solid ink
+  lozenges; the bot's are paper cards with a hairline. They used to be two greys four per cent
+  apart, which is why a transcript read as a wall rather than a conversation.
+- **No purple anywhere, including bot avatars.** The avatar family had a lavender in it; the eight
+  colours now skip the violet arc of the wheel entirely, and each one has a light and a dark value
+  so a disc holds its edge on white paper as well as on black.
+- **Headings are set, not just big.** The one display-sized item per screen is tracked tight,
+  which is what separates a heading from body text that happens to be large.
+- Status colours were re-derived for both appearances. The old ones were authored for dark grounds
+  and were unreadable on white — the "running" amber measured 1.7:1 on paper. All twelve values
+  now clear WCAG AA as text on their own background.
+
+### Fixed
+
+- The bot avatar's edge was drawn as white at 14% — a line that does not exist on white paper, and
+  one the design system's own rules already called a bug.
+- `docs/DESIGN-SYSTEM.md` described an app that no longer existed: eight avatar shapes that were
+  never drawn, seven settings panes when there are three, a deployment target of macOS 15 when it
+  is 14, and an app that was "unconditionally dark" with "no theme picker". Rewritten to describe
+  what is built, with a section listing what is not.
+
 ### Security — the drop gesture is a permission grant, and three guards that were not connected
 
 - **A file you drop in is now a file the bot can read.** Dropping worked as far as the boundary

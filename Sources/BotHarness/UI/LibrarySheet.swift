@@ -48,7 +48,7 @@ struct LibrarySheet: View {
             .safeAreaPadding(.bottom, DS.Space.md)
         }
         .frame(width: DS.Window.sheetWidth, height: DS.Window.sheetHeight)
-        .background(DS.Surface.panel)
+        .background(DS.Surface.paperTint)
     }
 
     private var header: some View {
@@ -216,7 +216,7 @@ private struct ConnectionRow: View {
             }
         }
         .padding(DS.Space.lg)
-        .background(DS.Tint.t3, in: RoundedRectangle(cornerRadius: DS.Radius.md))
+        .dsWell(DS.Radius.md)
     }
 
     private var colour: Color {
@@ -262,7 +262,7 @@ private struct ComputersList: View {
                 .font(DS.Text.caption)
                 .foregroundStyle(DS.Ink.secondary)
 
-            Surface(fill: DS.Tint.t3, bordered: false) {
+            Surface(fill: DS.Tint.t3) {
                 VStack(alignment: .leading, spacing: DS.Space.lg) {
                     HStack(spacing: DS.Space.lg) {
                         Image(systemName: "desktopcomputer")
@@ -313,7 +313,7 @@ private struct ComputersList: View {
     /// "Soon", which is the one thing it must never say again now that the feature exists —
     /// and equally must never claim to be ready on a Mac where the tool is not installed.
     private var containerCard: some View {
-        Surface(fill: DS.Tint.t3, bordered: false) {
+        Surface(fill: DS.Tint.t3) {
             VStack(alignment: .leading, spacing: DS.Space.lg) {
                 HStack(spacing: DS.Space.lg) {
                     Image(systemName: "cube")

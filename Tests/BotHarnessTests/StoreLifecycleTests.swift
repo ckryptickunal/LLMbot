@@ -630,3 +630,49 @@ final class BatchDeletionTests: XCTestCase {
         XCTAssertFalse(store.bots.contains { $0.id == id })
     }
 }
+
+/// The appearance preference, across a save and a load.
+///
+/// This test exists because the identical mistake was made an hour earlier with
+/// `Conversation.attachments`: the encoder is synthesised and writes a new field correctly, the
+/// decoder is hand-written and silently drops it, and the only symptom is a setting that resets
+/// every launch. Any field added to `Store.Document` needs a case here.
+@MainActor
+final class AppearancePersistenceTests: XCTestCase {
+
+    private func freshStore() throws -> (Store, URL) {
+        let root = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("appearance-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        let file = root.appendingPathComponent("state.json")
+        return (Store(loadingFrom: file), file)
+    }
+
+    func testItDefaultsToFollowingTheSystem() throws {
+        let (store, file) = try freshStore()
+        defer { try? FileManager.default.removeItem(at: file.deletingLastPathComponent()) }
+        XCTAssertEqual(store.appearance, .system)
+    }
+
+    func testAChosenAppearanceSurvivesARelaunch() throws {
+        let (store, file) = try freshStore()
+        defer { try? FileManager.default.removeItem(at: file.deletingLastPathComponent()) }
+
+        store.setAppearance(.light)
+        store.saveAndWait()
+
+        let reopened = Store(loadingFrom: file)
+        XCTAssertEqual(reopened.appearance, .light,
+                       "the preference was written and dropped on the way back in")
+    }
+
+    func testAStateFileWrittenBeforeThisExistedStillOpens() throws {
+        let (_, file) = try freshStore()
+        defer { try? FileManager.default.removeItem(at: file.deletingLastPathComponent()) }
+        try #"{"version":1,"bots":[],"conversations":[],"globalRules":[]}"#
+            .write(to: file, atomically: true, encoding: .utf8)
+
+        XCTAssertEqual(Store(loadingFrom: file).appearance, .system,
+                       "an absent key must mean follow the system, not fail the load")
+    }
+}

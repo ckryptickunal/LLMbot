@@ -103,7 +103,11 @@ struct Composer: View {
         }
         .padding(.horizontal, DS.Space.lg)
         .padding(.vertical, DS.Space.md)
-        .background(DS.Tint.t3, in: RoundedRectangle(cornerRadius: DS.Radius.md))
+        .background(DS.Surface.paper, in: RoundedRectangle(cornerRadius: DS.Radius.md))
+        .overlay(
+            RoundedRectangle(cornerRadius: DS.Radius.md)
+                .stroke(DS.Surface.border, lineWidth: DS.Size.hairline)
+        )
         .accessibilityElement(children: .combine)
     }
 
@@ -140,7 +144,11 @@ struct Composer: View {
         }
         .padding(.horizontal, DS.Space.lg)
         .padding(.vertical, DS.Space.md)
-        .background(DS.Tint.t3, in: RoundedRectangle(cornerRadius: DS.Radius.md))
+        .background(DS.Surface.paper, in: RoundedRectangle(cornerRadius: DS.Radius.md))
+        .overlay(
+            RoundedRectangle(cornerRadius: DS.Radius.md)
+                .stroke(DS.Surface.border, lineWidth: DS.Size.hairline)
+        )
         .accessibilityElement(children: .combine)
     }
 
@@ -203,19 +211,27 @@ struct Composer: View {
         // field's own line limit.
         .frame(minHeight: DS.Size.composerMin)
         .fixedSize(horizontal: false, vertical: true)
-        // The glow lives on the background shape, not on the composed view — a shadow applied
-        // after the fact haloes every glyph of the draft as well as the pill.
+        // Paper with a hairline, and the hairline is the whole treatment.
+        //
+        // This used to be a tinted fill with a clay glow behind it and a clay stroke on top.
+        // The glow is gone because nothing in this system glows, and the clay is gone because
+        // the composer is focused nearly all the time — a permanently-lit brand colour is not
+        // an accent, it is decoration that happens to be the logo. Focus now moves the border
+        // to full ink, which is the reference's rule and reads as sharper the instant it lands.
         .background {
             RoundedRectangle(cornerRadius: DS.Radius.pill)
-                .fill(DS.Tint.t3)
-                .shadow(color: focused ? DS.Accent.ringGlow : .clear,
-                        radius: DS.Size.glowRadius)
+                .fill(DS.Surface.paper)
         }
-        // Clay rather than a grey when focused — quiet, because the composer is focused
-        // almost always, but unmistakably the app's own colour saying "this is live".
         .overlay(
             RoundedRectangle(cornerRadius: DS.Radius.pill)
-                .stroke(focused ? DS.Accent.ring : .clear, lineWidth: DS.Size.hairline)
+                // `borderStrong` rather than the full-ink `borderFocus` every other field
+                // uses, and the composer is the one control that earns the exception: it holds
+                // focus almost the entire time the app is open, so the focused state *is* its
+                // resting state. Drawn at full ink it was a heavy black ring around the bottom
+                // of the window at all times — the loudest thing on a quiet screen, signalling
+                // something that is almost always true and therefore signalling nothing.
+                .stroke(focused ? DS.Surface.borderStrong : DS.Surface.border,
+                        lineWidth: DS.Size.hairline)
         )
         .dsAnimation(DS.Motion.instant, value: focused)
         // Dropping a file on the composer is how a Mac user attaches one. Before this the only

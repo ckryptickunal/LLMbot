@@ -57,3 +57,4 @@ in `CHANGELOG.md` instead.
 | [0022](0022-the-interface-wears-the-mascots-clay.md) | The interface wears the mascot's clay | accepted | 2026-08-31 |
 | [0023](0023-a-dropped-file-is-a-permission-grant.md) | A dropped file is a permission grant, and only a gesture may make one | accepted | 2026-09-03 |
 | [0024](0024-content-that-gives-orders-poisons-the-next-turn.md) | Content that gives orders poisons the next turn, not the whole run | accepted | 2026-09-03 |
+| [0025](0025-paper-and-ink-in-both-appearances.md) | Paper and ink, structure from hairlines, in both appearances | accepted | 2026-09-03 |

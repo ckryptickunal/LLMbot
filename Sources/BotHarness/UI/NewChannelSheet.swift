@@ -44,7 +44,7 @@ struct NewChannelSheet: View {
             footer
         }
         .frame(width: DS.Window.sheetWidth, height: DS.Window.sheetHeight)
-        .background(DS.Surface.panel)
+        .background(DS.Surface.paperTint)
     }
 
     // MARK: Pieces
@@ -61,7 +61,7 @@ struct NewChannelSheet: View {
                 .foregroundStyle(DS.Ink.primary)
                 .padding(.horizontal, DS.Space.md)
                 .frame(minHeight: DS.Size.controlHeight)
-                .background(DS.Tint.t3, in: RoundedRectangle(cornerRadius: DS.Radius.sm))
+                .dsWell(DS.Radius.sm)
                 .onSubmit(create)
                 .accessibilityLabel("Channel name")
         }
@@ -107,7 +107,7 @@ struct NewChannelSheet: View {
                         .foregroundStyle(DS.Ink.secondary)
                         .padding(.horizontal, DS.Space.sm)
                         .padding(.vertical, DS.Space.hair)
-                        .background(DS.Tint.t3, in: Capsule())
+                        .dsWellCapsule()
                         .fixedSize()
                 }
                 Image(systemName: position == nil ? "circle" : "checkmark.circle.fill")
@@ -117,7 +117,7 @@ struct NewChannelSheet: View {
             }
             .padding(DS.Space.lg)
             .frame(maxWidth: .infinity, minHeight: DS.Size.settingsRow, alignment: .leading)
-            .background(DS.Tint.t3, in: RoundedRectangle(cornerRadius: DS.Radius.md))
+            .dsWell(DS.Radius.md)
             .contentShape(RoundedRectangle(cornerRadius: DS.Radius.md))
         }
         .buttonStyle(PressableStyle())

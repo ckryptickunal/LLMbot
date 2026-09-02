@@ -471,7 +471,7 @@ struct Sidebar: View {
         }
         .padding(.horizontal, DS.Space.md)
         .padding(.vertical, DS.Space.md)
-        .background(DS.Tint.t3, in: RoundedRectangle(cornerRadius: DS.Radius.sm))
+        .dsWell(DS.Radius.sm)
         .padding(.horizontal, DS.Space.lg)
         .padding(.bottom, DS.Space.sm)
     }
@@ -759,7 +759,7 @@ private struct SidebarRow: View {
                 ForEach(members, id: \.offset) { index, id in
                     if let member = store.bot(id) {
                         BotAvatar(bot: member, size: DS.Size.avatarRoster)
-                            .overlay(Circle().stroke(DS.Surface.panel, lineWidth: 1.5))
+                            .overlay(Circle().stroke(DS.Surface.paperTint, lineWidth: 1.5))
                             .offset(x: CGFloat(index) * DS.Space.md)
                     }
                 }

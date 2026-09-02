@@ -26,6 +26,9 @@ public final class Store {
     /// Global rules, applied to every bot in addition to that bot's own.
     public private(set) var globalRules: [PermissionRule] = []
 
+    /// Which appearance the app draws in. Follows the system unless the user says otherwise.
+    public private(set) var appearance: Appearance = .system
+
     /// Which conversation the UI is showing.
     public var selection: UUID?
 
@@ -364,6 +367,14 @@ public final class Store {
         scheduleSave()
     }
 
+    /// Change how the app is drawn. Saved, because a display preference that resets on quit is
+    /// a preference nobody bothers to set twice.
+    public func setAppearance(_ appearance: Appearance) {
+        guard appearance != self.appearance else { return }
+        self.appearance = appearance
+        scheduleSave()
+    }
+
     public func updateGlobalRule(_ rule: PermissionRule) {
         guard let i = globalRules.firstIndex(where: { $0.id == rule.id }) else { return }
         globalRules[i] = rule
@@ -421,19 +432,22 @@ public final class Store {
         var bots: [Bot]
         var conversations: [Conversation]
         var globalRules: [PermissionRule]
+        var appearance: Appearance = .system
 
         /// Spelled out rather than synthesised. The synthesised enum is generated on demand and
         /// is not in scope for a member that names it in its own signature, which `records`
         /// below does; writing it here also pins the on-disk key names to something a schema
         /// change has to touch on purpose.
         private enum CodingKeys: String, CodingKey {
-            case version, bots, conversations, globalRules
+            case version, bots, conversations, globalRules, appearance
         }
 
-        init(bots: [Bot], conversations: [Conversation], globalRules: [PermissionRule]) {
+        init(bots: [Bot], conversations: [Conversation], globalRules: [PermissionRule],
+             appearance: Appearance) {
             self.bots = bots
             self.conversations = conversations
             self.globalRules = globalRules
+            self.appearance = appearance
         }
 
         /// Read so that one damaged record cannot cost the user every undamaged one.
@@ -460,6 +474,9 @@ public final class Store {
             // existed simply has none, and the built-in floor still applies to every bot.
             globalRules = try recovery.container
                 .decodeIfPresent([PermissionRule].self, forKey: .globalRules) ?? []
+            // Absent from every file written before this existed, and "follow the system" is
+            // the right answer when we cannot read what the user asked for.
+            appearance = recovery.value(.appearance, or: .system)
         }
 
         /// The document's own arrays, decoded element by element so that a single bad entry is
@@ -502,6 +519,7 @@ public final class Store {
             bots = doc.bots
             conversations = doc.conversations
             globalRules = doc.globalRules
+            appearance = doc.appearance
             selection = sortedConversations.first?.id
             if !log.isEmpty { preserveOriginal(log.losses, of: data) }
             reconcileInterruptedWork()
@@ -629,7 +647,8 @@ public final class Store {
     }
 
     public func saveNow() {
-        let doc = Document(bots: bots, conversations: conversations, globalRules: globalRules)
+        let doc = Document(bots: bots, conversations: conversations, globalRules: globalRules,
+                           appearance: appearance)
         let target = stateURL
         // Encoding and writing move off the main thread; only reading the model stays on it.
         //

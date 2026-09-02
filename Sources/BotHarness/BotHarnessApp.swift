@@ -19,6 +19,19 @@ struct BotHarnessApp: App {
         Seatbelt.warmUp()
     }
 
+    /// Push the chosen appearance onto the application object.
+    ///
+    /// `nil` is the meaningful value for "system": it is not a third appearance, it is the
+    /// absence of an override, and setting one of the two concrete appearances to mean "follow"
+    /// would freeze the app at whatever the system happened to be at launch.
+    private func applyAppearance(_ appearance: Appearance) {
+        switch appearance {
+        case .system: NSApp.appearance = nil
+        case .light:  NSApp.appearance = NSAppearance(named: .aqua)
+        case .dark:   NSApp.appearance = NSAppearance(named: .darkAqua)
+        }
+    }
+
     var body: some Scene {
         WindowGroup {
             RootView()
@@ -30,9 +43,20 @@ struct BotHarnessApp: App {
                 // rather than showing a broken layout.
                 .frame(minWidth: DS.Size.rosterMin + DS.Size.conversationMin,
                        minHeight: DS.Window.mainMinHeight)
-                // The system is designed for one mode. Following the OS here would mean
-                // designing a second palette that nobody has designed.
-                .preferredColorScheme(.dark)
+                // Follows the system, unless the user has asked for one or the other.
+                //
+                // This used to be a hard `.preferredColorScheme(.dark)`, and the comment beside
+                // it was honest about why: "following the OS here would mean designing a second
+                // palette that nobody has designed". That palette exists now — every value in
+                // `DS` resolves per appearance — so the pin comes out.
+                //
+                // Applied to `NSApp.appearance` rather than only as a SwiftUI preference,
+                // because `preferredColorScheme` reaches SwiftUI views and stops there: the
+                // toolbar, the window's own chrome and every `NSVisualEffectView` behind the
+                // roster keep asking the application object, and an app whose sidebar material
+                // is dark inside a light window is worse than either mode on its own.
+                .onAppear { applyAppearance(store.appearance) }
+                .onChange(of: store.appearance) { _, new in applyAppearance(new) }
                 // The clay accent, applied where SwiftUI reads tint from: toggles, selection,
                 // link buttons, the caret. See ADR 0022 — the accent is the brand, not the
                 // System Settings choice.

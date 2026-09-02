@@ -122,20 +122,23 @@ public struct PrimaryButton: View {
         Button(action: action) {
             HStack(spacing: DS.Space.sm) {
                 if isLoading {
-                    Spinner(size: 10, tint: DS.Accent.onAccent)
+                    Spinner(size: 10, tint: DS.Ink.onInk)
                 } else if let systemImage {
                     Image(systemName: systemImage).font(.system(size: DS.Size.glyphSmall, weight: .semibold))
                 }
                 Text(isLoading ? "Working" : title).font(DS.Text.caption.weight(.medium))
             }
-            // Dark ink on the clay fill, not white: white on this accent measures 3.1:1 and
-            // fails AA. The avatars already settled the pattern — dark ink on a saturated fill.
-            .foregroundStyle(isEnabled ? DS.Accent.onAccent : DS.Ink.quaternary)
+            // Ink, not clay. Every primary button being the brand colour is what made the
+            // accent stop meaning anything — when the confirm button, the selection and the
+            // mascot are all the same clay, none of them is a signal. Primary actions are ink
+            // now; the clay is spent on the one control that is the app's signature, the send
+            // button, and on the character standing beside it.
+            .foregroundStyle(isEnabled ? DS.Ink.onInk : DS.Ink.tertiary)
             .padding(.horizontal, DS.Space.lg)
             .frame(minHeight: DS.Size.controlHeight)
             .fixedSize(horizontal: true, vertical: false)
-            .background(isEnabled ? DS.Accent.live : DS.Tint.t3,
-                        in: RoundedRectangle(cornerRadius: DS.Radius.md))
+            .background(isEnabled ? DS.Ink.fill : DS.Surface.paperTint,
+                        in: RoundedRectangle(cornerRadius: DS.Radius.sm))
             // Content changes size when it swaps to a spinner; a crossfade bridges the two
             // states so the eye reads one control changing rather than two swapping. Opacity
             // only, so it survives Reduce Motion intact.
@@ -174,8 +177,16 @@ public struct SecondaryButton: View {
             .frame(minHeight: DS.Size.controlHeight)
             // Keeps its label whole rather than compressing beside a growing sibling.
             .fixedSize(horizontal: true, vertical: false)
-            .background(hovering ? DS.Tint.t4 : DS.Tint.t3,
+            // Paper with a hairline, the way a secondary button is drawn everywhere in this
+            // system. It used to be a grey fill with no edge, which on a grey pane meant the
+            // button's shape was a slightly different grey — findable, but never crisp.
+            .background(hovering ? DS.Surface.hover : DS.Surface.paper,
                         in: RoundedRectangle(cornerRadius: DS.Radius.sm))
+            .overlay(
+                RoundedRectangle(cornerRadius: DS.Radius.sm)
+                    .stroke(hovering ? DS.Surface.borderStrong : DS.Surface.border,
+                            lineWidth: DS.Size.hairline)
+            )
         }
         .buttonStyle(PressableStyle())
         .onHover { hovering = $0 }
@@ -187,16 +198,16 @@ public struct SecondaryButton: View {
 
 /// A card. One radius, one fill, one optional hairline.
 public struct Surface<Content: View>: View {
-    var padding: CGFloat = DS.Space.lg
-    var radius: CGFloat = DS.Radius.lg
-    var fill: Color = DS.Surface.raised
+    var padding: CGFloat = DS.Space.xl
+    var radius: CGFloat = DS.Radius.xl
+    var fill: Color = DS.Surface.paper
     var bordered = true
-    var borderTint: Color = DS.Tint.t6
+    var borderTint: Color = DS.Surface.border
     @ViewBuilder let content: Content
 
-    public init(padding: CGFloat = DS.Space.lg, radius: CGFloat = DS.Radius.lg,
-                fill: Color = DS.Surface.raised, bordered: Bool = true,
-                borderTint: Color = DS.Tint.t6, @ViewBuilder content: () -> Content) {
+    public init(padding: CGFloat = DS.Space.xl, radius: CGFloat = DS.Radius.xl,
+                fill: Color = DS.Surface.paper, bordered: Bool = true,
+                borderTint: Color = DS.Surface.border, @ViewBuilder content: () -> Content) {
         self.padding = padding; self.radius = radius; self.fill = fill
         self.bordered = bordered; self.borderTint = borderTint; self.content = content()
     }
@@ -252,7 +263,8 @@ public struct Chip: View {
         .frame(height: DS.Size.hit)
         // Truncate rather than compress: a chip that shrinks makes the row beside it jump.
         .fixedSize(horizontal: true, vertical: false)
-        .background(DS.Tint.t3, in: Capsule())
+        .background(DS.Surface.paper, in: Capsule())
+        .overlay(Capsule().stroke(DS.Surface.border, lineWidth: DS.Size.hairline))
         .contentShape(Capsule())
     }
 }
@@ -293,7 +305,11 @@ public struct StatusPill: View {
         // "Running" and "Done" are different widths, and a pill that resizes on every status
         // change makes the whole card twitch. A floor holds the geometry still.
         .frame(minWidth: DS.Size.statusPillMin, minHeight: DS.Size.glyph + DS.Space.xs, alignment: .leading)
+        // A ten-per-cent wash of the mark, with a hairline of the same mark at 24%. At that
+        // fill alone the pill barely separates from paper; the hairline is what turns it into
+        // an object, and it is the same move every other surface in the app now makes.
         .background(status.chip, in: Capsule())
+        .overlay(Capsule().stroke(status.chipBorder, lineWidth: DS.Size.hairline))
         .accessibilityElement()
         .accessibilityLabel(label)
     }
@@ -549,7 +565,10 @@ public struct SectionLabel: View {
 public struct Hairline: View {
     public init() {}
     public var body: some View {
-        Rectangle().fill(DS.Tint.t6).frame(height: DS.Size.hairline)
+        // `Surface.border`, the same value every card edge and field outline uses. It used to
+        // be a 13% ink wash, which is a heavier line than any border in the system — dividers
+        // were the loudest structure on screen when they should be the quietest.
+        Rectangle().fill(DS.Surface.border).frame(height: DS.Size.hairline)
     }
 }
 
@@ -587,6 +606,35 @@ public struct Disclosure<Header: View, Content: View>: View {
     }
 }
 
+
+// MARK: - Wells
+
+public extension View {
+    /// A recessed well: a faint tonal fill and a hairline around it.
+    ///
+    /// This exists because the app had the same three lines written twenty-five times —
+    /// `.background(DS.Tint.t3, in: RoundedRectangle(...))` — and every one of them was a box
+    /// with a fill and no edge. On a dark-only palette that reads as a slightly lighter patch,
+    /// which is legible enough to have survived review; on paper it reads as nothing at all.
+    ///
+    /// The fill stays a tint rather than becoming opaque paper, because most of these sit on a
+    /// system material — the roster, the inspector, every sheet — and an opaque fill there
+    /// flattens the material into mud. The hairline is what turns the patch into an object, and
+    /// it costs the material nothing.
+    func dsWell(_ radius: CGFloat = DS.Radius.md) -> some View {
+        background(DS.Tint.t3, in: RoundedRectangle(cornerRadius: radius))
+            .overlay(
+                RoundedRectangle(cornerRadius: radius)
+                    .stroke(DS.Surface.border, lineWidth: DS.Size.hairline)
+            )
+    }
+
+    /// The same, for the chips and pills that are capsules rather than rectangles.
+    func dsWellCapsule() -> some View {
+        background(DS.Tint.t3, in: Capsule())
+            .overlay(Capsule().stroke(DS.Surface.border, lineWidth: DS.Size.hairline))
+    }
+}
 
 // MARK: - Inset helper
 
